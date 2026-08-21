@@ -83,6 +83,31 @@ Publishable key. The local installer is not digitally signed, so Windows
 SmartScreen may show a warning. Distributing it without that warning requires
 a code-signing certificate.
 
+## Automatic updates
+
+Packaged desktop builds use `electron-updater` with GitHub Releases. A
+packaged app checks for updates at startup and every four hours, downloads a
+new release in the background, and asks whether to restart. Updates are
+configured for the Windows NSIS installer and Linux `deb`/AppImage packages.
+
+Releases are built by [`.github/workflows/release.yml`](.github/workflows/release.yml)
+when a tag matching `v*` is pushed. The tag must match the version in
+`package.json`; for example:
+
+```bash
+npm version patch --no-git-tag-version
+git add package.json package-lock.json
+git commit -m "Release v0.3.13"
+git tag v0.3.13
+git push origin main --follow-tags
+```
+
+Before the first release, add the `VITE_SUPABASE_URL` and
+`VITE_SUPABASE_PUBLISHABLE_KEY` repository secrets in GitHub if the distributed
+desktop build should connect to Supabase by default. Never add a service role
+key or database credentials. To disable update checks in a packaged diagnostic
+build, set `HUSH_DISABLE_AUTO_UPDATE=1` before launching it.
+
 The interface uses patterns adapted from the collections listed in the brief:
 messaging/sidebar and accessible controls from Untitled UI, dot patterns and
 animated lists from Magic UI, and encrypted text and focused glow from

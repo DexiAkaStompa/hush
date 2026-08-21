@@ -2,6 +2,7 @@ const {
   app,
   BrowserWindow,
   desktopCapturer,
+  dialog,
   ipcMain,
   net,
   protocol,
@@ -9,6 +10,7 @@ const {
 } = require("electron");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
+const { autoUpdater } = require("electron-updater");
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -29,6 +31,58 @@ const gotSingleInstanceLock = app.requestSingleInstanceLock();
 if (!gotSingleInstanceLock) app.quit();
 
 let mainWindow = null;
+let updateCheckTimer = null;
+let updateDialogOpen = false;
+
+function sendUpdateStatus(status, details = {}) {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.webContents.send("updates:status", { status, ...details });
+}
+
+function promptForDownloadedUpdate() {
+  if (updateDialogOpen || !mainWindow || mainWindow.isDestroyed()) return;
+  updateDialogOpen = true;
+  void dialog.showMessageBox(mainWindow, {
+    type: "info",
+    title: "Aggiornamento Hush disponibile",
+    message: "Una nuova versione di Hush è pronta per essere installata.",
+    detail: "Puoi riavviare ora oppure continuare a usare questa versione. L'aggiornamento verrà installato alla prossima chiusura dell'app.",
+    buttons: ["Riavvia ora", "Più tardi"],
+    defaultId: 0,
+    cancelId: 1,
+    noLink: true,
+  }).then(({ response }) => {
+    if (response === 0) autoUpdater.quitAndInstall();
+  }).catch(() => undefined).finally(() => {
+    updateDialogOpen = false;
+  });
+}
+
+function configureAutoUpdater() {
+  if (!app.isPackaged || process.env.HUSH_DISABLE_AUTO_UPDATE === "1") return;
+
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+  autoUpdater.on("checking-for-update", () => sendUpdateStatus("checking"));
+  autoUpdater.on("update-available", (info) => sendUpdateStatus("available", { version: info.version }));
+  autoUpdater.on("update-not-available", () => sendUpdateStatus("current"));
+  autoUpdater.on("download-progress", (progress) => sendUpdateStatus("downloading", { percent: progress.percent }));
+  autoUpdater.on("update-downloaded", (info) => {
+    sendUpdateStatus("downloaded", { version: info.version });
+    promptForDownloadedUpdate();
+  });
+  autoUpdater.on("error", (error) => {
+    // Update failures must never prevent Hush from starting or being used.
+    sendUpdateStatus("error", { message: error instanceof Error ? error.message : "Update check failed." });
+  });
+
+  const check = () => {
+    void autoUpdater.checkForUpdates().catch(() => undefined);
+  };
+  check();
+  updateCheckTimer = setInterval(check, 4 * 60 * 60 * 1000);
+  updateCheckTimer.unref?.();
+}
 
 const publicLavalink = {
   host: process.env.HUSH_LAVALINK_HOST || "lavalink.jirayu.net",
@@ -300,6 +354,7 @@ app.whenReady().then(async () => {
   configurePermissions();
   configureContentSecurityPolicy();
   await createMainWindow();
+  configureAutoUpdater();
   app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) void createMainWindow(); });
 });
 
@@ -310,5 +365,6 @@ app.on("second-instance", () => {
 });
 
 app.on("window-all-closed", () => {
+  if (updateCheckTimer) clearInterval(updateCheckTimer);
   if (process.platform !== "darwin") app.quit();
 });

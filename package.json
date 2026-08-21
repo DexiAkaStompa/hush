@@ -7,6 +7,10 @@
     "email": "hush@hush.app"
   },
   "homepage": "https://hush.app",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/DexiAkaStompa/hush.git"
+  },
   "private": true,
   "version": "0.3.12",
   "type": "module",
@@ -26,6 +30,7 @@
   "dependencies": {
     "@supabase/supabase-js": "latest",
     "@vitejs/plugin-react": "latest",
+    "electron-updater": "^6.8.9",
     "lucide-react": "latest",
     "react": "latest",
     "react-dom": "latest",
@@ -53,6 +58,12 @@
     "directories": {
       "output": "release"
     },
+    "publish": {
+      "provider": "github",
+      "owner": "DexiAkaStompa",
+      "repo": "hush",
+      "releaseType": "release"
+    },
     "files": [
       "dist/**/*",
       "electron/**/*",
@@ -73,7 +84,9 @@
       "artifactName": "Hush-Setup-${version}.${ext}"
     },
     "linux": {
-      "target": ["deb"],
+      "target": [
+        "deb"
+      ],
       "category": "Network;Chat",
       "icon": "build/icon.png",
       "maintainer": "Hush contributors <hush@hush.app>",
