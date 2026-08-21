@@ -113,7 +113,8 @@ Hush is distributed under the **Hush Source-Available Reciprocity License
 (HSRL) 1.0**, available in [LICENSE](LICENSE). Non-commercial use is allowed.
 Commercial use or distribution, including offering a modified version as a
 service, requires making the Corresponding Source for that same version freely
-available under the same license.
+available under the same license. (so basically you can use this to make a paid version but 
+you're gonna have to public the whole source of the app or i WILL sue your ass) 
 
 HSRL is a custom source-available license and is not an OSI-approved Open
 Source license. For commercial distribution, have the terms reviewed by a
