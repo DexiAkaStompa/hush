@@ -1,79 +1,120 @@
 # Hush
 
-![Logo di Hush](public/favicon.svg)
+![Hush logo](public/favicon.svg)
 
-Uno spazio privato per piccoli gruppi: server, canali, DM, chiamate e condivisione schermo, con la cifratura resa visibile e verificabile nell'interfaccia.
+A private space for small groups: servers, channels, DMs, calls, and screen
+sharing, with encryption made visible and verifiable in the interface.
 
-## Avvio locale
+## Local development
 
 ```bash
 npm install
 npm run dev
 ```
 
-Il client si apre su `http://127.0.0.1:5173`. Senza credenziali Supabase mostra una workspace locale vuota; quando Supabase è configurato mostra registrazione e accesso tramite username/password.
+The client starts at `http://127.0.0.1:5173`. Without Supabase credentials,
+it shows an empty local workspace; when Supabase is configured, it shows the
+username/password registration and login screens.
 
-La workspace non contiene server, canali, utenti o messaggi dimostrativi: dopo l'accesso legge esclusivamente profilo, spazi e conversazioni consentiti dalle policy RLS del progetto Supabase. Un database vuoto produce uno stato vuoto nell'interfaccia.
+The workspace contains no demo servers, channels, users, or messages. After
+login, it reads only the profiles, spaces, and conversations permitted by the
+Supabase project's RLS policies. An empty database produces an empty workspace.
 
-## Collegare Supabase
+## Connect Supabase
 
-1. Crea un progetto Supabase nella regione più vicina al gruppo.
-2. Dal pannello **Connect** copia Project URL e Publishable key dentro `.env`:
+1. Create a Supabase project in the region closest to your group.
+2. From the **Connect** panel, copy the Project URL and Publishable key into
+   `.env`:
 
-```env
-VITE_SUPABASE_URL=https://project-ref.supabase.co
-VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_...
-```
+   ```env
+   VITE_SUPABASE_URL=https://project-ref.supabase.co
+   VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_...
+   ```
 
-3. Segui la [guida completa Supabase](docs/SUPABASE_SETUP.md) ed esegui in ordine la migrazione iniziale, quella username/password e `20260821203000_functional_mvp.sql`.
-4. In **Realtime Settings** disabilita `Allow public access`: Hush utilizza esclusivamente canali privati autorizzati tramite RLS.
-5. In **Authentication → Providers → Email** lascia attivo il provider, abilita `Allow new users to sign up` e disabilita `Confirm Email`: gli indirizzi usati da Hush sono identificatori tecnici non recapitabili.
-6. In **Authentication → Password Security** imposta la lunghezza minima a 12 caratteri e, se il piano lo consente, abilita il controllo delle password compromesse.
-7. Riavvia `npm run dev`, scegli **Crea account** e registrati con username/password.
+3. Follow the [complete Supabase setup guide](docs/SUPABASE_SETUP.md) and run
+   the migrations in order: the initial migration, the username/password
+   migration, and `20260821203000_functional_mvp.sql`.
+4. In **Realtime Settings**, disable **Allow public access**. Hush uses only
+   private channels authorized through RLS.
+5. In **Authentication → Providers → Email**, keep the provider enabled,
+   enable **Allow new users to sign up**, and disable **Confirm Email**. Hush
+   uses technical, non-deliverable identifiers instead of user email
+   addresses.
+6. In **Authentication → Password Security**, set a minimum password length
+   of 12 characters and, if your plan supports it, enable compromised-password
+   protection.
+7. Restart `npm run dev`, choose **Create account**, and register with a
+   username and password.
 
-Non inserire mai `service_role`, password del database o JWT secret in una variabile `VITE_*`: tutto ciò che ha quel prefisso diventa pubblico nel bundle del browser.
+Never put `service_role`, a database password, or the JWT secret in a
+`VITE_*` variable: every value with that prefix is exposed in the browser
+bundle.
 
-## Comandi
+## Commands
 
 ```bash
 npm run test
 npm run build
 ```
 
-## Licenza
+## Windows desktop app
 
-Hush è distribuito con la **Hush Source-Available Reciprocity License (HSRL)
-1.0**, disponibile nel file [LICENSE](LICENSE). L'uso non commerciale è
-consentito. L'uso o la distribuzione commerciale, incluso offrire una versione
-modificata come servizio, richiede di rendere disponibile gratuitamente il
-Corresponding Source della stessa versione con la stessa licenza.
-
-HSRL è una licenza source-available personalizzata e non una licenza Open
-Source approvata da OSI. Per distribuzioni commerciali, fai verificare i
-termini da un professionista legale.
-
-## App desktop per Windows
-
-Per avviare Hush come app Electron durante lo sviluppo:
+To run Hush as an Electron app during development:
 
 ```bash
 npm run desktop:dev
 ```
 
-Per creare l'installer Windows x64:
+To create the Windows x64 installer:
 
 ```bash
 npm run desktop:build
 ```
 
-L'installer viene scritto in `release/Hush-Setup-<versione>.exe`. La build desktop usa un protocollo locale `hush://`, isolamento del contesto e sandbox; link esterni, navigazioni non autorizzate e permessi media provenienti da origini diverse da Hush vengono bloccati. Su Windows la condivisione schermo apre un selettore interno per scegliere in modo esplicito una finestra o uno schermo.
+The installer is written to `release/Hush-Setup-<version>.exe`. The desktop
+build uses the local `hush://` protocol, context isolation, and sandboxing;
+external links, unauthorized navigations, and media permissions from origins
+other than Hush are blocked. On Windows, screen sharing opens an internal
+picker so the user can explicitly choose a window or display.
 
-Le variabili `VITE_*` vengono incorporate nel client durante la compilazione: configura `.env` prima di creare l'installer e usa esclusivamente la Project URL e la Publishable key di Supabase. L'installer locale non è firmato digitalmente, quindi Windows SmartScreen può mostrare un avviso; per distribuirlo agli amici senza quell'avviso servirà un certificato di code signing.
+`VITE_*` variables are embedded into the client at build time. Configure `.env`
+before creating the installer and use only the Supabase Project URL and
+Publishable key. The local installer is not digitally signed, so Windows
+SmartScreen may show a warning. Distributing it without that warning requires
+a code-signing certificate.
 
-L'interfaccia usa pattern adattati dalle raccolte indicate nel brief: messaging/sidebar e controlli accessibili da Untitled UI; dot pattern e animated list da Magic UI; encrypted text e glow mirato da Aceternity UI. Il codice è locale e non carica immagini, font o analytics di terze parti.
+The interface uses patterns adapted from the collections listed in the brief:
+messaging/sidebar and accessible controls from Untitled UI, dot patterns and
+animated lists from Magic UI, and encrypted text and focused glow from
+Aceternity UI. All code is local; the app does not load third-party images,
+fonts, or analytics.
 
-Supabase Auth gestisce sessioni e password: ogni username viene tradotto localmente in un identificatore tecnico `username@users.hush.invalid`, mai mostrato all'utente. Supabase conserva soltanto il relativo hash bcrypt con salt casuale. Postgres conserva ciphertext e metadati minimi; Realtime Broadcast distribuisce i nuovi record su topic granulari per conversazione.
+Supabase Auth manages sessions and passwords. Each username is locally mapped
+to a technical identifier such as `username@users.hush.invalid`, which is
+never shown to users. Supabase stores only the corresponding bcrypt hash with
+a random salt. Postgres stores ciphertext and minimal metadata; Realtime
+Broadcast distributes new records on conversation-scoped topics.
 
-Senza email o telefono non esiste recupero automatico. L'amministratore può assegnare una nuova password tramite Supabase Auth Admin (`auth.admin.updateUserById`), eseguito esclusivamente da un ambiente server con Secret key. Non salvare password o hash alternativi nelle tabelle `public` e non modificare direttamente `auth.users`.
+Without an email address or phone number, there is no automatic password
+recovery. An administrator can assign a new password through Supabase Auth
+Admin (`auth.admin.updateUserById`), executed only from a server-side
+environment with the Secret key. Do not store passwords or alternate hashes
+in `public` tables and do not edit `auth.users` directly.
 
-Leggi [l'architettura E2EE](docs/ARCHITECTURE.md) prima di collegare utenti reali. Il [player musicale client-only](docs/MUSIC_BRIDGE.md) sincronizza comandi e posizione tramite Supabase senza richiedere un server audio; supporta sorgenti HTTPS dirette, mentre un nodo Lavalink pubblico non può essere usato come flusso browser.
+Read the [E2EE architecture](docs/ARCHITECTURE.md) before connecting real
+users. The [client-only music player](docs/MUSIC_BRIDGE.md) synchronizes
+commands and playback position through Supabase without requiring an audio
+server. It supports direct HTTPS sources; a public Lavalink node cannot be
+used directly as a browser audio stream.
+
+## License
+
+Hush is distributed under the **Hush Source-Available Reciprocity License
+(HSRL) 1.0**, available in [LICENSE](LICENSE). Non-commercial use is allowed.
+Commercial use or distribution, including offering a modified version as a
+service, requires making the Corresponding Source for that same version freely
+available under the same license.
+
+HSRL is a custom source-available license and is not an OSI-approved Open
+Source license. For commercial distribution, have the terms reviewed by a
+qualified legal professional.
