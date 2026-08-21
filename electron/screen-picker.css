@@ -1,0 +1,16 @@
+:root { color-scheme: dark; font-family: Aptos, "Segoe UI Variable", "Segoe UI", sans-serif; background: #0b0f14; color: #eef4f3; }
+* { box-sizing: border-box; }
+body { margin: 0; min-height: 100vh; display: flex; flex-direction: column; background: radial-gradient(circle at 20% 0, #192530, #0b0f14 42%); }
+header { padding: 28px 30px 18px; border-bottom: 1px solid #273442; }
+.eyebrow { color: #6ee7b7; font: 9px Consolas, monospace; letter-spacing: .14em; text-transform: uppercase; }
+h1 { margin: 7px 0 4px; font: 600 27px Bahnschrift, sans-serif; letter-spacing: -.03em; }
+p { margin: 0; color: #8b98a7; font-size: 12px; }
+main { flex: 1; min-height: 0; overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(235px, 1fr)); align-content: start; gap: 12px; padding: 20px 30px; }
+.source { border: 1px solid #2b3947; border-radius: 10px; padding: 0; overflow: hidden; background: #151e29; color: #eef4f3; text-align: left; cursor: pointer; transition: border-color .16s, transform .16s; }
+.source:hover, .source:focus-visible { border-color: #6ee7b7; transform: translateY(-2px); outline: none; }
+.source img { display: block; width: 100%; aspect-ratio: 16/9; object-fit: cover; background: #080c11; border-bottom: 1px solid #273442; }
+.source span { display: block; padding: 10px 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 11px; }
+.loading { color: #8b98a7; font: 10px Consolas, monospace; }
+footer { padding: 14px 30px 20px; display: flex; justify-content: flex-end; border-top: 1px solid #273442; }
+footer button { height: 36px; padding: 0 18px; border: 1px solid #344454; border-radius: 8px; background: #18222e; color: #eef4f3; cursor: pointer; }
+footer button:hover { background: #23303d; }

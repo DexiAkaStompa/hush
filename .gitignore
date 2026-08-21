@@ -1,0 +1,13 @@
+node_modules
+dist
+.vite
+*.local
+*.log
+.env
+.env.*
+!.env.example
+release
+release-*
+supabase/.temp
+build/icon.png
+build/icon.ico
