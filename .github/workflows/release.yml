@@ -4,9 +4,18 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Existing version tag to build and publish (for example v0.3.13)"
+        required: true
+        default: "v0.3.13"
 
 permissions:
   contents: write
+
+env:
+  RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
 
 jobs:
   windows:
@@ -27,7 +36,7 @@ jobs:
 
       - name: Verify tag matches package version
         shell: bash
-        run: test "${GITHUB_REF_NAME#v}" = "$(node -p "require('./package.json').version")"
+        run: test "${RELEASE_TAG#v}" = "$(node -p "require('./package.json').version")"
 
       - name: Build Windows installer metadata
         env:
@@ -65,7 +74,7 @@ jobs:
         run: npm ci
 
       - name: Verify tag matches package version
-        run: test "${GITHUB_REF_NAME#v}" = "$(node -p "require('./package.json').version")"
+        run: test "${RELEASE_TAG#v}" = "$(node -p "require('./package.json').version")"
 
       - name: Build Linux packages and metadata
         env:
@@ -109,15 +118,15 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           mapfile -t files < <(find release-assets -type f -print)
-          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "Release $GITHUB_REF_NAME already exists; updating its assets."
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $RELEASE_TAG already exists; updating its assets."
           else
-            gh release create "$GITHUB_REF_NAME" \
+            gh release create "$RELEASE_TAG" \
               --repo "$GITHUB_REPOSITORY" \
-              --title "Hush $GITHUB_REF_NAME" \
+              --title "Hush $RELEASE_TAG" \
               --generate-notes \
               --verify-tag
           fi
-          gh release upload "$GITHUB_REF_NAME" "${files[@]}" \
+          gh release upload "$RELEASE_TAG" "${files[@]}" \
             --repo "$GITHUB_REPOSITORY" \
             --clobber
