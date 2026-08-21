@@ -42,6 +42,7 @@ jobs:
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
+          VITE_MUSIC_BRIDGE_URL: ${{ secrets.VITE_MUSIC_BRIDGE_URL }}
         run: |
           npm run icons:build
           npm run build
@@ -80,6 +81,7 @@ jobs:
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
+          VITE_MUSIC_BRIDGE_URL: ${{ secrets.VITE_MUSIC_BRIDGE_URL }}
         run: |
           npm run icons:build
           npm run build

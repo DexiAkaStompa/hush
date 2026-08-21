@@ -29,6 +29,7 @@ Supabase project's RLS policies. An empty database produces an empty workspace.
    ```env
    VITE_SUPABASE_URL=https://project-ref.supabase.co
    VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_...
+   VITE_MUSIC_BRIDGE_URL=https://music.example.com
    ```
 
 3. Follow the [complete Supabase setup guide](docs/SUPABASE_SETUP.md) and run
@@ -102,11 +103,12 @@ git tag v0.3.13
 git push origin main --follow-tags
 ```
 
-Before the first release, add the `VITE_SUPABASE_URL` and
-`VITE_SUPABASE_PUBLISHABLE_KEY` repository secrets in GitHub if the distributed
-desktop build should connect to Supabase by default. Never add a service role
-key or database credentials. To disable update checks in a packaged diagnostic
-build, set `HUSH_DISABLE_AUTO_UPDATE=1` before launching it.
+Before the first release, add the `VITE_SUPABASE_URL`,
+`VITE_SUPABASE_PUBLISHABLE_KEY`, and `VITE_MUSIC_BRIDGE_URL` repository secrets
+in GitHub if the distributed desktop build should connect to Supabase and the
+Windows bridge by default. Never add a service role key or database
+credentials. To disable update checks in a packaged diagnostic build, set
+`HUSH_DISABLE_AUTO_UPDATE=1` before launching it.
 
 The interface uses patterns adapted from the collections listed in the brief:
 messaging/sidebar and accessible controls from Untitled UI, dot patterns and

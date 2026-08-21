@@ -18,3 +18,11 @@ interface HushWindowControls {
 interface Window {
   hushWindow?: HushWindowControls;
 }
+
+interface ImportMetaEnv {
+  readonly VITE_MUSIC_BRIDGE_URL?: string;
+}
+
+interface ImportMeta {
+  readonly env: ImportMetaEnv;
+}

@@ -43,5 +43,20 @@ export async function resolveTrack(identifier) {
     author: String(track.info.author || "").slice(0, 120),
     url: track.info.uri,
     length: Number.isFinite(track.info.length) ? track.info.length : 0,
+    sourceName: typeof track.info.sourceName === "string" ? track.info.sourceName : null,
   };
+}
+
+export async function resolvePlaybackSource(identifier) {
+  const track = await resolveTrack(identifier);
+  const sourceName = String(track.sourceName || "").toLowerCase();
+  const host = (() => {
+    try { return new URL(track.url).hostname.toLowerCase(); } catch { return ""; }
+  })();
+  if (sourceName === "spotify" || host === "open.spotify.com" || host.endsWith(".spotify.com")) {
+    const matches = await searchTracks(`${track.title} ${track.author}`, "youtube");
+    if (!matches[0]?.url) throw new Error("Spotify non ha una sorgente YouTube corrispondente.");
+    return { ...track, url: matches[0].url, sourceName: "youtube" };
+  }
+  return track;
 }

@@ -12,6 +12,7 @@ import {
   synchronizedMusicPosition,
   type ConversationMusicState,
 } from "../lib/music";
+import { isMusicBridgeConfigured, requestMusicStream, searchMusicBridge } from "../lib/musicBridge";
 import { supabase } from "../lib/supabase";
 
 const VOLUME_KEY = "hush:room-music-volume:v1";
@@ -54,6 +55,7 @@ export function RoomMusic({ conversationId }: { conversationId: string }) {
   const [searchProvider, setSearchProvider] = useState<"youtube" | "spotify">("youtube");
   const [searchResults, setSearchResults] = useState<Array<{ title: string; author: string; url: string; artworkUrl: string | null; length: number }>>([]);
   const [searching, setSearching] = useState(false);
+  const [streamUrl, setStreamUrl] = useState<string | null>(null);
 
   useEffect(() => {
     const client = supabase;
@@ -117,7 +119,8 @@ export function RoomMusic({ conversationId }: { conversationId: string }) {
   useEffect(() => {
     const player = audio.current;
     if (!player) return;
-    if (!music?.source_url || musicProvider(music.source_url) !== "direct") {
+    if (!music?.source_url) {
+      setStreamUrl(null);
       player.pause();
       player.removeAttribute("src");
       player.load();
@@ -125,36 +128,53 @@ export function RoomMusic({ conversationId }: { conversationId: string }) {
       setPlayhead(0);
       return;
     }
-
-    if (player.dataset.source !== music.source_url) {
-      player.dataset.source = music.source_url;
-      player.src = music.source_url;
+    let active = true;
+    const provider = musicProvider(music.source_url);
+    const expected = synchronizedMusicPosition(music);
+    const setSource = (source: string) => {
+      if (!active) return;
+      setStreamUrl(source);
+      player.dataset.source = source;
+      player.src = source;
       player.load();
-    }
-
-    const alignPlayback = () => {
-      const expected = synchronizedMusicPosition(music);
-      const maximum = Number.isFinite(player.duration) ? Math.max(0, player.duration - 0.1) : expected;
-      const target = Math.min(expected, maximum);
-      if (Math.abs(player.currentTime - target) > 1.1) player.currentTime = target;
-      if (music.is_playing) {
-        void player.play().catch(() => setNotice("Premi Play per autorizzare l’audio su questo dispositivo."));
-      } else {
-        player.pause();
-      }
-      setPlayhead(target);
+      const alignPlayback = () => {
+        if (!active) return;
+        const maximum = Number.isFinite(player.duration) ? Math.max(0, player.duration - 0.1) : expected;
+        const target = Math.min(expected, maximum);
+        if (Math.abs(player.currentTime - target) > 1.1) player.currentTime = target;
+        if (music.is_playing) {
+          void player.play().catch(() => setNotice("Premi Play per autorizzare l'audio su questo dispositivo."));
+        } else {
+          player.pause();
+        }
+        setPlayhead(target);
+      };
+      player.addEventListener("loadedmetadata", alignPlayback, { once: true });
     };
 
-    if (player.readyState >= HTMLMediaElement.HAVE_METADATA) alignPlayback();
-    else player.addEventListener("loadedmetadata", alignPlayback, { once: true });
-    return () => player.removeEventListener("loadedmetadata", alignPlayback);
+    if (provider === "direct" || !isMusicBridgeConfigured) {
+      setStreamUrl(null);
+      setSource(music.source_url);
+    } else {
+      setStreamUrl(null);
+      setNotice("Connessione al music bridge…");
+      void requestMusicStream(music.source_url, expected)
+        .then((url) => {
+          if (active) {
+            setNotice("");
+            setSource(url);
+          }
+        })
+        .catch((error) => active && setNotice(commandError(error)));
+    }
+    return () => { active = false; };
   }, [music]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
       const player = audio.current;
       if (!player) return;
-      if (music?.source_url && musicProvider(music.source_url) !== "direct") {
+      if (music?.source_url && musicProvider(music.source_url) !== "direct" && !streamUrl) {
         setPlayhead(synchronizedMusicPosition(music));
         return;
       }
@@ -165,7 +185,7 @@ export function RoomMusic({ conversationId }: { conversationId: string }) {
       if (Math.abs(player.currentTime - expected) > 2) player.currentTime = expected;
     }, 1000);
     return () => window.clearInterval(timer);
-  }, [music]);
+  }, [music, streamUrl]);
 
   const commit = async (next: {
     sourceUrl: string | null;
@@ -212,11 +232,13 @@ export function RoomMusic({ conversationId }: { conversationId: string }) {
   const searchMusic = async (event: FormEvent) => {
     event.preventDefault();
     const query = searchQuery.trim();
-    if (!query || !window.hushWindow?.searchMusic) return;
+    if (!query || (!window.hushWindow?.searchMusic && !isMusicBridgeConfigured)) return;
     setSearching(true);
     setNotice("");
     try {
-      setSearchResults(await window.hushWindow.searchMusic(query, searchProvider));
+      setSearchResults(isMusicBridgeConfigured
+        ? await searchMusicBridge(query, searchProvider)
+        : await window.hushWindow!.searchMusic(query, searchProvider));
     } catch (error) {
       setSearchResults([]);
       setNotice(commandError(error));
@@ -289,7 +311,7 @@ export function RoomMusic({ conversationId }: { conversationId: string }) {
         onDurationChange={(event) => setDuration(Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration : 0)}
         onError={() => setNotice("Sorgente non riproducibile. Usa il link HTTPS diretto al file o allo stream audio.")}
       />
-      {embedUrl ? (
+      {embedUrl && !isMusicBridgeConfigured ? (
         <div className="music-provider-player">
           <iframe key={`${music?.source_url}:${music?.is_playing}:${music?.revision}:${muted}`} src={embedUrl} title={music?.title ?? "Player musicale"} allow="autoplay; encrypted-media; picture-in-picture" referrerPolicy="origin" />
           <small>{provider === "spotify" ? "Spotify: volume e controlli avanzati nel player ufficiale" : "YouTube: player ufficiale sincronizzato"}</small>
