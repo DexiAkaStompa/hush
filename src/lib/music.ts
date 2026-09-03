@@ -6,7 +6,7 @@ export type ConversationMusicState = {
   position_seconds: number;
   anchor_at: string;
   revision: number;
-  updated_by: string;
+  updated_by: string | null;
   updated_at: string;
 };
 
@@ -69,7 +69,7 @@ export function normalizeMusicState(value: unknown): ConversationMusicState | nu
     || typeof candidate.position_seconds !== "number"
     || typeof candidate.anchor_at !== "string"
     || typeof candidate.revision !== "number"
-    || typeof candidate.updated_by !== "string"
+    || (candidate.updated_by !== null && typeof candidate.updated_by !== "string")
     || typeof candidate.updated_at !== "string"
   ) return null;
   return candidate as ConversationMusicState;

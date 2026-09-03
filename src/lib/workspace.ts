@@ -20,12 +20,12 @@ export type Conversation = {
   space_id: string | null;
   kind: "channel" | "voice_channel" | "group_dm";
   name: string;
-  created_by: string;
+  created_by: string | null;
 };
 
 export type DecryptedMessage = {
   id: string;
-  senderId: string;
+  senderId: string | null;
   author: string;
   initials: string;
   body: string;
@@ -116,15 +116,15 @@ export async function loadAndDecryptMessages(
   const profileById = new Map(profiles.map((profile) => [profile.id, profile]));
   const context = `hush:conversation:${conversationId}:epoch:0`;
   return Promise.all(((data ?? []) as EncryptedMessageRow[]).map(async (row) => {
-    const profile = profileById.get(row.sender_id);
+    const profile = row.sender_id ? profileById.get(row.sender_id) : undefined;
     const encrypted = { v: 1 as const, iv: row.nonce, ciphertext: row.ciphertext };
     let body = "Messaggio non decifrabile con la chiave corrente.";
     try { body = await decryptText(encrypted, key, context); } catch { /* keep explicit failure */ }
     return {
       id: row.id,
       senderId: row.sender_id,
-      author: profile?.display_name ?? "Membro",
-      initials: initialsFor(profile?.display_name ?? "Membro"),
+      author: profile?.display_name ?? "Utente eliminato",
+      initials: initialsFor(profile?.display_name ?? "Utente eliminato"),
       body,
       createdAt: row.created_at,
       encrypted,

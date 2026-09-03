@@ -4,7 +4,7 @@ import { supabase } from "./supabase";
 export type EncryptedMessageRow = {
   id: string;
   conversation_id: string;
-  sender_id: string;
+  sender_id: string | null;
   algorithm: "AES-256-GCM" | "MLS-1.0";
   key_epoch: number;
   nonce: string;
