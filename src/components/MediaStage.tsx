@@ -4,6 +4,7 @@ import { Maximize2, Mic, MicOff, Minimize2, MonitorUp, PhoneOff, Video, VideoOff
 import { callTopic, type WebRtcSignal } from "../lib/realtime";
 import { supabase } from "../lib/supabase";
 import { RoomMusic } from "./RoomMusic";
+import { playCallSound } from "../lib/interaction-sound";
 
 type MediaStageProps = {
   open: boolean;
@@ -293,6 +294,7 @@ export function MediaStage({ open, expanded, startWithVideo, conversationId, roo
     if (audioTrack) {
       audioTrack.enabled = !audioTrack.enabled;
       setMic(audioTrack.enabled);
+      playCallSound(audioTrack.enabled ? "enabled" : "disabled");
       return;
     }
     try {
@@ -306,6 +308,7 @@ export function MediaStage({ open, expanded, startWithVideo, conversationId, roo
       setLocalStream(new MediaStream(nextStream.getTracks()));
       setMic(true);
       await renegotiatePeers();
+      playCallSound("enabled");
     } catch {
       setNotice("Permesso microfono non concesso.");
     }
@@ -316,6 +319,7 @@ export function MediaStage({ open, expanded, startWithVideo, conversationId, roo
     if (videoTrack && !sharing) {
       videoTrack.enabled = !videoTrack.enabled;
       setCamera(videoTrack.enabled);
+      playCallSound(videoTrack.enabled ? "enabled" : "disabled");
       return;
     }
     try {
@@ -329,6 +333,7 @@ export function MediaStage({ open, expanded, startWithVideo, conversationId, roo
       setLocalStream(new MediaStream(nextStream.getTracks()));
       setCamera(true);
       await renegotiatePeers();
+      playCallSound("enabled");
     } catch {
       setNotice("Permesso videocamera non concesso.");
     }
@@ -353,6 +358,7 @@ export function MediaStage({ open, expanded, startWithVideo, conversationId, roo
       setFocusedTile(null);
       setLocalStream(localStreamRef.current ? new MediaStream(localStreamRef.current.getTracks()) : null);
       await renegotiatePeers();
+      playCallSound("disabled");
       return;
     }
     try {
@@ -387,6 +393,7 @@ export function MediaStage({ open, expanded, startWithVideo, conversationId, roo
         void renegotiatePeers();
       }, { once: true });
       await renegotiatePeers();
+      playCallSound("enabled");
     } catch {
       setNotice("Condivisione schermo annullata.");
     }
@@ -405,10 +412,10 @@ export function MediaStage({ open, expanded, startWithVideo, conversationId, roo
       </div>
       <p className="media-notice" role="status">{notice}</p>
       <div className="call-controls">
-        <button className={mic ? "control active" : "control"} onClick={() => { void toggleMic(); }} aria-pressed={mic} aria-label={mic ? "Disattiva microfono" : "Attiva microfono"}>{mic ? <Mic size={19} /> : <MicOff size={19} />}</button>
-        <button className={camera ? "control active" : "control"} onClick={() => { void toggleCamera(); }} aria-pressed={camera} aria-label={camera ? "Disattiva videocamera" : "Attiva videocamera"}>{camera ? <Video size={19} /> : <VideoOff size={19} />}</button>
+        <button className={mic ? "control mic active" : "control mic"} onClick={() => { void toggleMic(); }} aria-pressed={mic} aria-label={mic ? "Disattiva microfono" : "Attiva microfono"}>{mic ? <Mic size={19} /> : <MicOff size={19} />}</button>
+        <button className={camera ? "control camera active" : "control camera"} onClick={() => { void toggleCamera(); }} aria-pressed={camera} aria-label={camera ? "Disattiva videocamera" : "Attiva videocamera"}>{camera ? <Video size={19} /> : <VideoOff size={19} />}</button>
         <button className={sharing ? "control share active" : "control share"} onClick={() => { void toggleShare(); }} aria-pressed={sharing}><MonitorUp size={19} /><span>{sharing ? "Interrompi" : "Condividi"}</span></button>
-        <button className="control hangup" onClick={onClose} aria-label="Lascia chiamata"><PhoneOff size={19} /></button>
+        <button className="control hangup" onClick={() => { playCallSound("leave"); onClose(); }} aria-label="Lascia chiamata"><PhoneOff size={19} /></button>
       </div>
     </section>
   );
