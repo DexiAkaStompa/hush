@@ -1132,7 +1132,9 @@ html, body, #root { background: var(--app-background); }
 :root[data-theme="hush-void"] .app-shell .control { color: #bac4cf; }
 :root[data-theme="hush-void"] .app-shell .control.mic.active { color: #86bffc; background: rgba(77, 151, 241, .16); border-color: rgba(134, 191, 252, .4); }
 :root[data-theme="hush-void"] .app-shell .control.camera.active { color: #70dbb0; background: rgba(67, 191, 145, .15); border-color: rgba(112, 219, 176, .4); }
-:root[data-theme="hush-void"] .app-shell .control.share.active { color: #dfb3ff; background: rgba(183, 124, 235, .17); border-color: rgba(223, 179, 255, .42); }
+:root[data-theme="hush-void"] .app-shell .control.share { color: #70dbb0; border-color: rgba(112, 219, 176, .28); }
+:root[data-theme="hush-void"] .app-shell .control.share.active { color: #9cf0ca; background: rgba(67, 191, 145, .22); border-color: rgba(112, 219, 176, .5); }
+:root[data-theme="hush-void"] .app-shell .control.hangup { color: #ffb0ad; background: rgba(211, 79, 82, .22); border-color: rgba(255, 138, 135, .44); }
 :root[data-theme="hush-void"] .app-shell .server-icon.selected,
 :root[data-theme="hush-void"] .app-shell .channel-row.active,
 :root[data-theme="hush-void"] .app-shell .dm-row.active {
