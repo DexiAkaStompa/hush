@@ -1022,7 +1022,7 @@ body::before, body::after { display: none; }
   --muted: #8c96a1;
   --frost: #e9edf2;
   --coral: #c87d75;
-  --mint: #9bbcab;
+  --mint: #aebdcb;
   --blue: #a8b8c9;
   --app-background: #080a0d;
   --rail-background: #080a0d;
@@ -1144,4 +1144,14 @@ html, body, #root { background: var(--app-background); }
   background: rgba(2, 4, 7, .52);
   border-color: rgba(225, 235, 245, .12);
   box-shadow: inset 0 1px rgba(255,255,255,.025);
+}
+
+:root[data-theme="hush-void"] button:focus-visible,
+:root[data-theme="hush-void"] input:focus-visible,
+:root[data-theme="hush-void"] .auth-input:focus-within,
+:root[data-theme="hush-void"] .modal-form input:focus,
+:root[data-theme="hush-void"] .music-source-form input:focus {
+  outline-color: rgba(185, 204, 222, .72);
+  border-color: rgba(185, 204, 222, .66);
+  box-shadow: 0 0 0 4px rgba(166, 187, 208, .12), inset 0 1px rgba(255,255,255,.07);
 }
