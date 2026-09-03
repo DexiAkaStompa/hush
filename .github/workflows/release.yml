@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: "Existing version tag to build and publish (for example v0.3.13)"
+        description: "Existing version tag to build and publish (for example v0.4.0)"
         required: true
-        default: "v0.3.13"
+        default: "v0.4.0"
 
 permissions:
   contents: write
@@ -55,7 +55,7 @@ jobs:
           path: |
             release/*.exe
             release/*.blockmap
-            release/*.yml
+            release/latest*.yml
           if-no-files-found: error
 
   linux:
@@ -95,7 +95,7 @@ jobs:
             release/*.deb
             release/*.AppImage
             release/*.blockmap
-            release/*.yml
+            release/latest*.yml
           if-no-files-found: error
 
   publish:
@@ -119,7 +119,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          mapfile -t files < <(find release-assets -type f -print)
+          mapfile -t files < <(find release-assets -type f \( -name '*.exe' -o -name '*.deb' -o -name '*.AppImage' -o -name '*.blockmap' -o -name 'latest*.yml' \) -print)
           if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "Release $RELEASE_TAG already exists; updating its assets."
           else
