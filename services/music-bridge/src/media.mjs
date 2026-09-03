@@ -70,13 +70,17 @@ function commandOutput(command, args, timeoutMs = 30_000) {
   });
 }
 
+export function requiresLavalinkResolution(source) {
+  const host = new URL(source).hostname.toLowerCase();
+  return host === "spotify.com" || host.endsWith(".spotify.com");
+}
+
 async function resolveSource(source) {
   const normalized = sourceUrl(source);
-  const parsed = new URL(normalized);
-  const host = parsed.hostname.toLowerCase();
-  const isProvider = ["youtube.com", "youtu.be", "spotify.com", "soundcloud.com"]
-    .some((entry) => host === entry || host.endsWith(`.${entry}`));
-  if (!isProvider && config.allowDirectSources) return normalized;
+  const isSpotify = requiresLavalinkResolution(normalized);
+  // yt-dlp accepts YouTube, SoundCloud and approved direct streams as-is.
+  // Only Spotify needs Lavalink to find a playable YouTube counterpart.
+  if (!isSpotify) return normalized;
   return (await resolvePlaybackSource(normalized)).url;
 }
 
