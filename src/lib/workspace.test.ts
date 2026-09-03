@@ -4,7 +4,7 @@ import { initialsFor, readableError } from "./workspace";
 describe("workspace helpers", () => {
   it("derives stable initials from real display names", () => {
     expect(initialsFor("Ada Lovelace")).toBe("AL");
-    expect(initialsFor("  mattia  ")).toBe("M");
+    expect(initialsFor("  User  ")).toBe("U");
     expect(initialsFor("")).toBe("TU");
   });
 

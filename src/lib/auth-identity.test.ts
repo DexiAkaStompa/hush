@@ -8,8 +8,8 @@ import {
 
 describe("username auth identity", () => {
   it("normalizes usernames consistently", () => {
-    expect(normalizeUsername("  Mattia_91 ")).toBe("mattia_91");
-    expect(usernameToInternalEmail("Mattia_91")).toBe("mattia_91@users.hush.invalid");
+    expect(normalizeUsername("  Username ")).toBe("username");
+    expect(usernameToInternalEmail("Username")).toBe("username@users.hush.invalid");
   });
 
   it("accepts only predictable usernames", () => {

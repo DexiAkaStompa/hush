@@ -105,12 +105,12 @@ export function AuthScreen() {
             {mode === "register" ? (
               <>
                 <label htmlFor="auth-display-name">Nome visualizzato</label>
-                <div className="auth-input"><UserRound size={17} /><input id="auth-display-name" autoComplete="name" maxLength={64} required value={displayName} onChange={(event) => setDisplayName(event.target.value)} placeholder="Mattia" /></div>
+                <div className="auth-input"><UserRound size={17} /><input id="auth-display-name" autoComplete="name" maxLength={64} required value={displayName} onChange={(event) => setDisplayName(event.target.value)} placeholder="Nickname" /></div>
               </>
             ) : null}
 
             <label htmlFor="auth-username">Username</label>
-            <div className="auth-input"><UserRound size={17} /><input id="auth-username" autoComplete="username" minLength={3} maxLength={24} pattern="[A-Za-z0-9_]+" required value={username} onChange={(event) => setUsername(event.target.value)} placeholder="mattia_91" /></div>
+            <div className="auth-input"><UserRound size={17} /><input id="auth-username" autoComplete="username" minLength={3} maxLength={24} pattern="[A-Za-z0-9_]+" required value={username} onChange={(event) => setUsername(event.target.value)} placeholder="Username" /></div>
             <span className={`field-hint ${username && !validUsername ? "hint-error" : ""}`}>3–24 caratteri: lettere, numeri e underscore.</span>
 
             <label htmlFor="auth-password">Password</label>

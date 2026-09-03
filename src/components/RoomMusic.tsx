@@ -1,6 +1,7 @@
 import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import type { RealtimeChannel } from "@supabase/supabase-js";
-import { Link2, Music2, Pause, Play, RotateCcw, Search, Volume2, VolumeX, X } from "lucide-react";
+import { Link2, Music2, Pause, Play, RotateCcw, Search, SkipForward, Volume2, VolumeX, X } from "lucide-react";
+import { playMusicSound } from "../lib/interaction-sound";
 import {
   extractMusicBroadcast,
   formatMusicTime,
@@ -225,6 +226,7 @@ export function RoomMusic({ conversationId }: { conversationId: string }) {
       return;
     }
     const cleanTitle = title.trim() || titleFromUrl(cleanUrl);
+    void playMusicSound("skipNext");
     void commit({ sourceUrl: cleanUrl, title: cleanTitle, playing: true, position: 0 })
       .then((saved) => { if (saved) setEditorOpen(false); });
   };
@@ -248,6 +250,7 @@ export function RoomMusic({ conversationId }: { conversationId: string }) {
   };
 
   const chooseSearchResult = (result: { title: string; url: string }) => {
+    void playMusicSound("skipNext");
     void commit({ sourceUrl: result.url, title: result.title, playing: true, position: 0 })
       .then((saved) => { if (saved) { setSearchResults([]); setSearchQuery(""); setEditorOpen(false); } });
   };
@@ -265,6 +268,7 @@ export function RoomMusic({ conversationId }: { conversationId: string }) {
       return;
     }
     const nextPlaying = !music.is_playing;
+    void playMusicSound(nextPlaying ? "play" : "pause");
     if (musicProvider(music.source_url) === "direct") {
       if (nextPlaying) void audio.current?.play().catch(() => undefined);
       else audio.current?.pause();
@@ -279,6 +283,7 @@ export function RoomMusic({ conversationId }: { conversationId: string }) {
 
   const commitSeek = () => {
     if (pendingSeek === null || !music?.source_url) return;
+    void playMusicSound("seek");
     if (musicProvider(music.source_url) === "direct" && audio.current) audio.current.currentTime = pendingSeek;
     void commit({
       sourceUrl: music.source_url,
@@ -327,6 +332,18 @@ export function RoomMusic({ conversationId }: { conversationId: string }) {
           <button className="music-play" onClick={togglePlayback} disabled={busy} aria-label={music.is_playing ? "Metti in pausa per tutti" : "Riproduci per tutti"}>
             {music.is_playing ? <Pause size={17} /> : <Play size={17} />}
           </button>
+          <button
+            onClick={() => {
+              void playMusicSound("skipNext");
+              setSourceUrl(music.source_url ?? "");
+              setTitle(music.title ?? "");
+              setEditorOpen(true);
+            }}
+            aria-label="Traccia successiva o cambia sorgente"
+            title="Traccia successiva"
+          >
+            <SkipForward size={16} />
+          </button>
           <div className="music-timeline">
             <input
               type="range"
@@ -350,10 +367,27 @@ export function RoomMusic({ conversationId }: { conversationId: string }) {
       )}
 
       <div className="music-local-volume" title="Questo volume vale solo sul tuo dispositivo">
-        <button onClick={() => setMuted((current) => !current)} aria-label={muted ? "Riattiva musica per me" : "Muta musica per me"}>
+        <button
+          onClick={() => {
+            setMuted((current) => !current);
+            void playMusicSound("volume");
+          }}
+          aria-label={muted ? "Riattiva musica per me" : "Muta musica per me"}
+        >
           {muted || volume === 0 ? <VolumeX size={16} /> : <Volume2 size={16} />}
         </button>
-        <input type="range" min={0} max={1} step={0.02} value={volume} onChange={(event) => setVolume(Number(event.target.value))} aria-label="Volume musica personale" />
+        <input
+          type="range"
+          min={0}
+          max={1}
+          step={0.02}
+          value={volume}
+          onChange={(event) => {
+            setVolume(Number(event.target.value));
+            void playMusicSound("volume");
+          }}
+          aria-label="Volume musica personale"
+        />
         <small>solo per me</small>
       </div>
 

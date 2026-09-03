@@ -47,6 +47,7 @@ import {
 } from "./lib/realtime";
 import { isSupabaseConfigured, supabase } from "./lib/supabase";
 import { applyTheme, readTheme, THEMES, type ThemeId } from "./lib/themes";
+import { playCallSound, playChatSound } from "./lib/interaction-sound";
 import {
   initialsFor,
   loadAndDecryptMessages,
@@ -179,6 +180,7 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
 
   const startCall = (conversation: Conversation | null, video: boolean) => {
     if (!conversation) return;
+    void playCallSound("join");
     setStage({
       open: true,
       expanded: true,
@@ -187,6 +189,11 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
       roomName: conversation.name,
       memberNames: Object.fromEntries(members.map((member) => [member.id, member.display_name])),
     });
+  };
+
+  const leaveCall = () => {
+    void playCallSound("leave");
+    setStage(EMPTY_CALL_STAGE);
   };
 
   const refreshWorkspace = useCallback(async (preferredSpaceId?: string, preferredConversationId?: string) => {
@@ -309,6 +316,8 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
           try {
             body = await decryptText(encrypted, key, `hush:conversation:${activeConversation.id}:epoch:0`);
           } catch { /* explicit fallback above */ }
+          const mentioned = body.toLocaleLowerCase("it").includes(`@${profile.username.toLocaleLowerCase("it")}`);
+          void playChatSound(mentioned ? "mention" : "receive");
           setMessages((currentMessages) => currentMessages.some((message) => message.id === row.id) ? currentMessages : [...currentMessages, {
             id: row.id,
             senderId: row.sender_id,
@@ -540,6 +549,7 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
         encrypted,
       }]);
       setDraft("");
+      void playChatSound("send");
     } catch (error) {
       setToast(readableError(error));
     }
@@ -609,7 +619,7 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
           <section className="call-dock" aria-label="Chiamata connessa">
             <div><span className="call-dock-live"><i /> connesso</span><strong>{stage.roomName}</strong><small>La chiamata resta attiva mentre navighi.</small></div>
             <button onClick={() => setStage((current) => ({ ...current, expanded: true }))} aria-label="Riapri chiamata"><PanelTopOpen size={16} /></button>
-            <button className="call-dock-leave" onClick={() => setStage(EMPTY_CALL_STAGE)} aria-label="Lascia chiamata"><PhoneOff size={16} /></button>
+            <button className="call-dock-leave" onClick={leaveCall} aria-label="Lascia chiamata"><PhoneOff size={16} /></button>
           </section>
         ) : null}
         <div className="user-panel">
@@ -647,7 +657,7 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
           displayName={profile.display_name}
           memberNames={stage.memberNames}
           onMinimize={() => setStage((current) => ({ ...current, expanded: false }))}
-          onClose={() => setStage(EMPTY_CALL_STAGE)}
+          onClose={leaveCall}
         />
 
         {stage.expanded ? null : activeConversation ? activeConversation.kind === "voice_channel" ? (
@@ -681,7 +691,7 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
                 })}
                 <div ref={messageEnd} />
               </div>
-              <form className="composer" onSubmit={sendMessage}>
+              <form className="composer" onSubmit={sendMessage} onKeyDown={(event) => { if (event.key.length === 1 && !event.metaKey && !event.ctrlKey && !event.altKey) void playChatSound("typing"); }} onClick={(event) => { if (event.target instanceof Element && event.target.closest("[aria-label='Aggiungi emoji']")) void playChatSound("reaction"); }}>
                 <input value={draft} onChange={(event) => setDraft(event.target.value)} disabled={keyStatus !== "ready"} placeholder={keyStatus === "ready" ? `Scrivi in ${activeConversation.name}` : "In attesa della chiave…"} aria-label="Messaggio" />
                 <button type="button" onClick={() => setDraft((current) => `${current}🙂`)} aria-label="Aggiungi emoji"><Smile size={19} /></button>
                 <button className="send-button" type="submit" disabled={!draft.trim() || keyStatus !== "ready"} aria-label="Invia messaggio"><Send size={17} /></button>
