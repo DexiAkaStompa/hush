@@ -1092,3 +1092,56 @@ html, body, #root { background: var(--app-background); }
 
 @media (max-width: 520px) { .theme-grid { grid-template-columns: 1fr; } }
 @media (prefers-reduced-motion: reduce) { .theme-option { transition: none; } }
+
+/* Hush Void is black first; controls read as smoked glass suspended above it. */
+:root[data-theme="hush-void"] .app-shell .server-rail,
+:root[data-theme="hush-void"] .app-shell .channel-sidebar,
+:root[data-theme="hush-void"] .app-shell .member-sidebar,
+:root[data-theme="hush-void"] .app-shell .chat-panel,
+:root[data-theme="hush-void"] .app-shell .user-panel {
+  background: rgba(13, 17, 22, .58);
+  border-color: rgba(224, 235, 245, .1);
+  box-shadow: inset 0 1px rgba(255,255,255,.035);
+  backdrop-filter: blur(28px) saturate(.8);
+}
+:root[data-theme="hush-void"] .app-shell .chat-header,
+:root[data-theme="hush-void"] .app-shell .composer,
+:root[data-theme="hush-void"] .app-shell .room-music,
+:root[data-theme="hush-void"] .app-shell .media-stage,
+:root[data-theme="hush-void"] .app-shell .call-dock,
+:root[data-theme="hush-void"] .app-shell .modal-card {
+  border-color: rgba(224, 235, 245, .13);
+  background: rgba(22, 28, 35, .55);
+  box-shadow: inset 0 1px rgba(255,255,255,.075), 0 20px 52px rgba(0,0,0,.3);
+  backdrop-filter: blur(30px) saturate(.82);
+}
+:root[data-theme="hush-void"] .app-shell .brand-mark,
+:root[data-theme="hush-void"] .app-shell .server-icon,
+:root[data-theme="hush-void"] .app-shell .header-actions > button,
+:root[data-theme="hush-void"] .app-shell .user-panel > button,
+:root[data-theme="hush-void"] .app-shell .composer button,
+:root[data-theme="hush-void"] .app-shell .control,
+:root[data-theme="hush-void"] .app-shell .music-transport > button,
+:root[data-theme="hush-void"] .app-shell .music-local-volume > button {
+  border: 1px solid rgba(230, 239, 247, .12);
+  background: rgba(234, 242, 250, .075);
+  box-shadow: inset 0 1px rgba(255,255,255,.075), 0 8px 22px rgba(0,0,0,.16);
+  backdrop-filter: blur(18px) saturate(.8);
+}
+:root[data-theme="hush-void"] .app-shell .brand-mark { color: #e7edf3; background: rgba(236, 243, 250, .13); }
+:root[data-theme="hush-void"] .app-shell .server-icon.selected,
+:root[data-theme="hush-void"] .app-shell .channel-row.active,
+:root[data-theme="hush-void"] .app-shell .dm-row.active {
+  background: rgba(225, 235, 245, .13);
+  box-shadow: inset 0 1px rgba(255,255,255,.11), inset 2px 0 #c2ccd7;
+}
+:root[data-theme="hush-void"] .app-shell .find-conversation,
+:root[data-theme="hush-void"] .app-shell .modal-form input,
+:root[data-theme="hush-void"] .app-shell .composer textarea,
+:root[data-theme="hush-void"] .app-shell .music-source-form input,
+:root[data-theme="hush-void"] .app-shell .music-search-row input,
+:root[data-theme="hush-void"] .app-shell .music-search-row select {
+  background: rgba(2, 4, 7, .52);
+  border-color: rgba(225, 235, 245, .12);
+  box-shadow: inset 0 1px rgba(255,255,255,.025);
+}
