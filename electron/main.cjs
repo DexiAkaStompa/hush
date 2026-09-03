@@ -287,7 +287,7 @@ function configureContentSecurityPolicy() {
       "default-src 'self'",
       "script-src 'self'",
       "style-src 'self' 'unsafe-inline'",
-      "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.youtube.com https://*.googlevideo.com https://open.spotify.com",
+      "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://music.hush.contact https://*.youtube.com https://*.googlevideo.com https://open.spotify.com",
       "img-src 'self' data: blob: https:",
       "media-src 'self' blob: https:",
       "frame-src https://www.youtube-nocookie.com https://www.youtube.com https://open.spotify.com",
