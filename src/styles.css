@@ -1011,3 +1011,84 @@ body::before, body::after { display: none; }
   .music-timeline { flex-basis: calc(100% - 50px); }
   .music-source-form { position: fixed; top: 90px; left: 78px; right: 16px; width: auto; }
 }
+
+/* Theme system: shared surface tokens keep every part of the client coherent. */
+:root, :root[data-theme="hush-void"] {
+  --ink: #080a0d;
+  --obsidian: #0d1116;
+  --panel: #14191f;
+  --panel-raised: #1b2128;
+  --line: #29313a;
+  --muted: #8c96a1;
+  --frost: #e9edf2;
+  --coral: #c87d75;
+  --mint: #9bbcab;
+  --blue: #a8b8c9;
+  --app-background: #080a0d;
+  --rail-background: #080a0d;
+  --sidebar-background: #101419;
+  --chat-background: #0c1014;
+  --soft-surface: #141a20;
+  --field-background: #0a0e12;
+  --dot-color: #63707d;
+}
+
+:root[data-theme="midnight"] {
+  --ink: #000000; --obsidian: #070811; --panel: #10111c; --panel-raised: #181a29; --line: #272a3e;
+  --muted: #9296ae; --frost: #f2f3ff; --coral: #a9a7ff; --mint: #9aa7ff; --blue: #7d8dff;
+  --app-background: radial-gradient(ellipse at 82% -24%, rgba(98, 91, 190, .18), transparent 42%), #000;
+  --rail-background: #000; --sidebar-background: #0a0b12; --chat-background: #08090f; --soft-surface: #131522; --field-background: #05060b; --dot-color: #596080;
+}
+
+:root[data-theme="tokyo-night"] {
+  --ink: #1a1b26; --obsidian: #16161e; --panel: #24283b; --panel-raised: #2f354d; --line: #3b4261;
+  --muted: #9aa5ce; --frost: #c0caf5; --coral: #bb9af7; --mint: #9ece6a; --blue: #7aa2f7;
+  --app-background: radial-gradient(ellipse at 88% 4%, rgba(122, 162, 247, .16), transparent 36%), radial-gradient(ellipse at 8% 104%, rgba(187, 154, 247, .12), transparent 38%), #1a1b26;
+  --rail-background: #16161e; --sidebar-background: #1f2335; --chat-background: #1a1b26; --soft-surface: #24283b; --field-background: #16161e; --dot-color: #59618a;
+}
+
+:root[data-theme="nord"] {
+  --ink: #2e3440; --obsidian: #272d38; --panel: #3b4252; --panel-raised: #434c5e; --line: #4c566a;
+  --muted: #aab5c5; --frost: #eceff4; --coral: #d08770; --mint: #a3be8c; --blue: #88c0d0;
+  --app-background: linear-gradient(135deg, #2e3440, #29303b); --rail-background: #272d38; --sidebar-background: #343c4b; --chat-background: #2e3440; --soft-surface: #3b4252; --field-background: #272d38; --dot-color: #7e8ba0;
+}
+
+:root[data-theme="frosted-glass"] {
+  --ink: #111722; --obsidian: #0d121b; --panel: #1c2837; --panel-raised: #2a3b4f; --line: #526b84;
+  --muted: #b2c2d3; --frost: #eef7ff; --coral: #d5a4ca; --mint: #9ed8cb; --blue: #a8d4ff;
+  --app-background: radial-gradient(ellipse at 7% 2%, rgba(129, 185, 231, .34), transparent 38%), radial-gradient(ellipse at 92% 96%, rgba(178, 128, 206, .24), transparent 42%), linear-gradient(145deg, #111b28, #162537 52%, #111722);
+  --rail-background: rgba(9, 15, 23, .7); --sidebar-background: rgba(25, 37, 52, .77); --chat-background: rgba(15, 23, 34, .72); --soft-surface: rgba(43, 62, 83, .66); --field-background: rgba(6, 12, 19, .42); --dot-color: #a4c8e8;
+}
+
+html, body, #root { background: var(--app-background); }
+.app-shell { background: var(--app-background) !important; }
+.app-shell .server-rail { background: var(--rail-background); border-color: var(--line); }
+.app-shell .channel-sidebar, .app-shell .member-sidebar { background: var(--sidebar-background); }
+.app-shell .chat-panel { background: var(--chat-background); }
+.app-shell .user-panel { background: var(--rail-background); border-color: var(--line); }
+.app-shell .brand-mark, .app-shell .server-icon { background: var(--soft-surface); }
+.app-shell .brand-mark { color: var(--ink); background: var(--frost); }
+.app-shell .find-conversation, .app-shell .modal-form input, .app-shell .composer textarea, .app-shell .music-source-form input, .app-shell .music-search-row input, .app-shell .music-search-row select { background: var(--field-background); border-color: var(--line); }
+.app-shell .channel-row:hover, .app-shell .dm-row:hover { background: var(--soft-surface); }
+.app-shell .channel-row.active, .app-shell .dm-row.active { background: var(--panel-raised); }
+.app-shell .modal-card { background: color-mix(in srgb, var(--panel) 84%, transparent); border-color: var(--line); }
+.dot-pattern { background-image: radial-gradient(var(--dot-color) .65px, transparent .65px); }
+.auth-screen { background: var(--app-background); }
+.auth-story { background: color-mix(in srgb, var(--sidebar-background) 76%, transparent); border-color: var(--line); }
+.auth-panel { background: color-mix(in srgb, var(--chat-background) 82%, transparent); }
+.auth-input, .auth-mode { background: var(--field-background); border-color: var(--line); }
+
+.theme-picker { margin: 5px 0 1px; padding: 0; border: 0; }
+.theme-picker legend { display: flex; align-items: center; gap: 7px; margin-bottom: 8px; padding: 0; color: #bdc7d0; font-size: 11px; }
+.theme-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.theme-option { min-width: 0; padding: 9px; display: flex; align-items: center; gap: 9px; color: var(--frost); border: 1px solid var(--line); border-radius: 13px; background: var(--field-background); cursor: pointer; text-align: left; transition: border-color .16s ease, background .16s ease, transform .16s ease; }
+.theme-option:hover { border-color: var(--blue); transform: translateY(-1px); }
+.theme-option.selected { border-color: var(--mint); background: color-mix(in srgb, var(--soft-surface) 76%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--mint) 24%, transparent); }
+.theme-swatches { display: flex; flex: 0 0 auto; overflow: hidden; width: 28px; height: 28px; border: 1px solid rgba(255,255,255,.13); border-radius: 9px; }
+.theme-swatches i { flex: 1; }
+.theme-option > span:last-child { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.theme-option strong, .theme-option small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.theme-option strong { font-size: 10px; }.theme-option small { color: var(--muted); font-size: 8px; }
+
+@media (max-width: 520px) { .theme-grid { grid-template-columns: 1fr; } }
+@media (prefers-reduced-motion: reduce) { .theme-option { transition: none; } }
