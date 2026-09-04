@@ -1,6 +1,7 @@
 const {
   app,
   BrowserWindow,
+  clipboard,
   desktopCapturer,
   dialog,
   ipcMain,
@@ -33,10 +34,24 @@ if (!gotSingleInstanceLock) app.quit();
 let mainWindow = null;
 let updateCheckTimer = null;
 let updateDialogOpen = false;
+let updateStatus = { status: "disabled", currentVersion: app.getVersion(), message: "Gli aggiornamenti sono disponibili nell’app installata." };
+let updateCheckPromise = null;
+
+async function checkForUpdates() {
+  if (["disabled", "downloaded", "downloading", "available"].includes(updateStatus.status)) return updateStatus;
+  if (!updateCheckPromise) {
+    updateCheckPromise = autoUpdater.checkForUpdates().catch((error) => {
+      sendUpdateStatus("error", { message: error instanceof Error ? error.message : "Verifica non riuscita." });
+    }).finally(() => { updateCheckPromise = null; });
+  }
+  await updateCheckPromise;
+  return updateStatus;
+}
 
 function sendUpdateStatus(status, details = {}) {
+  updateStatus = { status, currentVersion: app.getVersion(), ...details };
   if (!mainWindow || mainWindow.isDestroyed()) return;
-  mainWindow.webContents.send("updates:status", { status, ...details });
+  mainWindow.webContents.send("updates:status", updateStatus);
 }
 
 function promptForDownloadedUpdate() {
@@ -61,12 +76,14 @@ function promptForDownloadedUpdate() {
 function configureAutoUpdater() {
   if (!app.isPackaged || process.env.HUSH_DISABLE_AUTO_UPDATE === "1") return;
 
+  autoUpdater.setFeedURL({ provider: "github", owner: "DexiAkaStompa", repo: "hush" });
+  sendUpdateStatus("idle");
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
   autoUpdater.on("checking-for-update", () => sendUpdateStatus("checking"));
   autoUpdater.on("update-available", (info) => sendUpdateStatus("available", { version: info.version }));
   autoUpdater.on("update-not-available", () => sendUpdateStatus("current"));
-  autoUpdater.on("download-progress", (progress) => sendUpdateStatus("downloading", { percent: progress.percent }));
+  autoUpdater.on("download-progress", (progress) => sendUpdateStatus("downloading", { version: updateStatus.version, percent: progress.percent }));
   autoUpdater.on("update-downloaded", (info) => {
     sendUpdateStatus("downloaded", { version: info.version });
     promptForDownloadedUpdate();
@@ -77,7 +94,7 @@ function configureAutoUpdater() {
   });
 
   const check = () => {
-    void autoUpdater.checkForUpdates().catch(() => undefined);
+    void checkForUpdates();
   };
   check();
   updateCheckTimer = setInterval(check, 4 * 60 * 60 * 1000);
@@ -110,8 +127,25 @@ function roundedWindowShape(window) {
 
 function windowForEvent(event) {
   const candidate = BrowserWindow.fromWebContents(event.sender);
-  return candidate && candidate === mainWindow ? candidate : null;
+  return candidate && candidate === mainWindow && event.senderFrame === event.sender.mainFrame && isTrustedUrl(event.senderFrame.url) ? candidate : null;
 }
+
+ipcMain.handle("clipboard:write", (event, text) => {
+  if (!windowForEvent(event) || typeof text !== "string" || text.length > 16384) throw new Error("Richiesta appunti non valida.");
+  clipboard.writeText(text);
+});
+ipcMain.handle("updates:get-status", (event) => {
+  if (!windowForEvent(event)) throw new Error("Richiesta non autorizzata.");
+  return updateStatus;
+});
+ipcMain.handle("updates:check", (event) => {
+  if (!windowForEvent(event)) throw new Error("Richiesta non autorizzata.");
+  return checkForUpdates();
+});
+ipcMain.handle("updates:install", (event) => {
+  if (!windowForEvent(event) || updateStatus.status !== "downloaded") throw new Error("Nessun aggiornamento pronto.");
+  setImmediate(() => autoUpdater.quitAndInstall());
+});
 
 ipcMain.on("window:minimize", (event) => windowForEvent(event)?.minimize());
 ipcMain.on("window:toggle-maximize", (event) => {
@@ -248,10 +282,10 @@ function chooseDisplaySource(parent) {
 
 function configurePermissions() {
   session.defaultSession.setPermissionCheckHandler((_webContents, permission, requestingOrigin) => {
-    return isTrustedUrl(requestingOrigin) && ["media", "display-capture", "notifications", "fullscreen"].includes(permission);
+    return isTrustedUrl(requestingOrigin) && ["media", "display-capture", "notifications", "fullscreen", "speaker-selection"].includes(permission);
   });
   session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
-    callback(isTrustedUrl(webContents.getURL()) && ["media", "display-capture", "notifications", "fullscreen"].includes(permission));
+    callback(isTrustedUrl(webContents.getURL()) && ["media", "display-capture", "notifications", "fullscreen", "speaker-selection"].includes(permission));
   });
   session.defaultSession.setDisplayMediaRequestHandler(async (request, callback) => {
     if (!request.userGesture || !isTrustedUrl(request.securityOrigin) || !mainWindow) {
@@ -285,7 +319,8 @@ function configureContentSecurityPolicy() {
     if (!details.url.startsWith("hush://")) return callback({ responseHeaders: details.responseHeaders });
     const policy = [
       "default-src 'self'",
-      "script-src 'self'",
+      "script-src 'self' 'wasm-unsafe-eval'",
+      "worker-src 'self'",
       "style-src 'self' 'unsafe-inline'",
       "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://music.hush.contact https://*.youtube.com https://*.googlevideo.com https://open.spotify.com",
       "img-src 'self' data: blob: https:",

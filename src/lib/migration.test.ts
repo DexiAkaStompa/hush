@@ -9,6 +9,7 @@ import inviteCryptoFixMigrationSource from "../../supabase/migrations/2026082122
 import clientMusicMigrationSource from "../../supabase/migrations/20260821222000_client_music_sync.sql?raw";
 import keyEnvelopeRpcMigrationSource from "../../supabase/migrations/20260821223000_key_envelope_rpc_fix.sql?raw";
 import userDeletionMigrationSource from "../../supabase/migrations/20260903083330_user_deletion_integrity.sql?raw";
+import profileMediaMigration from "../../supabase/migrations/20260904230343_profile_media.sql?raw";
 
 const database = new PGlite();
 
@@ -29,6 +30,7 @@ describe("Supabase migrations", () => {
   beforeAll(async () => {
     await database.exec(`
       create role authenticated;
+      create role anon;
       create schema auth;
       create schema extensions;
       create table auth.users (
@@ -36,7 +38,16 @@ describe("Supabase migrations", () => {
         email text,
         raw_user_meta_data jsonb not null default '{}'::jsonb
       );
-      create function auth.uid() returns uuid language sql stable as $$ select null::uuid $$;
+      create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
+      create schema storage;
+      create table storage.buckets (id text primary key, name text, public boolean, file_size_limit bigint, allowed_mime_types text[]);
+      create table storage.objects (id uuid primary key default gen_random_uuid(), bucket_id text, name text);
+      alter table storage.objects enable row level security;
+      create function storage.foldername(text) returns text[] language sql immutable as $$ select string_to_array($1, '/') $$;
+      grant usage on schema public, storage, auth to authenticated;
+      grant select, insert, update, delete on storage.objects to authenticated;
+      grant usage on schema storage to anon;
+      grant select on storage.objects to anon;
       create function extensions.gen_random_bytes(integer) returns bytea language sql stable as $$ select decode(repeat('00', $1), 'hex') $$;
       create function extensions.digest(text, text) returns bytea language sql stable as $$ select decode(md5($1), 'hex') $$;
 
@@ -58,6 +69,7 @@ describe("Supabase migrations", () => {
     await database.exec(clientMusicMigration);
     await database.exec(keyEnvelopeRpcMigration);
     await database.exec(userDeletionMigration);
+    await database.exec(profileMediaMigration);
     await database.exec(`
       create function realtime.broadcast_changes(
         text, text, text, name, name, public.encrypted_messages, public.encrypted_messages
@@ -111,6 +123,38 @@ describe("Supabase migrations", () => {
     `);
     expect(envelopeFunction.rows[0]?.exists).toBe(true);
   }, 20_000);
+
+  it("keeps profile media private and restricts uploads and deletion to the owner", async () => {
+    const owner = "77777777-7777-7777-7777-777777777777";
+    const other = "88888888-8888-8888-8888-888888888888";
+    const name = `${owner}/99999999-9999-9999-9999-999999999999.gif`;
+    await database.exec(`begin; set local role authenticated; select set_config('request.jwt.claim.sub', '${owner}', true);`);
+    try {
+      await database.query("insert into storage.objects(bucket_id, name) values ('profile-media', $1)", [name]);
+      await database.exec(`select set_config('request.jwt.claim.sub', '${other}', true);`);
+      expect((await database.query("select * from storage.objects where name = $1", [name])).rows).toHaveLength(1);
+      expect((await database.query("delete from storage.objects where name = $1 returning *", [name])).rows).toHaveLength(0);
+      await database.exec("set local role anon;");
+      expect((await database.query("select * from storage.objects")).rows).toHaveLength(0);
+    } finally { await database.exec("rollback;"); }
+    await database.exec(`begin; set local role authenticated; select set_config('request.jwt.claim.sub', '${other}', true);`);
+    try {
+      await expect(database.query("insert into storage.objects(bucket_id, name) values ('profile-media', $1)", [name])).rejects.toThrow(/row-level security/i);
+    } finally { await database.exec("rollback;"); }
+  });
+
+  it("enforces image ownership and profile length constraints in Postgres", async () => {
+    const id = "66666666-6666-6666-6666-666666666666";
+    await database.exec(`begin; insert into auth.users(id, email) values ('${id}', 'media@example.test');`);
+    try {
+      await database.query("update public.profiles set avatar_path = $1, bio = 'Hello' where id = $2", [`${id}/99999999-9999-9999-9999-999999999999.gif`, id]);
+      await expect(database.query("update public.profiles set banner_path = $1 where id = $2", ["77777777-7777-7777-7777-777777777777/99999999-9999-9999-9999-999999999999.png", id])).rejects.toThrow(/profile_banner_owned/i);
+    } finally { await database.exec("rollback;"); }
+    await database.exec(`begin; insert into auth.users(id, email) values ('${id}', 'media@example.test');`);
+    try {
+      await expect(database.query("update public.profiles set bio = $1 where id = $2", ["x".repeat(191), id])).rejects.toThrow(/check constraint/i);
+    } finally { await database.exec("rollback;"); }
+  });
 
   it("allows deleting a user while retaining shared content without an author", async () => {
     const userId = "11111111-1111-1111-1111-111111111111";

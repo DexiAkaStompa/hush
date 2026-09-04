@@ -110,6 +110,44 @@ Windows bridge by default. Never add a service role key or database
 credentials. To disable update checks in a packaged diagnostic build, set
 `HUSH_DISABLE_AUTO_UPDATE=1` before launching it.
 
+Open **Settings → Updates** to see the installed version, download progress,
+retry a failed check, or restart to install a downloaded version. The feed is
+`https://github.com/DexiAkaStompa/hush/releases`. Keep the installer, blockmap,
+and `latest*.yml` assets together when publishing a release. A source-only
+release cannot update installed clients.
+
+## Profile and voice settings
+
+Apply `supabase/migrations/20260904230343_profile_media.sql` once before using
+profile customization. It adds avatar/banner paths, a 190-character bio, and
+the private `profile-media` Storage bucket. Authenticated Hush users can read
+profile images; only the owner can upload or delete files in their folder.
+Profile images are not end-to-end encrypted. Uploads preserve PNG, JPEG, GIF,
+and WebP bytes, including animation, up to 8 MiB. The client also checks a
+maximum size of 4096 × 4096 pixels. Replaced images are deleted after saving.
+Existing installations can still load profiles before this migration is applied.
+
+**Settings → Voice and video** selects the microphone, call output device,
+camera, input/output volume, echo cancellation, and automatic gain control.
+Microphone and call output settings apply to an active call; camera selection
+applies on the next activation. A disconnected input must be replaced with an
+available device or the system default. Music and interface sounds keep their
+own volume/output behavior. Microphone testing is local and stops when leaving
+the voice settings. Rerouting call output requires `HTMLMediaElement.setSinkId`.
+
+Noise suppression defaults to **RNNoise**, a free local WebAssembly filter
+running in an AudioWorklet at 48 kHz. Its worklet and both WASM variants are
+bundled with the app, with no account, service, or model download at runtime.
+Standard browser suppression and unfiltered audio are also available. RNNoise
+does not stack with browser noise suppression. If the device or filter fails,
+the client displays an error; select another input or the standard filter.
+Third-party licenses are included in [docs/licenses](docs/licenses) and the
+desktop package. Krisp is not used.
+
+Invites use the native clipboard in Electron, with a selectable link and a
+retry button if copying fails in the browser. Recipients paste the link into
+**Server → Use invite**; automatic OS handling of invite links is not configured.
+
 The interface uses patterns adapted from the collections listed in the brief:
 messaging/sidebar and accessible controls from Untitled UI, dot patterns and
 animated lists from Magic UI, and encrypted text and focused glow from

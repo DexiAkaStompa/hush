@@ -5,6 +5,8 @@ import { callTopic, type WebRtcSignal } from "../lib/realtime";
 import { supabase } from "../lib/supabase";
 import { RoomMusic } from "./RoomMusic";
 import { playCallSound } from "../lib/interaction-sound";
+import { routeAudio, useMediaSettings } from "../lib/media-settings";
+import { openMicrophone, type MicrophoneCapture } from "../lib/microphone";
 
 type MediaStageProps = {
   open: boolean;
@@ -31,6 +33,8 @@ function initialsFor(value: string) {
 
 function StreamTile({ stream, label, muted = false, focused = false, onFocus }: { stream: MediaStream | null; label: string; muted?: boolean; focused?: boolean; onFocus?: () => void }) {
   const video = useRef<HTMLVideoElement>(null);
+  const settings = useMediaSettings();
+  const [outputError, setOutputError] = useState("");
   const [audioMuted, setAudioMuted] = useState(muted);
   useEffect(() => {
     if (video.current) video.current.srcObject = stream;
@@ -38,6 +42,12 @@ function StreamTile({ stream, label, muted = false, focused = false, onFocus }: 
   useEffect(() => {
     if (video.current) video.current.muted = muted || audioMuted;
   }, [audioMuted, muted]);
+  useEffect(() => {
+    if (!video.current || muted) return;
+    let active = true;
+    void routeAudio(video.current, settings).then(() => { if (active) setOutputError(""); }).catch(() => { if (active) setOutputError("Uscita audio non disponibile: scegline un’altra nelle impostazioni."); });
+    return () => { active = false; };
+  }, [settings.outputId, settings.outputVolume, muted]);
   const toggleFullscreen = () => {
     const element = video.current;
     if (!element) return;
@@ -48,7 +58,7 @@ function StreamTile({ stream, label, muted = false, focused = false, onFocus }: 
     <div className={`video-tile ${focused ? "video-tile-focused" : ""}`}>
       <video ref={video} autoPlay playsInline muted={muted || audioMuted} />
       {!stream || stream.getVideoTracks().length === 0 ? <div className="big-avatar">{initialsFor(label)}</div> : null}
-      <span className="tile-label">{label}</span>
+      <span className="tile-label">{label}{outputError ? <small role="alert"> · {outputError}</small> : null}</span>
       {stream?.getVideoTracks().length ? <div className="tile-actions">
         {onFocus ? <button onClick={onFocus} aria-label={focused ? "Riduci condivisione" : "Ingrandisci condivisione"}>{focused ? <Minimize2 size={15} /> : <MonitorUp size={15} />}</button> : null}
         <button onClick={toggleFullscreen} aria-label="Apri a schermo intero"><Maximize2 size={15} /></button>
@@ -59,6 +69,12 @@ function StreamTile({ stream, label, muted = false, focused = false, onFocus }: 
 }
 
 export function MediaStage({ open, expanded, startWithVideo, conversationId, roomName, userId, displayName, memberNames, onMinimize, onClose }: MediaStageProps) {
+  const settings = useMediaSettings();
+  const settingsRef = useRef(settings);
+  settingsRef.current = settings;
+  const micEnabled = useRef(true);
+  const callGeneration = useRef(0);
+  const [micRetry, setMicRetry] = useState(0);
   const [mic, setMic] = useState(false);
   const [camera, setCamera] = useState(false);
   const [sharing, setSharing] = useState(false);
@@ -68,6 +84,7 @@ export function MediaStage({ open, expanded, startWithVideo, conversationId, roo
   const [participants, setParticipants] = useState<string[]>([]);
   const [focusedTile, setFocusedTile] = useState<string | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
+  const microphoneRef = useRef<MicrophoneCapture | null>(null);
   const screenStreamRef = useRef<MediaStream | null>(null);
   const peersRef = useRef(new Map<string, RTCPeerConnection>());
   const channelRef = useRef<RealtimeChannel | null>(null);
@@ -75,6 +92,8 @@ export function MediaStage({ open, expanded, startWithVideo, conversationId, roo
   useEffect(() => {
     if (!open || !conversationId || !supabase) return;
     let active = true;
+    callGeneration.current++;
+    micEnabled.current = true;
     let channel: RealtimeChannel | null = null;
     const peers = peersRef.current;
     const client = supabase;
@@ -229,25 +248,23 @@ export function MediaStage({ open, expanded, startWithVideo, conversationId, roo
       reportCallError("Impossibile aprire il canale della chiamata. Controlla la configurazione Supabase.");
     });
 
-    void navigator.mediaDevices.getUserMedia({ audio: true, video: startWithVideo })
+    if (startWithVideo) void navigator.mediaDevices.getUserMedia({ video: settingsRef.current.cameraId ? { deviceId: { exact: settingsRef.current.cameraId } } : true })
       .then((stream) => {
-        if (!active) {
-          stream.getTracks().forEach((track) => track.stop());
-          return;
-        }
-        localStreamRef.current = stream;
-        setLocalStream(stream);
-        setMic(stream.getAudioTracks().length > 0);
-        setCamera(stream.getVideoTracks().length > 0);
+        if (!active) { stream.getTracks().forEach((track) => track.stop()); return; }
+        const local = localStreamRef.current ?? new MediaStream();
+        stream.getTracks().forEach((track) => local.addTrack(track));
+        localStreamRef.current = local;
+        setLocalStream(new MediaStream(local.getTracks()));
+        setCamera(true);
         peers.forEach((peer, peerId) => {
-          stream.getTracks().forEach((track) => peer.addTrack(track, stream));
-          void negotiate(peerId, peer).catch(() => reportCallError("Impossibile collegare il flusso multimediale."));
+          stream.getTracks().forEach((track) => peer.addTrack(track, local));
+          void negotiate(peerId, peer).catch(() => reportCallError("Impossibile collegare la videocamera."));
         });
-      })
-      .catch(() => reportCallError("Permesso microfono o videocamera negato. Modificalo nelle impostazioni di Windows."));
+      }).catch(() => reportCallError("Videocamera non disponibile. Controlla dispositivo e permessi nelle impostazioni."));
 
     return () => {
       active = false;
+      callGeneration.current++;
       if (channel) {
         void channel.untrack();
         void client.removeChannel(channel);
@@ -270,6 +287,41 @@ export function MediaStage({ open, expanded, startWithVideo, conversationId, roo
     };
   }, [conversationId, open, startWithVideo, userId]);
 
+  useEffect(() => {
+    if (!open || !conversationId) return;
+    let active = true;
+    let capture: MicrophoneCapture | undefined;
+    void openMicrophone(settingsRef.current).then(async (opened) => {
+      capture = opened;
+      if (!active) { opened.close(); return; }
+      microphoneRef.current = opened;
+      opened.setVolume(settingsRef.current.inputVolume);
+      const local = localStreamRef.current ?? new MediaStream();
+      const previous = local.getAudioTracks();
+      previous.forEach((track) => local.removeTrack(track));
+      const track = opened.stream.getAudioTracks()[0];
+      track.enabled = micEnabled.current;
+      local.addTrack(track);
+      localStreamRef.current = local;
+      setMic(track.enabled);
+      if (!screenStreamRef.current) setLocalStream(new MediaStream(local.getTracks()));
+      await Promise.all([...peersRef.current.values()].map(async (peer) => {
+        const sender = peer.getSenders().find((candidate) => candidate.track?.kind === "audio" && !screenStreamRef.current?.getTrackById(candidate.track.id));
+        if (sender) await sender.replaceTrack(track);
+        else peer.addTrack(track, local);
+      }));
+      if (!active) return;
+      await renegotiatePeers();
+      setNotice("Microfono pronto · " + (settingsRef.current.noise === "rnnoise" ? "riduzione del rumore RNNoise" : settingsRef.current.noise === "standard" ? "riduzione standard" : "riduzione disattivata"));
+    }).catch(() => {
+      capture?.close();
+      if (active) { setMic(false); setNotice("Microfono o filtro non disponibile. Controlla i permessi, scegli un dispositivo collegato o prova la riduzione standard nelle impostazioni, poi riattiva il microfono."); }
+    });
+    return () => { active = false; capture?.close(); if (microphoneRef.current === capture) microphoneRef.current = null; };
+  }, [open, conversationId, startWithVideo, userId, settings.inputId, settings.noise, settings.echoCancellation, settings.autoGainControl, micRetry]);
+
+  useEffect(() => { microphoneRef.current?.setVolume(settings.inputVolume); }, [settings.inputVolume]);
+
   if (!open || !conversationId) return null;
 
   const renegotiatePeers = async () => {
@@ -290,46 +342,38 @@ export function MediaStage({ open, expanded, startWithVideo, conversationId, roo
   };
 
   const toggleMic = async () => {
-    const audioTrack = localStreamRef.current?.getAudioTracks()[0];
-    if (audioTrack) {
-      audioTrack.enabled = !audioTrack.enabled;
-      setMic(audioTrack.enabled);
-      void playCallSound(audioTrack.enabled ? "enabled" : "disabled");
-      return;
-    }
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const track = stream.getAudioTracks()[0];
-      if (!track) return;
-      const nextStream = localStreamRef.current ?? new MediaStream();
-      nextStream.addTrack(track);
-      localStreamRef.current = nextStream;
-      peersRef.current.forEach((peer) => peer.addTrack(track, nextStream));
-      setLocalStream(new MediaStream(nextStream.getTracks()));
-      setMic(true);
-      await renegotiatePeers();
-      void playCallSound("enabled");
-    } catch {
-      setNotice("Permesso microfono non concesso.");
-    }
+    const track = localStreamRef.current?.getAudioTracks()[0];
+    if (!track || track.readyState === "ended") { micEnabled.current = true; setMicRetry((value) => value + 1); return; }
+    track.enabled = !track.enabled;
+    micEnabled.current = track.enabled;
+    setMic(track.enabled);
+    void playCallSound(track.enabled ? "enabled" : "disabled");
   };
 
   const toggleCamera = async () => {
     const videoTrack = localStreamRef.current?.getVideoTracks()[0];
-    if (videoTrack && !sharing) {
+    if (sharing) return;
+    if (videoTrack?.enabled && videoTrack.readyState === "live") {
       videoTrack.enabled = !videoTrack.enabled;
       setCamera(videoTrack.enabled);
       void playCallSound(videoTrack.enabled ? "enabled" : "disabled");
       return;
     }
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      const generation = callGeneration.current;
+      const stream = await navigator.mediaDevices.getUserMedia({ video: settings.cameraId ? { deviceId: { exact: settings.cameraId } } : true });
+      if (generation !== callGeneration.current) { stream.getTracks().forEach((track) => track.stop()); return; }
       const track = stream.getVideoTracks()[0];
       if (!track) return;
       const nextStream = localStreamRef.current ?? new MediaStream();
+      const old = nextStream.getVideoTracks();
+      old.forEach((previous) => { previous.stop(); nextStream.removeTrack(previous); });
       nextStream.addTrack(track);
       localStreamRef.current = nextStream;
-      peersRef.current.forEach((peer) => peer.addTrack(track, nextStream));
+      await Promise.all([...peersRef.current.values()].map(async (peer) => {
+        const sender = peer.getSenders().find((candidate) => candidate.track?.kind === "video");
+        if (sender) await sender.replaceTrack(track); else peer.addTrack(track, nextStream);
+      }));
       setLocalStream(new MediaStream(nextStream.getTracks()));
       setCamera(true);
       await renegotiatePeers();
@@ -362,7 +406,9 @@ export function MediaStage({ open, expanded, startWithVideo, conversationId, roo
       return;
     }
     try {
+      const generation = callGeneration.current;
       const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+      if (generation !== callGeneration.current) { stream.getTracks().forEach((track) => track.stop()); return; }
       screenStreamRef.current = stream;
       const screenTrack = stream.getVideoTracks()[0];
       peersRef.current.forEach((peer) => {
@@ -376,6 +422,8 @@ export function MediaStage({ open, expanded, startWithVideo, conversationId, roo
       setFocusedTile("local");
       setNotice("Schermo condiviso direttamente con i peer della chiamata.");
       screenTrack.addEventListener("ended", () => {
+        if (screenStreamRef.current !== stream) return;
+        stream.getTracks().forEach((track) => track.stop());
         const screenAudioTracks = screenStreamRef.current?.getAudioTracks() ?? [];
         screenStreamRef.current = null;
         const cameraTrack = localStreamRef.current?.getVideoTracks()[0] ?? null;
@@ -413,7 +461,7 @@ export function MediaStage({ open, expanded, startWithVideo, conversationId, roo
       <p className="media-notice" role="status">{notice}</p>
       <div className="call-controls">
         <button className={mic ? "control mic active" : "control mic"} onClick={() => { void toggleMic(); }} aria-pressed={mic} aria-label={mic ? "Disattiva microfono" : "Attiva microfono"}>{mic ? <Mic size={19} /> : <MicOff size={19} />}</button>
-        <button className={camera ? "control camera active" : "control camera"} onClick={() => { void toggleCamera(); }} aria-pressed={camera} aria-label={camera ? "Disattiva videocamera" : "Attiva videocamera"}>{camera ? <Video size={19} /> : <VideoOff size={19} />}</button>
+        <button className={camera ? "control camera active" : "control camera"} onClick={() => { void toggleCamera(); }} disabled={sharing} aria-pressed={camera} aria-label={camera ? "Disattiva videocamera" : "Attiva videocamera"}>{camera ? <Video size={19} /> : <VideoOff size={19} />}</button>
         <button className={sharing ? "control share active" : "control share"} onClick={() => { void toggleShare(); }} aria-pressed={sharing}><MonitorUp size={19} /><span>{sharing ? "Interrompi" : "Condividi"}</span></button>
         <button className="control hangup" onClick={onClose} aria-label="Lascia chiamata"><PhoneOff size={19} /></button>
       </div>

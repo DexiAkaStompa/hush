@@ -7,6 +7,9 @@ export type Profile = {
   username: string;
   display_name: string;
   avatar_color: string;
+  avatar_path?: string | null;
+  banner_path?: string | null;
+  bio?: string;
 };
 
 export type Space = {
@@ -46,7 +49,7 @@ function requireClient() {
 export async function loadWorkspace(userId: string, fallbackProfile?: Profile) {
   const client = requireClient();
   const [profileResult, spacesResult, dmResult] = await Promise.all([
-    client.from("profiles").select("id, username, display_name, avatar_color").eq("id", userId).maybeSingle(),
+    client.from("profiles").select("*").eq("id", userId).maybeSingle(),
     client.from("spaces").select("id, name, owner_id").order("created_at", { ascending: true }),
     client.from("conversations").select("id, space_id, kind, name, created_by").eq("kind", "group_dm").order("created_at", { ascending: true }),
   ]);
@@ -95,7 +98,7 @@ export async function loadConversationMembers(conversationId: string) {
   if (userIds.length === 0) return [];
   const { data: profiles, error: profileError } = await client
     .from("profiles")
-    .select("id, username, display_name, avatar_color")
+    .select("*")
     .in("id", userIds);
   if (profileError) throw profileError;
   return (profiles ?? []) as Profile[];

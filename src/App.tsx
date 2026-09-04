@@ -8,7 +8,6 @@ import {
   LogOut,
   Menu,
   MessageCircleMore,
-  Palette,
   Phone,
   PhoneOff,
   PanelTopOpen,
@@ -31,6 +30,9 @@ import { DotPattern } from "./components/DotPattern";
 import { EncryptedLabel } from "./components/EncryptedLabel";
 import { MediaStage } from "./components/MediaStage";
 import { Modal } from "./components/Modal";
+import { SettingsPanel } from "./components/SettingsPanel";
+import { ProfileImage } from "./components/ProfileImage";
+import { copyText } from "./lib/clipboard";
 import { decryptText, encryptText, getKeyFingerprint } from "./lib/crypto";
 import {
   ensureDeviceIdentity,
@@ -46,7 +48,7 @@ import {
   unsubscribeFromConversation,
 } from "./lib/realtime";
 import { isSupabaseConfigured, supabase } from "./lib/supabase";
-import { applyTheme, readTheme, THEMES, type ThemeId } from "./lib/themes";
+import { applyTheme, readTheme, type ThemeId } from "./lib/themes";
 import { playCallSound, playChatSound } from "./lib/interaction-sound";
 import {
   initialsFor,
@@ -81,13 +83,13 @@ const EMPTY_CALL_STAGE: CallStage = {
   memberNames: {},
 };
 
-function Avatar({ profile, size = "normal" }: { profile: Pick<Profile, "display_name" | "avatar_color">; size?: "normal" | "small" }) {
+function Avatar({ profile, size = "normal" }: { profile: Pick<Profile, "display_name" | "avatar_color" | "avatar_path">; size?: "normal" | "small" }) {
   return (
     <span
       className={`avatar ${size === "small" ? "avatar-small" : ""}`}
       style={{ backgroundColor: profile.avatar_color }}
     >
-      {initialsFor(profile.display_name)}
+      {initialsFor(profile.display_name)}<ProfileImage path={profile.avatar_path} alt="" />
     </span>
   );
 }
@@ -135,6 +137,9 @@ export function App() {
 
 function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; theme: ThemeId; onThemeChange: (theme: ThemeId) => void }) {
   const [profile, setProfile] = useState(() => profileFromSession(session));
+  const [inviteLink, setInviteLink] = useState<string | null>(null);
+  const [inviteNotice, setInviteNotice] = useState("");
+  const [viewedProfile, setViewedProfile] = useState<Profile | null>(null);
   const [identity, setIdentity] = useState<DeviceIdentity | null>(null);
   const [spaces, setSpaces] = useState<Space[]>([]);
   const [channels, setChannels] = useState<Conversation[]>([]);
@@ -469,18 +474,6 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
     });
   };
 
-  const submitSettings = (event: FormEvent) => {
-    event.preventDefault();
-    void runAction(async () => {
-      if (!supabase) return;
-      const { error } = await supabase.from("profiles").update({ display_name: formPrimary.trim() }).eq("id", session.user.id);
-      if (error) throw error;
-      setProfile((current) => ({ ...current, display_name: formPrimary.trim() }));
-      setModal(null);
-      setToast("Profilo aggiornato");
-    });
-  };
-
   const createInvite = () => {
     const client = supabase;
     if (!activeSpace || !client) return;
@@ -488,8 +481,11 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
       const { data, error } = await client.rpc("create_space_invite", { p_space_id: activeSpace.id });
       if (error) throw error;
       const invite = `hush://invite/${data as string}`;
-      await navigator.clipboard.writeText(invite);
-      setToast("Invito copiato: scade tra 7 giorni");
+      setInviteLink(invite);
+      setModal(null);
+      setInviteNotice("");
+      try { await copyText(invite); setInviteNotice("Invito copiato: scade tra 7 giorni"); }
+      catch { setInviteNotice("Seleziona il link e premi Ctrl+C per copiarlo."); }
     });
   };
 
@@ -624,7 +620,7 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
         ) : null}
         <div className="user-panel">
           <Avatar profile={profile} />
-          <div className="user-copy"><strong>{profile.display_name}</strong><button onClick={() => { void navigator.clipboard.writeText(profile.username); setToast("Username copiato"); }}>@{profile.username}</button></div>
+          <div className="user-copy"><strong>{profile.display_name}</strong><button onClick={() => { void copyText(profile.username).then(() => setToast("Username copiato")).catch(() => setToast("Copia non riuscita. Il tuo username è @" + profile.username)); }}>@{profile.username}</button></div>
           <button onClick={() => openModal("settings")} aria-label="Impostazioni"><Settings size={16} /></button>
           <button aria-label="Esci" onClick={() => { void supabase?.auth.signOut(); }}><LogOut size={16} /></button>
         </div>
@@ -708,16 +704,18 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
         <div className="member-heading"><span>Persone</span><span>{members.length || 1}</span></div>
         <div className="member-list">
           {(members.length ? members : [profile]).map((member) => (
-            <div className="member current-member" key={member.id}><span className="member-avatar"><Avatar profile={member} /><i className={`status ${onlineUserIds.includes(member.id) || member.id === session.user.id ? "status-online" : "status-away"}`} /></span><span><strong>{member.display_name}</strong><small>@{member.username}</small></span></div>
+            <button type="button" className="member current-member member-profile-button" key={member.id} onClick={() => setViewedProfile(member)} aria-label={`Profilo di ${member.display_name}`}><span className="member-avatar"><Avatar profile={member} /><i className={`status ${onlineUserIds.includes(member.id) || member.id === session.user.id ? "status-online" : "status-away"}`} /></span><span><strong>{member.display_name}</strong><small>@{member.username}</small></span></button>
           ))}
         </div>
         <div className="privacy-note"><ShieldCheck size={16} /><p><strong>{keyStatus === "ready" ? "Chiave verificata" : "Supabase connesso"}</strong><span>{identity ? `Dispositivo ${identity.id.slice(0, 8)}` : "Registrazione dispositivo…"}</span></p><i className={`backend-light backend-${keyStatus === "error" ? "degraded" : "ready"}`} /></div>
       </aside>
 
+      {inviteLink ? <Modal title="Invita nel server" description="Condividi questo link con gli amici. Scade tra 7 giorni; incollalo in Server → Usa invito." onClose={() => setInviteLink(null)}><div className="modal-form"><label>Link di invito<input readOnly value={inviteLink} onFocus={(event) => event.target.select()} /></label><button className="modal-primary" onClick={() => { void copyText(inviteLink).then(() => setInviteNotice("Invito copiato")).catch(() => setInviteNotice("Seleziona il link e premi Ctrl+C per copiarlo.")); }}>Copia invito</button><p role="status">{inviteNotice}</p></div></Modal> : null}
+      {viewedProfile ? <Modal title="Profilo" onClose={() => setViewedProfile(null)}><div className="profile-preview"><div className="profile-banner" style={{ backgroundColor: viewedProfile.avatar_color }}><ProfileImage path={viewedProfile.banner_path} alt="Banner profilo" /></div><div className="profile-preview-copy"><Avatar profile={viewedProfile} /><strong>{viewedProfile.display_name}</strong><small>@{viewedProfile.username}</small><p>{viewedProfile.bio}</p></div></div></Modal> : null}
       {modal === "space" ? <Modal title="Server" description="Crea un nuovo spazio oppure incolla un invito ricevuto da un amico." onClose={() => setModal(null)}><div className="modal-tabs"><button className={spaceMode === "create" ? "active" : ""} onClick={() => { setSpaceMode("create"); setFormPrimary(""); setFormError(null); }}>Crea</button><button className={spaceMode === "join" ? "active" : ""} onClick={() => { setSpaceMode("join"); setFormPrimary(""); setFormError(null); }}>Usa invito</button></div><form className="modal-form" onSubmit={submitSpace}><label>{spaceMode === "create" ? "Nome del server" : "Codice o link di invito"}<input autoFocus required maxLength={spaceMode === "create" ? 80 : 200} value={formPrimary} onChange={(event) => setFormPrimary(event.target.value)} placeholder={spaceMode === "create" ? "La nostra stanza" : "hush://invite/…"} /></label>{formError ? <div className="auth-error">{formError}</div> : null}<button className="modal-primary" disabled={busy || !formPrimary.trim()}>{busy ? "Attendi…" : spaceMode === "create" ? "Crea server" : "Entra nel server"}</button></form></Modal> : null}
       {modal === "channel" ? <Modal title="Nuovo canale" description={`Verrà aggiunto a ${activeSpace?.name ?? "questo server"} e riceverà una chiave E2EE separata.`} onClose={() => setModal(null)}><form className="modal-form" onSubmit={submitChannel}><label>Nome del canale<input autoFocus required maxLength={80} value={formPrimary} onChange={(event) => setFormPrimary(event.target.value)} placeholder="gaming" /></label>{formError ? <div className="auth-error">{formError}</div> : null}<button className="modal-primary" disabled={busy || !formPrimary.trim()}>{busy ? "Creazione…" : "Crea canale"}</button></form></Modal> : null}
       {modal === "dm" ? <Modal title="Nuovo gruppo DM" description="Inserisci gli username esatti, separati da virgole. Hush distribuirà la chiave ai loro dispositivi registrati." onClose={() => setModal(null)}><form className="modal-form" onSubmit={submitDm}><label>Nome del gruppo<input autoFocus required maxLength={80} value={formPrimary} onChange={(event) => setFormPrimary(event.target.value)} placeholder="Nome del gruppo" /></label><label>Username<input required value={formSecondary} onChange={(event) => setFormSecondary(event.target.value)} placeholder="@amico1, @amico2" /></label>{formError ? <div className="auth-error">{formError}</div> : null}<button className="modal-primary" disabled={busy || !formPrimary.trim() || !formSecondary.trim()}>{busy ? "Creazione…" : "Crea gruppo"}</button></form></Modal> : null}
-      {modal === "settings" ? <Modal title="Profilo e aspetto" description="Il tema è personale e resta salvato solo su questo dispositivo." onClose={() => setModal(null)}><form className="modal-form" onSubmit={submitSettings}><label>Nome visualizzato<input autoFocus required maxLength={64} value={formPrimary} onChange={(event) => setFormPrimary(event.target.value)} /></label><label>Username<input disabled value={`@${profile.username}`} /></label><fieldset className="theme-picker"><legend><Palette size={14} /> Tema</legend><div className="theme-grid">{THEMES.map((option) => <button type="button" className={`theme-option ${theme === option.id ? "selected" : ""}`} key={option.id} aria-pressed={theme === option.id} onClick={() => onThemeChange(option.id)}><span className="theme-swatches">{option.swatches.map((color) => <i key={color} style={{ backgroundColor: color }} />)}</span><span><strong>{option.name}</strong><small>{option.description}</small></span></button>)}</div></fieldset>{formError ? <div className="auth-error">{formError}</div> : null}<button className="modal-primary" disabled={busy || !formPrimary.trim()}>{busy ? "Salvataggio…" : "Salva modifiche"}</button></form></Modal> : null}
+      {modal === "settings" ? <SettingsPanel profile={profile} theme={theme} onThemeChange={onThemeChange} inCall={stage.open} onClose={() => setModal(null)} onSaved={(next) => { setProfile(next); setMembers((current) => current.map((member) => member.id === next.id ? next : member)); }} /> : null}
       {modal === "server" && activeSpace ? <Modal title={activeSpace.name} description="Gestisci accesso e permanenza nel server." onClose={() => setModal(null)}><div className="server-actions"><button onClick={createInvite}><Copy size={17} /><span><strong>Copia invito</strong><small>Valido 7 giorni, massimo 25 utilizzi</small></span></button>{activeSpace.owner_id === session.user.id ? <button className="danger-action" onClick={() => leaveOrDeleteSpace(true)}><Trash2 size={17} /><span><strong>Elimina server</strong><small>Rimuove canali e messaggi in modo permanente</small></span></button> : <button className="danger-action" onClick={() => leaveOrDeleteSpace(false)}><LogOut size={17} /><span><strong>Lascia server</strong><small>Perderai accesso alle conversazioni</small></span></button>}{formError ? <div className="auth-error">{formError}</div> : null}</div></Modal> : null}
 
       {modal === "voice" ? <Modal title="Nuovo canale vocale" description={`Crea una stanza vocale persistente in ${activeSpace?.name ?? "questo server"}.`} onClose={() => setModal(null)}><form className="modal-form" onSubmit={submitVoiceChannel}><label>Nome del canale<input autoFocus required maxLength={80} value={formPrimary} onChange={(event) => setFormPrimary(event.target.value)} placeholder="Lounge" /></label>{formError ? <div className="auth-error">{formError}</div> : null}<button className="modal-primary" disabled={busy || !formPrimary.trim()}>{busy ? "Creazione…" : "Crea canale vocale"}</button></form></Modal> : null}

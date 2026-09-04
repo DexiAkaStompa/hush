@@ -1,6 +1,11 @@
 /// <reference types="vite/client" />
 
 interface HushWindowControls {
+  copyText: (text: string) => Promise<void>;
+  getUpdateStatus: () => Promise<HushUpdateStatus>;
+  checkForUpdates: () => Promise<HushUpdateStatus>;
+  installUpdate: () => Promise<void>;
+  onUpdateStatus: (listener: (status: HushUpdateStatus) => void) => () => void;
   minimize: () => void;
   toggleMaximize: () => void;
   close: () => void;
@@ -21,6 +26,14 @@ interface Window {
 
 interface ImportMetaEnv {
   readonly VITE_MUSIC_BRIDGE_URL?: string;
+}
+
+interface HushUpdateStatus {
+  status: "disabled" | "idle" | "checking" | "available" | "current" | "downloading" | "downloaded" | "error";
+  currentVersion: string;
+  version?: string;
+  percent?: number;
+  message?: string;
 }
 
 interface ImportMeta {
