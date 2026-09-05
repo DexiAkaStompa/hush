@@ -7,6 +7,8 @@ import { RoomMusic } from "./RoomMusic";
 import { playCallSound } from "../lib/interaction-sound";
 import { routeAudio, useMediaSettings } from "../lib/media-settings";
 import { openMicrophone, type MicrophoneCapture } from "../lib/microphone";
+import { ProfileImage } from "./ProfileImage";
+import type { Profile } from "../lib/workspace";
 
 type MediaStageProps = {
   open: boolean;
@@ -17,6 +19,8 @@ type MediaStageProps = {
   userId: string;
   displayName: string;
   memberNames: Record<string, string>;
+  selfProfile?: Profile | null;
+  memberProfiles?: Record<string, Profile>;
   onMinimize: () => void;
   onClose: () => void;
 };
@@ -31,7 +35,21 @@ function initialsFor(value: string) {
   return value.trim().split(/\s+/).slice(0, 2).map((word) => word[0]).join("").toUpperCase() || "TU";
 }
 
-function StreamTile({ stream, label, muted = false, focused = false, onFocus }: { stream: MediaStream | null; label: string; muted?: boolean; focused?: boolean; onFocus?: () => void }) {
+function StreamTile({
+  stream,
+  label,
+  profile,
+  muted = false,
+  focused = false,
+  onFocus,
+}: {
+  stream: MediaStream | null;
+  label: string;
+  profile?: Pick<Profile, "display_name" | "avatar_color" | "avatar_path" | "banner_path"> | null;
+  muted?: boolean;
+  focused?: boolean;
+  onFocus?: () => void;
+}) {
   const video = useRef<HTMLVideoElement>(null);
   const settings = useMediaSettings();
   const [outputError, setOutputError] = useState("");
@@ -54,21 +72,75 @@ function StreamTile({ stream, label, muted = false, focused = false, onFocus }: 
     if (document.fullscreenElement === element) void document.exitFullscreen();
     else void element.requestFullscreen?.();
   };
+  const hasVideo = Boolean(stream && stream.getVideoTracks().length > 0);
+  const cleanName = (profile?.display_name || label).replace(/\s*\([^)]*\)/g, "").trim();
+  const avatarColor = profile?.avatar_color || "#73b7ff";
+
   return (
     <div className={`video-tile ${focused ? "video-tile-focused" : ""}`}>
-      <video ref={video} autoPlay playsInline muted={muted || audioMuted} />
-      {!stream || stream.getVideoTracks().length === 0 ? <div className="big-avatar">{initialsFor(label)}</div> : null}
+      <video
+        ref={video}
+        autoPlay
+        playsInline
+        muted={muted || audioMuted}
+        style={{ display: hasVideo ? "block" : "none" }}
+      />
+      {!hasVideo ? (
+        <>
+          <div
+            className="tile-backdrop"
+            style={{ backgroundColor: avatarColor }}
+          >
+            {profile?.banner_path ? (
+              <ProfileImage
+                path={profile.banner_path}
+                alt=""
+                className="tile-backdrop-banner"
+              />
+            ) : null}
+            <div className="tile-backdrop-dim" />
+          </div>
+          <div
+            className="big-avatar"
+            style={{ backgroundColor: avatarColor }}
+          >
+            <span className="big-avatar-initials">{initialsFor(cleanName)}</span>
+            {profile?.avatar_path ? (
+              <ProfileImage
+                path={profile.avatar_path}
+                alt={cleanName}
+                className="big-avatar-img"
+              />
+            ) : null}
+          </div>
+        </>
+      ) : null}
       <span className="tile-label">{label}{outputError ? <small role="alert"> · {outputError}</small> : null}</span>
-      {stream?.getVideoTracks().length ? <div className="tile-actions">
-        {onFocus ? <button onClick={onFocus} aria-label={focused ? "Riduci condivisione" : "Ingrandisci condivisione"}>{focused ? <Minimize2 size={15} /> : <MonitorUp size={15} />}</button> : null}
-        <button onClick={toggleFullscreen} aria-label="Apri a schermo intero"><Maximize2 size={15} /></button>
-        {!muted ? <button onClick={() => setAudioMuted((value) => !value)} aria-label={audioMuted ? "Riattiva audio del riquadro" : "Muta audio del riquadro"}>{audioMuted ? <VolumeX size={15} /> : <Volume2 size={15} />}</button> : null}
-      </div> : null}
+      {hasVideo ? (
+        <div className="tile-actions">
+          {onFocus ? <button onClick={onFocus} aria-label={focused ? "Riduci condivisione" : "Ingrandisci condivisione"}>{focused ? <Minimize2 size={15} /> : <MonitorUp size={15} />}</button> : null}
+          <button onClick={toggleFullscreen} aria-label="Apri a schermo intero"><Maximize2 size={15} /></button>
+          {!muted ? <button onClick={() => setAudioMuted((value) => !value)} aria-label={audioMuted ? "Riattiva audio del riquadro" : "Muta audio del riquadro"}>{audioMuted ? <VolumeX size={15} /> : <Volume2 size={15} />}</button> : null}
+        </div>
+      ) : null}
     </div>
   );
 }
 
-export function MediaStage({ open, expanded, startWithVideo, conversationId, roomName, userId, displayName, memberNames, onMinimize, onClose }: MediaStageProps) {
+export function MediaStage({
+  open,
+  expanded,
+  startWithVideo,
+  conversationId,
+  roomName,
+  userId,
+  displayName,
+  memberNames,
+  selfProfile,
+  memberProfiles,
+  onMinimize,
+  onClose,
+}: MediaStageProps) {
   const settings = useMediaSettings();
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
@@ -455,8 +527,24 @@ export function MediaStage({ open, expanded, startWithVideo, conversationId, roo
       </header>
       <RoomMusic conversationId={conversationId} />
       <div className="stage-grid call-grid">
-        <StreamTile stream={localStream} label={`${displayName} (tu)${sharing ? " · schermo" : ""}`} muted focused={focusedTile === "local"} onFocus={sharing ? () => setFocusedTile((value) => value === "local" ? null : "local") : undefined} />
-        {participants.map((participantId) => <StreamTile key={participantId} stream={remoteStreams[participantId] ?? null} label={memberNames[participantId] ?? "Membro"} focused={focusedTile === participantId} onFocus={() => setFocusedTile((value) => value === participantId ? null : participantId)} />)}
+        <StreamTile
+          stream={localStream}
+          label={`${displayName} (tu)${sharing ? " · schermo" : ""}`}
+          profile={selfProfile}
+          muted
+          focused={focusedTile === "local"}
+          onFocus={sharing ? () => setFocusedTile((value) => value === "local" ? null : "local") : undefined}
+        />
+        {participants.map((participantId) => (
+          <StreamTile
+            key={participantId}
+            stream={remoteStreams[participantId] ?? null}
+            label={memberNames[participantId] ?? memberProfiles?.[participantId]?.display_name ?? "Membro"}
+            profile={memberProfiles?.[participantId] ?? null}
+            focused={focusedTile === participantId}
+            onFocus={() => setFocusedTile((value) => value === participantId ? null : participantId)}
+          />
+        ))}
       </div>
       <p className="media-notice" role="status">{notice}</p>
       <div className="call-controls">

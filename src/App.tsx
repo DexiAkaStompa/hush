@@ -234,6 +234,14 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
     clearPendingFile();
   }, [activeConversationId, clearPendingFile]);
 
+  const memberProfilesMap = useMemo(() => {
+    const map: Record<string, Profile> = { [profile.id]: profile };
+    for (const member of members) {
+      map[member.id] = member;
+    }
+    return map;
+  }, [members, profile]);
+
   const activeSpace = useMemo(() => spaces.find((space) => space.id === activeSpaceId) ?? null, [activeSpaceId, spaces]);
   const conversations = useMemo(() => [...channels, ...directMessages], [channels, directMessages]);
   const textChannels = useMemo(() => channels.filter((channel) => channel.kind === "channel"), [channels]);
@@ -732,6 +740,8 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
           userId={session.user.id}
           displayName={profile.display_name}
           memberNames={stage.memberNames}
+          selfProfile={profile}
+          memberProfiles={memberProfilesMap}
           onMinimize={() => setStage((current) => ({ ...current, expanded: false }))}
           onClose={leaveCall}
         />

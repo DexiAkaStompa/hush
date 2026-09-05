@@ -1481,3 +1481,72 @@ html, body, #root { background: var(--app-background); }
   border-radius: 8px;
   box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
 }
+
+
+/* --- Call Stage Avatar & Banner Backdrop --- */
+.tile-backdrop {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  z-index: 1;
+  transition: background-color 0.3s ease;
+}
+
+.tile-backdrop-banner {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.tile-backdrop-dim {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  background: radial-gradient(circle at center, rgba(0, 0, 0, 0.15) 0%, rgba(0, 0, 0, 0.58) 100%);
+  pointer-events: none;
+}
+
+.big-avatar {
+  width: 96px;
+  height: 96px;
+  position: relative;
+  overflow: hidden;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: #081018;
+  font: 700 26px "Cascadia Code", monospace;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5), 0 0 0 3px rgba(255, 255, 255, 0.22);
+  z-index: 2;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.big-avatar > img,
+.big-avatar-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+}
+
+.big-avatar-initials {
+  position: relative;
+  z-index: 1;
+  user-select: none;
+}
+
+@media (max-width: 640px) {
+  .big-avatar {
+    width: 80px;
+    height: 80px;
+    font-size: 22px;
+  }
+}
