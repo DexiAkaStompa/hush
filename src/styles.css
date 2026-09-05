@@ -438,6 +438,11 @@ button:focus-visible, input:focus-visible { outline: 3px solid rgba(139,240,199,
   box-shadow: 0 0 0 5px rgba(255,255,255,.075), 0 12px 30px rgba(0,0,0,.2);
 }
 .server-icon.selected::before { display: none; }
+.brand-mark.selected {
+  border-color: rgba(255,255,255,.6);
+  box-shadow: 0 0 0 5px rgba(255,255,255,.14), 0 12px 30px rgba(0,0,0,.25);
+  transform: scale(1.04);
+}
 .server-icon.add-server { color: var(--mint); background: rgba(139,240,199,.08); }
 .rail-rule { width: 30px; background: rgba(255,255,255,.12); }
 

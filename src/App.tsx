@@ -649,7 +649,7 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
     <div className="app-shell">
       <DotPattern />
       <aside className="server-rail" aria-label="Server">
-        <button className="brand-mark" onClick={() => { setActiveSpaceId(null); setActiveConversationId(null); setStage((current) => current.open ? { ...current, expanded: false } : current); }} aria-label="Home Hush"><BrandMark size={28} /></button>
+        <button className={`brand-mark ${activeSpaceId === null ? "selected" : ""}`} onClick={() => { setActiveSpaceId(null); setActiveConversationId(null); setStage((current) => current.open ? { ...current, expanded: false } : current); }} aria-label="Messaggi diretti" title="Messaggi diretti"><BrandMark size={28} /></button>
         <div className="rail-rule" />
         {spaces.map((space) => (
           <button className={`server-icon ${activeSpaceId === space.id ? "selected" : ""}`} key={space.id} onClick={() => selectSpace(space.id)} aria-label={space.name} title={space.name}>{initialsFor(space.name)}</button>
@@ -665,39 +665,44 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
         <button className="sidebar-close" onClick={() => setSidebarOpen(false)} aria-label="Chiudi menu"><X size={18} /></button>
         <div className="sidebar-scroll">
           <button className="find-conversation" onClick={() => activeConversation ? setShowSearch(true) : setToast("Apri una conversazione per cercare nei messaggi.")}><Search size={16} /><span>Cerca nei messaggi</span><kbd>Ctrl K</kbd></button>
-          <div className="channel-section">
-            <div className="section-label"><span>canali di testo</span><button onClick={() => activeSpace ? openModal("channel") : openModal("space")} aria-label="Crea canale"><Plus size={14} /></button></div>
-            {textChannels.map((channel) => (
-              <button key={channel.id} className={`channel-row ${activeConversationId === channel.id ? "active" : ""}`} onClick={() => { setActiveConversationId(channel.id); setSidebarOpen(false); setStage((current) => current.open ? { ...current, expanded: false } : current); }}><Hash size={17} /><span>{channel.name}</span></button>
-            ))}
-            {!loading && textChannels.length === 0 ? <p className="sidebar-empty">Nessun canale di testo</p> : null}
-          </div>
-          <div className="channel-section voice-section">
-            <div className="section-label"><span>canali vocali</span><button onClick={() => activeSpace ? openModal("voice") : openModal("space")} aria-label="Crea canale vocale"><Plus size={14} /></button></div>
-            {voiceChannels.map((channel) => (
-              <button
-                key={channel.id}
-                className={`channel-row voice-row ${activeConversationId === channel.id ? "active" : ""}`}
-                onClick={() => {
-                  setActiveConversationId(channel.id);
-                  setSidebarOpen(false);
-                  startCall(channel, false);
-                }}
-              >
-                <Volume2 size={17} /><span>{channel.name}</span><small>Entra</small>
-              </button>
-            ))}
-            {!loading && voiceChannels.length === 0 ? <p className="sidebar-empty">Nessun canale vocale</p> : null}
-          </div>
-          <div className="channel-section">
-            <div className="section-label"><span>messaggi diretti</span><button onClick={() => openModal("dm")} aria-label="Nuovo gruppo DM"><Plus size={14} /></button></div>
-            {directMessages.map((conversation) => (
-              <button className={`dm-row ${activeConversationId === conversation.id ? "active" : ""}`} key={conversation.id} onClick={() => { setActiveSpaceId(null); setActiveConversationId(conversation.id); setSidebarOpen(false); setStage((current) => current.open ? { ...current, expanded: false } : current); }}>
-                <span className="dm-generic-avatar"><UserRound size={16} /></span><span><strong>{conversation.name}</strong><small>gruppo cifrato</small></span>
-              </button>
-            ))}
-            {!loading && directMessages.length === 0 ? <p className="sidebar-empty">Nessun gruppo DM</p> : null}
-          </div>
+          {activeSpace ? (
+            <>
+              <div className="channel-section">
+                <div className="section-label"><span>canali di testo</span><button onClick={() => openModal("channel")} aria-label="Crea canale"><Plus size={14} /></button></div>
+                {textChannels.map((channel) => (
+                  <button key={channel.id} className={`channel-row ${activeConversationId === channel.id ? "active" : ""}`} onClick={() => { setActiveConversationId(channel.id); setSidebarOpen(false); setStage((current) => current.open ? { ...current, expanded: false } : current); }}><Hash size={17} /><span>{channel.name}</span></button>
+                ))}
+                {!loading && textChannels.length === 0 ? <p className="sidebar-empty">Nessun canale di testo</p> : null}
+              </div>
+              <div className="channel-section voice-section">
+                <div className="section-label"><span>canali vocali</span><button onClick={() => openModal("voice")} aria-label="Crea canale vocale"><Plus size={14} /></button></div>
+                {voiceChannels.map((channel) => (
+                  <button
+                    key={channel.id}
+                    className={`channel-row voice-row ${activeConversationId === channel.id ? "active" : ""}`}
+                    onClick={() => {
+                      setActiveConversationId(channel.id);
+                      setSidebarOpen(false);
+                      startCall(channel, false);
+                    }}
+                  >
+                    <Volume2 size={17} /><span>{channel.name}</span><small>Entra</small>
+                  </button>
+                ))}
+                {!loading && voiceChannels.length === 0 ? <p className="sidebar-empty">Nessun canale vocale</p> : null}
+              </div>
+            </>
+          ) : (
+            <div className="channel-section">
+              <div className="section-label"><span>messaggi diretti</span><button onClick={() => openModal("dm")} aria-label="Nuovo gruppo DM"><Plus size={14} /></button></div>
+              {directMessages.map((conversation) => (
+                <button className={`dm-row ${activeConversationId === conversation.id ? "active" : ""}`} key={conversation.id} onClick={() => { setActiveSpaceId(null); setActiveConversationId(conversation.id); setSidebarOpen(false); setStage((current) => current.open ? { ...current, expanded: false } : current); }}>
+                  <span className="dm-generic-avatar"><UserRound size={16} /></span><span><strong>{conversation.name}</strong><small>gruppo cifrato</small></span>
+                </button>
+              ))}
+              {!loading && directMessages.length === 0 ? <p className="sidebar-empty">Nessun gruppo DM</p> : null}
+            </div>
+          )}
         </div>
         {stage.open ? (
           <section className="call-dock" aria-label="Chiamata connessa">
