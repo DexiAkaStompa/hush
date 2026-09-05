@@ -106,6 +106,86 @@ export async function loadConversationMembers(conversationId: string) {
   return (profiles ?? []) as Profile[];
 }
 
+export type DmRecipientInfo = {
+  recipient: Profile | null;
+  allMembers: Profile[];
+};
+
+export async function loadDmRecipients(
+  dmIds: string[],
+  currentUserId: string
+): Promise<Record<string, DmRecipientInfo>> {
+  if (dmIds.length === 0) return {};
+  const client = requireClient();
+  const { data: memberships, error: memberError } = await client
+    .from("conversation_members")
+    .select("conversation_id, user_id")
+    .in("conversation_id", dmIds)
+    .is("left_at", null);
+  if (memberError || !memberships) return {};
+
+  const allUserIds = [...new Set(memberships.map((m) => m.user_id as string))];
+  if (allUserIds.length === 0) return {};
+
+  const { data: profiles, error: profileError } = await client
+    .from("profiles")
+    .select("*")
+    .in("id", allUserIds);
+  if (profileError || !profiles) return {};
+
+  const profileMap = new Map((profiles as Profile[]).map((p) => [p.id, p]));
+  const result: Record<string, DmRecipientInfo> = {};
+
+  for (const dmId of dmIds) {
+    const memberIds = memberships
+      .filter((m) => m.conversation_id === dmId)
+      .map((m) => m.user_id as string);
+    const memberProfiles = memberIds.map((id) => profileMap.get(id)).filter(Boolean) as Profile[];
+    const others = memberProfiles.filter((p) => p.id !== currentUserId);
+
+    const recipient = others.length === 1 ? others[0] : others.length === 0 ? memberProfiles[0] ?? null : null;
+    result[dmId] = {
+      recipient,
+      allMembers: memberProfiles,
+    };
+  }
+
+  return result;
+}
+
+export async function loadLatestEncryptedMessages(conversationIds: string[]) {
+  if (conversationIds.length === 0) return {};
+  const client = requireClient();
+  const { data, error } = await client
+    .from("encrypted_messages")
+    .select("id, conversation_id, sender_id, algorithm, key_epoch, nonce, ciphertext, aad_json, created_at")
+    .in("conversation_id", conversationIds)
+    .order("created_at", { ascending: false });
+  if (error || !data) return {};
+
+  const latestByConv: Record<string, EncryptedMessageRow> = {};
+  for (const row of data as EncryptedMessageRow[]) {
+    if (!latestByConv[row.conversation_id]) {
+      latestByConv[row.conversation_id] = row;
+    }
+  }
+  return latestByConv;
+}
+
+export async function decryptMessageSnippet(row: EncryptedMessageRow, key: CryptoKey): Promise<string> {
+  try {
+    const encrypted = { v: 1 as const, iv: row.nonce, ciphertext: row.ciphertext };
+    const decrypted = await decryptText(encrypted, key, `hush:conversation:${row.conversation_id}:epoch:0`);
+    const unpacked = unpackMessageContent(decrypted);
+    if (unpacked.attachment) {
+      return unpacked.text ? `📷 ${unpacked.text}` : "📷 Immagine";
+    }
+    return unpacked.text || "Messaggio vuoto";
+  } catch {
+    return "Messaggio cifrato";
+  }
+}
+
 export async function loadAndDecryptMessages(
   conversationId: string,
   key: CryptoKey,

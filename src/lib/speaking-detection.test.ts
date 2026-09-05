@@ -24,3 +24,4 @@ describe("speaking detection logic", () => {
     expect(isSpeakingLevel(25, 25)).toBe(true);
   });
 });
+

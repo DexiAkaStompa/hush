@@ -35,6 +35,7 @@ import { Modal } from "./components/Modal";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { ProfileImage } from "./components/ProfileImage";
 import { UserContextMenu, type ContextMenuTarget } from "./components/UserContextMenu";
+import { IncomingCallDialog } from "./components/IncomingCallDialog";
 import { ChatAttachment } from "./components/ChatAttachment";
 import { copyText } from "./lib/clipboard";
 import {
@@ -52,18 +53,26 @@ import {
   type DeviceIdentity,
 } from "./lib/device-crypto";
 import {
+  broadcastCallCancelled,
+  broadcastIncomingCall,
   persistEncryptedMessage,
   subscribeToConversation,
+  subscribeToIncomingCalls,
   unsubscribeFromConversation,
+  type IncomingCallPayload,
 } from "./lib/realtime";
+import { startIncomingCallRingtone, stopIncomingCallRingtone } from "./lib/ringtone";
 import { isSupabaseConfigured, supabase } from "./lib/supabase";
 import { applyTheme, readTheme, type ThemeId } from "./lib/themes";
 import { playCallSound, playChatSound } from "./lib/interaction-sound";
 import {
+  decryptMessageSnippet,
   initialsFor,
   loadAndDecryptMessages,
   loadChannels,
   loadConversationMembers,
+  loadDmRecipients,
+  loadLatestEncryptedMessages,
   loadWorkspace,
   packMessageContent,
   readableError,
@@ -179,28 +188,45 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
   const [toast, setToast] = useState<string | null>(null);
   const [stage, setStage] = useState<CallStage>(EMPTY_CALL_STAGE);
   const [contextMenu, setContextMenu] = useState<ContextMenuTarget | null>(null);
+  const [dmDetails, setDmDetails] = useState<Record<string, { recipient: Profile | null; lastMessage?: string | null }>>({});
+  const [incomingCall, setIncomingCall] = useState<IncomingCallPayload | null>(null);
+  const ringtoneStopRef = useRef<(() => void) | null>(null);
 
-  const handleOpenDm = useCallback((targetUser: Profile) => {
-    const existing = directMessages.find((dm) =>
-      dm.name.toLowerCase() === targetUser.display_name.toLowerCase() ||
-      dm.name.toLowerCase() === targetUser.username.toLowerCase()
-    );
-    if (existing) {
-      setActiveSpaceId(null);
-      setActiveConversationId(existing.id);
-      setSidebarOpen(false);
-      setStage((current) => current.open ? { ...current, expanded: false } : current);
-    } else {
-      setFormPrimary(targetUser.display_name);
-      setFormSecondary(`@${targetUser.username}`);
-      setFormError(null);
-      openModal("dm");
+  const updateDmDetails = useCallback(async (dms: Conversation[], devIdentity?: DeviceIdentity | null) => {
+    const dmIds = dms.map((d) => d.id);
+    if (dmIds.length === 0) {
+      setDmDetails({});
+      return;
     }
-  }, [directMessages]);
+    try {
+      const [recipients, latestMessages] = await Promise.all([
+        loadDmRecipients(dmIds, session.user.id),
+        loadLatestEncryptedMessages(dmIds),
+      ]);
+      const details: Record<string, { recipient: Profile | null; lastMessage?: string | null }> = {};
+      for (const dm of dms) {
+        const recipient = recipients[dm.id]?.recipient ?? null;
+        let lastMessage: string | null = null;
+        const latestRow = latestMessages[dm.id];
+        if (latestRow && devIdentity) {
+          try {
+            const key = await loadConversationKey(dm.id, devIdentity);
+            if (key) {
+              lastMessage = await decryptMessageSnippet(latestRow, key);
+            }
+          } catch {
+            // Key not yet available
+          }
+        }
+        details[dm.id] = { recipient, lastMessage };
+      }
+      setDmDetails((prev) => ({ ...prev, ...details }));
+    } catch {
+      // Ignore background fetch error
+    }
+  }, [session.user.id]);
 
-  const handleMention = useCallback((targetUser: Profile) => {
-    setDraft((current) => `${current ? current.trimEnd() + " " : ""}@${targetUser.username} `);
-  }, []);
+
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [pendingPreview, setPendingPreview] = useState<string | null>(null);
   const [uploadingMedia, setUploadingMedia] = useState(false);
@@ -291,12 +317,90 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
       roomName: conversation.name,
       memberNames: Object.fromEntries(members.map((member) => [member.id, member.display_name])),
     });
+
+    // Broadcast incoming call to other members of this conversation
+    void broadcastIncomingCall({
+      conversationId: conversation.id,
+      conversationName: conversation.name,
+      caller: {
+        id: session.user.id,
+        display_name: profile.display_name,
+        username: profile.username,
+        avatar_color: profile.avatar_color,
+        avatar_path: profile.avatar_path,
+      },
+      isVideo: video,
+      timestamp: Date.now(),
+    });
   };
 
   const leaveCall = () => {
     void playCallSound("leave");
+    if (stage.conversationId) {
+      void broadcastCallCancelled(stage.conversationId);
+    }
     setStage(EMPTY_CALL_STAGE);
   };
+
+  const handleAcceptCall = () => {
+    if (!incomingCall) return;
+    ringtoneStopRef.current?.();
+    ringtoneStopRef.current = null;
+    const conv = conversations.find((c) => c.id === incomingCall.conversationId) ?? null;
+    const isVideo = incomingCall.isVideo;
+    setIncomingCall(null);
+    if (conv) {
+      setActiveSpaceId(conv.space_id);
+      setActiveConversationId(conv.id);
+      startCall(conv, isVideo);
+    }
+  };
+
+  const handleDeclineCall = () => {
+    ringtoneStopRef.current?.();
+    ringtoneStopRef.current = null;
+    setIncomingCall(null);
+  };
+
+  // Listen for incoming calls on all DM conversations
+  useEffect(() => {
+    if (!directMessages.length || !session.user.id) return;
+    const dmIds = directMessages.map((dm) => dm.id);
+
+    const unsubscribe = subscribeToIncomingCalls(
+      dmIds,
+      session.user.id,
+      (call) => {
+        if (stage.open) return; // already in call
+
+        ringtoneStopRef.current?.();
+        ringtoneStopRef.current = startIncomingCallRingtone({
+          durationMs: 30000,
+          onEnd: () => {
+            setIncomingCall((curr) => (curr?.conversationId === call.conversationId ? null : curr));
+          },
+        });
+
+        setIncomingCall(call);
+      },
+      (cancelledConvId) => {
+        setIncomingCall((curr) => {
+          if (curr?.conversationId === cancelledConvId) {
+            ringtoneStopRef.current?.();
+            ringtoneStopRef.current = null;
+            return null;
+          }
+          return curr;
+        });
+      }
+    );
+
+    return () => {
+      unsubscribe();
+      ringtoneStopRef.current?.();
+      ringtoneStopRef.current = null;
+    };
+  }, [directMessages, session.user.id, stage.open]);
 
   const refreshWorkspace = useCallback(async (preferredSpaceId?: string, preferredConversationId?: string) => {
     const data = await loadWorkspace(session.user.id, profileFromSession(session));
@@ -305,8 +409,9 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
     setDirectMessages(data.directMessages);
     setActiveSpaceId((current) => preferredSpaceId ?? current ?? data.spaces[0]?.id ?? null);
     if (preferredConversationId) setActiveConversationId(preferredConversationId);
+    void updateDmDetails(data.directMessages, identity);
     return data;
-  }, [session.user.id]);
+  }, [identity, session, updateDmDetails]);
 
   const refreshChannels = useCallback(async (spaceId: string, preferredConversationId?: string) => {
     const nextChannels = await loadChannels(spaceId);
@@ -316,6 +421,55 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
       ?? (nextChannels.some((channel) => channel.id === current) ? current : nextChannels[0]?.id ?? null)
     ));
     return nextChannels;
+  }, []);
+
+  const handleOpenDm = useCallback(async (targetUser: Profile) => {
+    if (!identity || !supabase) return;
+
+    // Check if 1-on-1 DM already exists with this user
+    const existing = directMessages.find((dm) => {
+      const details = dmDetails[dm.id];
+      if (details?.recipient?.id === targetUser.id) return true;
+      return (
+        dm.name.toLowerCase() === targetUser.display_name.toLowerCase() ||
+        dm.name.toLowerCase() === targetUser.username.toLowerCase()
+      );
+    });
+
+    if (existing) {
+      setActiveSpaceId(null);
+      setActiveConversationId(existing.id);
+      setSidebarOpen(false);
+      setStage((current) => (current.open ? { ...current, expanded: false } : current));
+      return;
+    }
+
+    // Directly create 1-on-1 DM without modal!
+    setBusy(true);
+    try {
+      const { data, error } = await supabase.rpc("create_group_dm", {
+        p_name: targetUser.display_name,
+        p_usernames: [targetUser.username],
+      });
+      if (error) throw error;
+      const conversationId = data as string;
+      await initializeConversationKey(conversationId, identity);
+      const ws = await refreshWorkspace(undefined, conversationId);
+      setActiveSpaceId(null);
+      setActiveConversationId(conversationId);
+      setSidebarOpen(false);
+      setStage((current) => (current.open ? { ...current, expanded: false } : current));
+      setToast(`Chat aperta con ${targetUser.display_name}`);
+      void updateDmDetails(ws.directMessages, identity);
+    } catch (error) {
+      setToast(readableError(error));
+    } finally {
+      setBusy(false);
+    }
+  }, [directMessages, dmDetails, identity, refreshWorkspace, updateDmDetails]);
+
+  const handleMention = useCallback((targetUser: Profile) => {
+    setDraft((current) => `${current ? current.trimEnd() + " " : ""}@${targetUser.username} `);
   }, []);
 
   useEffect(() => {
@@ -329,11 +483,12 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
         setSpaces(data.spaces);
         setDirectMessages(data.directMessages);
         setActiveSpaceId(data.spaces[0]?.id ?? null);
+        void updateDmDetails(data.directMessages, nextIdentity);
       })
       .catch((error) => current && setToast(readableError(error)))
       .finally(() => current && setLoading(false));
     return () => { current = false; };
-  }, [session.user.id]);
+  }, [session, updateDmDetails]);
 
   useEffect(() => {
     if (!activeSpaceId) {
@@ -434,6 +589,16 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
             encrypted,
             attachment,
           }]);
+          if (activeConversation.kind === "group_dm") {
+            const preview = attachment ? (body ? `📷 ${body}` : "📷 Immagine") : body;
+            setDmDetails((prev) => ({
+              ...prev,
+              [activeConversation.id]: {
+                ...prev[activeConversation.id],
+                lastMessage: preview,
+              },
+            }));
+          }
         },
         onPresence: setOnlineUserIds,
         onStatus: (status) => {
@@ -655,6 +820,16 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
       }]);
       setDraft("");
       clearPendingFile();
+      if (activeConversation.kind === "group_dm") {
+        const preview = attachment ? (cleanDraft ? `📷 ${cleanDraft}` : "📷 Immagine") : cleanDraft;
+        setDmDetails((prev) => ({
+          ...prev,
+          [activeConversation.id]: {
+            ...prev[activeConversation.id],
+            lastMessage: preview,
+          },
+        }));
+      }
       void playChatSound("send");
     } catch (error) {
       setToast(readableError(error));
@@ -719,11 +894,51 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
           ) : (
             <div className="channel-section">
               <div className="section-label"><span>messaggi diretti</span><button onClick={() => openModal("dm")} aria-label="Nuovo gruppo DM"><Plus size={14} /></button></div>
-              {directMessages.map((conversation) => (
-                <button className={`dm-row ${activeConversationId === conversation.id ? "active" : ""}`} key={conversation.id} onClick={() => { setActiveSpaceId(null); setActiveConversationId(conversation.id); setSidebarOpen(false); setStage((current) => current.open ? { ...current, expanded: false } : current); }}>
-                  <span className="dm-generic-avatar"><UserRound size={16} /></span><span><strong>{conversation.name}</strong><small>gruppo cifrato</small></span>
-                </button>
-              ))}
+              {directMessages.map((conversation) => {
+                const details = dmDetails[conversation.id];
+                const partner = details?.recipient;
+                const displayName = partner?.display_name || conversation.name;
+                const snippet = details?.lastMessage || "Nessun messaggio";
+                const avatarColor = partner?.avatar_color || "#73b7ff";
+
+                return (
+                  <button
+                    className={`dm-row ${activeConversationId === conversation.id ? "active" : ""}`}
+                    key={conversation.id}
+                    onClick={() => {
+                      setActiveSpaceId(null);
+                      setActiveConversationId(conversation.id);
+                      setSidebarOpen(false);
+                      setStage((current) => (current.open ? { ...current, expanded: false } : current));
+                    }}
+                    onContextMenu={(e) => {
+                      if (partner) {
+                        e.preventDefault();
+                        setContextMenu({
+                          x: e.clientX,
+                          y: e.clientY,
+                          user: partner,
+                          inCall: stage.open,
+                        });
+                      }
+                    }}
+                  >
+                    <span className="dm-avatar" style={{ backgroundColor: avatarColor }}>
+                      {partner?.avatar_path ? (
+                        <ProfileImage path={partner.avatar_path} alt="" className="dm-avatar-img" />
+                      ) : partner ? (
+                        <span className="dm-avatar-initials">{initialsFor(partner.display_name)}</span>
+                      ) : (
+                        <UserRound size={16} />
+                      )}
+                    </span>
+                    <span className="dm-copy">
+                      <strong className="dm-name">{displayName}</strong>
+                      <small className="dm-snippet">{snippet}</small>
+                    </span>
+                  </button>
+                );
+              })}
               {!loading && directMessages.length === 0 ? <p className="sidebar-empty">Nessun gruppo DM</p> : null}
             </div>
           )}
@@ -747,7 +962,7 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
         <header className="chat-header">
           <button className="mobile-menu" onClick={() => setSidebarOpen(true)} aria-label="Apri menu"><Menu size={20} /></button>
           {activeConversation?.kind === "voice_channel" ? <Volume2 size={21} className="hash-icon voice-icon" /> : activeConversation ? <Hash size={21} className="hash-icon" /> : <ShieldCheck size={21} className="hash-icon" />}
-          <div className="channel-heading"><strong>{activeConversation?.name ?? "Il tuo spazio Hush"}</strong><span>{activeConversation ? activeConversation.kind === "voice_channel" ? `${members.length} membri · canale vocale` : `${members.length} membri` : `Benvenuto, ${profile.display_name}`}</span></div>
+          <div className="channel-heading"><strong>{(activeConversation && !activeSpaceId && dmDetails[activeConversation.id]?.recipient?.display_name) ? dmDetails[activeConversation.id].recipient!.display_name : (activeConversation?.name ?? "Il tuo spazio Hush")}</strong><span>{activeConversation ? activeConversation.kind === "voice_channel" ? `${members.length} membri · canale vocale` : `${members.length} membri` : `Benvenuto, ${profile.display_name}`}</span></div>
           {activeConversation ? (
             <div className="header-actions">
               <button onClick={() => startCall(activeConversation, false)} aria-label="Avvia chiamata"><Phone size={18} /></button>
@@ -951,7 +1166,35 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
       </aside>
 
       {inviteLink ? <Modal title="Invita nel server" description="Condividi questo link con gli amici. Scade tra 7 giorni; incollalo in Server → Usa invito." onClose={() => setInviteLink(null)}><div className="modal-form"><label>Link di invito<input readOnly value={inviteLink} onFocus={(event) => event.target.select()} /></label><button className="modal-primary" onClick={() => { void copyText(inviteLink).then(() => setInviteNotice("Invito copiato")).catch(() => setInviteNotice("Seleziona il link e premi Ctrl+C per copiarlo.")); }}>Copia invito</button><p role="status">{inviteNotice}</p></div></Modal> : null}
-      {viewedProfile ? <Modal title="Profilo" onClose={() => setViewedProfile(null)}><div className="profile-preview"><div className="profile-banner" style={{ backgroundColor: viewedProfile.avatar_color }}><ProfileImage path={viewedProfile.banner_path} alt="Banner profilo" /></div><div className="profile-preview-copy"><Avatar profile={viewedProfile} /><strong>{viewedProfile.display_name}</strong><small>@{viewedProfile.username}</small><p>{viewedProfile.bio}</p></div></div></Modal> : null}
+      {viewedProfile ? (
+        <Modal title="Profilo" onClose={() => setViewedProfile(null)}>
+          <div className="profile-preview">
+            <div className="profile-banner" style={{ backgroundColor: viewedProfile.avatar_color }}>
+              <ProfileImage path={viewedProfile.banner_path} alt="Banner profilo" />
+            </div>
+            <div className="profile-preview-copy">
+              <Avatar profile={viewedProfile} />
+              <strong>{viewedProfile.display_name}</strong>
+              <small>@{viewedProfile.username}</small>
+              <p>{viewedProfile.bio}</p>
+              {viewedProfile.id !== session.user.id ? (
+                <button
+                  type="button"
+                  className="modal-primary"
+                  style={{ marginTop: 14 }}
+                  onClick={() => {
+                    const target = viewedProfile;
+                    setViewedProfile(null);
+                    void handleOpenDm(target);
+                  }}
+                >
+                  Invia messaggio
+                </button>
+              ) : null}
+            </div>
+          </div>
+        </Modal>
+      ) : null}
       {modal === "space" ? <Modal title="Server" description="Crea un nuovo spazio oppure incolla un invito ricevuto da un amico." onClose={() => setModal(null)}><div className="modal-tabs"><button className={spaceMode === "create" ? "active" : ""} onClick={() => { setSpaceMode("create"); setFormPrimary(""); setFormError(null); }}>Crea</button><button className={spaceMode === "join" ? "active" : ""} onClick={() => { setSpaceMode("join"); setFormPrimary(""); setFormError(null); }}>Usa invito</button></div><form className="modal-form" onSubmit={submitSpace}><label>{spaceMode === "create" ? "Nome del server" : "Codice o link di invito"}<input autoFocus required maxLength={spaceMode === "create" ? 80 : 200} value={formPrimary} onChange={(event) => setFormPrimary(event.target.value)} placeholder={spaceMode === "create" ? "La nostra stanza" : "hush://invite/…"} /></label>{formError ? <div className="auth-error">{formError}</div> : null}<button className="modal-primary" disabled={busy || !formPrimary.trim()}>{busy ? "Attendi…" : spaceMode === "create" ? "Crea server" : "Entra nel server"}</button></form></Modal> : null}
       {modal === "channel" ? <Modal title="Nuovo canale" description={`Verrà aggiunto a ${activeSpace?.name ?? "questo server"} e riceverà una chiave E2EE separata.`} onClose={() => setModal(null)}><form className="modal-form" onSubmit={submitChannel}><label>Nome del canale<input autoFocus required maxLength={80} value={formPrimary} onChange={(event) => setFormPrimary(event.target.value)} placeholder="gaming" /></label>{formError ? <div className="auth-error">{formError}</div> : null}<button className="modal-primary" disabled={busy || !formPrimary.trim()}>{busy ? "Creazione…" : "Crea canale"}</button></form></Modal> : null}
       {modal === "dm" ? <Modal title="Nuovo gruppo DM" description="Inserisci gli username esatti, separati da virgole. Hush distribuirà la chiave ai loro dispositivi registrati." onClose={() => setModal(null)}><form className="modal-form" onSubmit={submitDm}><label>Nome del gruppo<input autoFocus required maxLength={80} value={formPrimary} onChange={(event) => setFormPrimary(event.target.value)} placeholder="Nome del gruppo" /></label><label>Username<input required value={formSecondary} onChange={(event) => setFormSecondary(event.target.value)} placeholder="@amico1, @amico2" /></label>{formError ? <div className="auth-error">{formError}</div> : null}<button className="modal-primary" disabled={busy || !formPrimary.trim() || !formSecondary.trim()}>{busy ? "Creazione…" : "Crea gruppo"}</button></form></Modal> : null}
@@ -970,6 +1213,14 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
           onMention={handleMention}
           onOpenSettings={() => openModal("settings")}
           onToast={setToast}
+        />
+      ) : null}
+
+      {incomingCall ? (
+        <IncomingCallDialog
+          call={incomingCall}
+          onAccept={handleAcceptCall}
+          onDecline={handleDeclineCall}
         />
       ) : null}
       {toast ? <div className="toast" role="status"><MessageCircleMore size={16} />{toast}</div> : null}

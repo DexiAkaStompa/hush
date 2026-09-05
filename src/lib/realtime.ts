@@ -92,3 +92,80 @@ export async function persistEncryptedMessage(
   const { error } = await supabase.from("encrypted_messages").insert(message);
   if (error) throw error;
 }
+
+export type IncomingCallPayload = {
+  conversationId: string;
+  conversationName: string;
+  caller: {
+    id: string;
+    display_name: string;
+    username: string;
+    avatar_color: string;
+    avatar_path?: string | null;
+  };
+  isVideo: boolean;
+  timestamp: number;
+};
+
+export async function broadcastIncomingCall(payload: IncomingCallPayload) {
+  if (!supabase) return;
+  const channel = supabase.channel(callTopic(payload.conversationId), {
+    config: { private: true, broadcast: { self: false } },
+  });
+  await channel.subscribe();
+  await channel.send({
+    type: "broadcast",
+    event: "call:incoming",
+    payload,
+  });
+}
+
+export async function broadcastCallCancelled(conversationId: string) {
+  if (!supabase) return;
+  const channel = supabase.channel(callTopic(conversationId), {
+    config: { private: true, broadcast: { self: false } },
+  });
+  await channel.subscribe();
+  await channel.send({
+    type: "broadcast",
+    event: "call:cancelled",
+    payload: { conversationId },
+  });
+}
+
+export function subscribeToIncomingCalls(
+  conversationIds: string[],
+  userId: string,
+  onIncomingCall: (call: IncomingCallPayload) => void,
+  onCallCancelled?: (conversationId: string) => void
+): () => void {
+  if (!supabase || conversationIds.length === 0) return () => {};
+  const client = supabase;
+  const channels = conversationIds.map((id) => {
+    const channel = client.channel(callTopic(id), {
+      config: { private: true, broadcast: { self: false } },
+    });
+    channel
+      .on("broadcast", { event: "call:incoming" }, (event) => {
+        const payload = event.payload as IncomingCallPayload;
+        if (payload && payload.caller && payload.caller.id !== userId) {
+          onIncomingCall(payload);
+        }
+      })
+      .on("broadcast", { event: "call:cancelled" }, (event) => {
+        const payload = event.payload as { conversationId: string };
+        if (payload && payload.conversationId) {
+          onCallCancelled?.(payload.conversationId);
+        }
+      });
+    channel.subscribe();
+    return channel;
+  });
+
+  return () => {
+    channels.forEach((ch) => {
+      void client.removeChannel(ch);
+    });
+  };
+}
+
