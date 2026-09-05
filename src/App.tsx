@@ -140,7 +140,15 @@ export function App() {
       setAuthReady(true);
     });
     const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
-      setSession(nextSession);
+      setSession((prev) => {
+        if (
+          prev?.user.id === nextSession?.user.id &&
+          prev?.access_token === nextSession?.access_token
+        ) {
+          return prev;
+        }
+        return nextSession;
+      });
       setAuthReady(true);
     });
     return () => listener.subscription.unsubscribe();
@@ -192,6 +200,7 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
   const [dmDetails, setDmDetails] = useState<Record<string, { recipient: Profile | null; lastMessage?: string | null }>>({});
   const [incomingCall, setIncomingCall] = useState<IncomingCallPayload | null>(null);
   const ringtoneStopRef = useRef<(() => void) | null>(null);
+  const initialLoadedRef = useRef(false);
 
   const updateDmDetails = useCallback(async (dms: Conversation[], devIdentity?: DeviceIdentity | null) => {
     const dmIds = dms.map((d) => d.id);
@@ -437,10 +446,17 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
   const refreshChannels = useCallback(async (spaceId: string, preferredConversationId?: string) => {
     const nextChannels = await loadChannels(spaceId);
     setChannels(nextChannels);
-    setActiveConversationId((current) => (
-      preferredConversationId
-      ?? (nextChannels.some((channel) => channel.id === current) ? current : nextChannels[0]?.id ?? null)
-    ));
+    setActiveConversationId((current) => {
+      if (preferredConversationId) return preferredConversationId;
+      if (current && nextChannels.some((channel) => channel.id === current)) {
+        return current;
+      }
+      const savedConvId = typeof window !== "undefined" ? localStorage.getItem(`hush:active_conv:${spaceId}`) : null;
+      if (savedConvId && nextChannels.some((channel) => channel.id === savedConvId)) {
+        return savedConvId;
+      }
+      return nextChannels[0]?.id ?? null;
+    });
     return nextChannels;
   }, []);
 
@@ -496,20 +512,49 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
   useEffect(() => {
     let current = true;
     setLoading(true);
-    void Promise.all([ensureDeviceIdentity(session.user.id), loadWorkspace(session.user.id, profileFromSession(session))])
+    void Promise.all([
+      ensureDeviceIdentity(session.user.id),
+      loadWorkspace(session.user.id, profileFromSession(session)),
+    ])
       .then(([nextIdentity, data]) => {
         if (!current) return;
         setIdentity(nextIdentity);
         setProfile(data.profile);
         setSpaces(data.spaces);
         setDirectMessages(data.directMessages);
-        setActiveSpaceId(data.spaces[0]?.id ?? null);
+        if (!initialLoadedRef.current) {
+          initialLoadedRef.current = true;
+          const savedSpaceId = typeof window !== "undefined" ? localStorage.getItem("hush:active_space") : null;
+          const initialSpaceId =
+            savedSpaceId && data.spaces.some((s) => s.id === savedSpaceId)
+              ? savedSpaceId
+              : data.spaces[0]?.id ?? null;
+          setActiveSpaceId(initialSpaceId);
+        }
         void updateDmDetails(data.directMessages, nextIdentity);
       })
       .catch((error) => current && setToast(readableError(error)))
       .finally(() => current && setLoading(false));
-    return () => { current = false; };
-  }, [session, updateDmDetails]);
+    return () => {
+      current = false;
+    };
+  }, [session.user.id, updateDmDetails]);
+
+  useEffect(() => {
+    if (activeSpaceId) {
+      try {
+        localStorage.setItem("hush:active_space", activeSpaceId);
+      } catch {}
+    }
+  }, [activeSpaceId]);
+
+  useEffect(() => {
+    if (activeSpaceId && activeConversationId) {
+      try {
+        localStorage.setItem(`hush:active_conv:${activeSpaceId}`, activeConversationId);
+      } catch {}
+    }
+  }, [activeSpaceId, activeConversationId]);
 
   useEffect(() => {
     if (!activeSpaceId) {
@@ -518,7 +563,9 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
     }
     let current = true;
     void refreshChannels(activeSpaceId).catch((error) => current && setToast(readableError(error)));
-    return () => { current = false; };
+    return () => {
+      current = false;
+    };
   }, [activeSpaceId, refreshChannels]);
 
   useEffect(() => {
