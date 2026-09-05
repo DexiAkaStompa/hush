@@ -67,7 +67,7 @@ export function UserContextMenu({
     const margin = 12;
     const x = Math.max(margin, Math.min(target.x, window.innerWidth - rect.width - margin));
     const y = Math.max(margin, Math.min(target.y, window.innerHeight - rect.height - margin));
-    setPosition({ x, y });
+    setPosition((prev) => (prev.x === x && prev.y === y ? prev : { x, y }));
   }, [target.x, target.y]);
 
   useEffect(() => {
@@ -273,3 +273,4 @@ export function UserContextMenu({
     </div>
   );
 }
+

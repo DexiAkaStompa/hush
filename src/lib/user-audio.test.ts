@@ -98,4 +98,17 @@ describe("user-audio store", () => {
       videoDisabled: false,
     });
   });
+
+  it("maintains referential stability for useSyncExternalStore snapshot equality", () => {
+    const first = getUserAudioPrefs(userId);
+    const second = getUserAudioPrefs(userId);
+    expect(first).toBe(second);
+
+    setUserVolume(userId, 80);
+    const third = getUserAudioPrefs(userId);
+    const fourth = getUserAudioPrefs(userId);
+    expect(third).toBe(fourth);
+    expect(third).not.toBe(first);
+  });
 });
+
