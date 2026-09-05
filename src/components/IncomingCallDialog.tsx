@@ -78,3 +78,4 @@ export function IncomingCallDialog({ call, onAccept, onDecline }: IncomingCallDi
     </div>
   );
 }
+

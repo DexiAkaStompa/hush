@@ -2075,4 +2075,70 @@ html, body, #root { background: var(--app-background); }
   margin-top: 1px;
 }
 
+/* --- Ringtone Settings Card --- */
+.ringtone-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--field-background);
+  font-size: 13px;
+}
+
+.ringtone-card-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.ringtone-icon {
+  color: var(--mint);
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.ringtone-card-title {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.ringtone-card-title strong {
+  font-size: 14px;
+  color: var(--frost);
+}
+
+.ringtone-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.ringtone-actions .settings-secondary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ringtone-actions .settings-secondary.active {
+  background: rgba(110, 231, 183, 0.15);
+  border-color: rgba(110, 231, 183, 0.35);
+  color: var(--mint);
+}
+
+.settings-notice {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 12px;
+  color: var(--mint);
+}
+
+
 

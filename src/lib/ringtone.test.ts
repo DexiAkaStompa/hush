@@ -1,13 +1,21 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { startIncomingCallRingtone, stopIncomingCallRingtone } from "./ringtone";
+import {
+  getCustomRingtone,
+  removeCustomRingtone,
+  saveCustomRingtone,
+  startIncomingCallRingtone,
+  stopIncomingCallRingtone,
+} from "./ringtone";
 
 describe("ringtone module", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.useFakeTimers();
+    await removeCustomRingtone();
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     stopIncomingCallRingtone();
+    await removeCustomRingtone();
     vi.useRealTimers();
   });
 
@@ -28,4 +36,36 @@ describe("ringtone module", () => {
     vi.advanceTimersByTime(5000);
     expect(onEnd).not.toHaveBeenCalled();
   });
+
+  it("saves a valid custom MP3 file and updates custom ringtone state", async () => {
+    const file = new File(["fake-mp3-binary-content"], "custom-bell.mp3", {
+      type: "audio/mpeg",
+    });
+
+    const record = await saveCustomRingtone(file);
+    expect(record.name).toBe("custom-bell.mp3");
+    expect(record.type).toBe("audio/mpeg");
+    expect(getCustomRingtone()?.name).toBe("custom-bell.mp3");
+
+    await removeCustomRingtone();
+    expect(getCustomRingtone()).toBeNull();
+  });
+
+  it("rejects non-audio files", async () => {
+    const file = new File(["text data"], "document.txt", {
+      type: "text/plain",
+    });
+
+    await expect(saveCustomRingtone(file)).rejects.toThrow("Seleziona un file audio valido");
+  });
+
+  it("rejects audio files exceeding 15 MB", async () => {
+    const largeBlob = new Blob([new Uint8Array(16 * 1024 * 1024)]);
+    const file = new File([largeBlob], "large-music.mp3", {
+      type: "audio/mpeg",
+    });
+
+    await expect(saveCustomRingtone(file)).rejects.toThrow("non può superare 15 MB");
+  });
 });
+
