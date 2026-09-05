@@ -1555,3 +1555,216 @@ html, body, #root { background: var(--app-background); }
     font-size: 22px;
   }
 }
+
+/* User Context Menu */
+.user-context-menu {
+  position: fixed;
+  z-index: 10000;
+  min-width: 220px;
+  max-width: 280px;
+  background: rgba(16, 23, 32, 0.94);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(0, 0, 0, 0.3);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  animation: userContextFadeIn 0.12s cubic-bezier(0.16, 1, 0.3, 1);
+  user-select: none;
+}
+
+@keyframes userContextFadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.user-context-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+}
+
+.user-context-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  overflow: hidden;
+  position: relative;
+  display: grid;
+  place-items: center;
+  font: 700 13px "Cascadia Code", monospace;
+  color: #081018;
+  flex-shrink: 0;
+}
+
+.user-context-avatar > img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.user-context-identity {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.user-context-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--frost);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.user-context-handle {
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.user-context-divider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.08);
+  margin: 4px 6px;
+}
+
+.user-context-section-label {
+  padding: 4px 10px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+
+.user-context-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--frost);
+  font-size: 13px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.user-context-item:hover {
+  background: rgba(110, 231, 183, 0.12);
+  color: var(--mint);
+}
+
+.user-context-item svg {
+  color: var(--muted);
+  flex-shrink: 0;
+  transition: color 0.12s ease;
+}
+
+.user-context-item:hover svg {
+  color: var(--mint);
+}
+
+.user-context-slider-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 10px;
+}
+
+.user-context-slider-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.user-context-volume-reset {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  color: var(--frost);
+  font-size: 11px;
+  font-family: "Cascadia Code", monospace;
+  padding: 1px 6px;
+  cursor: pointer;
+}
+
+.user-context-volume-reset:hover {
+  background: rgba(110, 231, 183, 0.2);
+  color: var(--mint);
+  border-color: var(--mint);
+}
+
+.user-context-slider-track {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+}
+
+.user-context-slider-track input[type="range"] {
+  flex: 1;
+  height: 4px;
+  accent-color: var(--mint);
+  cursor: pointer;
+  border-radius: 2px;
+}
+
+.user-context-checkbox-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+.user-context-checkbox-item:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.user-context-checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--frost);
+}
+
+.user-context-checkbox-label svg {
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+.user-context-checkbox-item input[type="checkbox"] {
+  accent-color: var(--mint);
+  width: 15px;
+  height: 15px;
+  cursor: pointer;
+}
+

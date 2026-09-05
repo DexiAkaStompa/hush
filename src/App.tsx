@@ -34,6 +34,7 @@ import { MediaStage } from "./components/MediaStage";
 import { Modal } from "./components/Modal";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { ProfileImage } from "./components/ProfileImage";
+import { UserContextMenu, type ContextMenuTarget } from "./components/UserContextMenu";
 import { ChatAttachment } from "./components/ChatAttachment";
 import { copyText } from "./lib/clipboard";
 import {
@@ -177,6 +178,29 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [stage, setStage] = useState<CallStage>(EMPTY_CALL_STAGE);
+  const [contextMenu, setContextMenu] = useState<ContextMenuTarget | null>(null);
+
+  const handleOpenDm = useCallback((targetUser: Profile) => {
+    const existing = directMessages.find((dm) =>
+      dm.name.toLowerCase() === targetUser.display_name.toLowerCase() ||
+      dm.name.toLowerCase() === targetUser.username.toLowerCase()
+    );
+    if (existing) {
+      setActiveSpaceId(null);
+      setActiveConversationId(existing.id);
+      setSidebarOpen(false);
+      setStage((current) => current.open ? { ...current, expanded: false } : current);
+    } else {
+      setFormPrimary(targetUser.display_name);
+      setFormSecondary(`@${targetUser.username}`);
+      setFormError(null);
+      openModal("dm");
+    }
+  }, [directMessages]);
+
+  const handleMention = useCallback((targetUser: Profile) => {
+    setDraft((current) => `${current ? current.trimEnd() + " " : ""}@${targetUser.username} `);
+  }, []);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [pendingPreview, setPendingPreview] = useState<string | null>(null);
   const [uploadingMedia, setUploadingMedia] = useState(false);
@@ -747,6 +771,9 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
           memberNames={stage.memberNames}
           selfProfile={profile}
           memberProfiles={memberProfilesMap}
+          onUserContextMenu={(e, user, inCall) => {
+            setContextMenu({ x: e.clientX, y: e.clientY, user, inCall });
+          }}
           onMinimize={() => setStage((current) => ({ ...current, expanded: false }))}
           onClose={leaveCall}
         />
@@ -777,9 +804,26 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
                 <section className="channel-intro"><div className="intro-icon"><Hash size={28} /></div><span className="eyebrow">conversazione reale</span><h1>{activeConversation.name}</h1><p>I messaggi vengono cifrati sul dispositivo prima di raggiungere Supabase.</p></section>
                 {filteredMessages.length === 0 ? <div className="conversation-empty">{search ? "Nessun messaggio corrisponde alla ricerca." : keyStatus === "waiting" ? "Chiave richiesta. Chiedi a un membro di aprire questa conversazione." : "Nessun messaggio. Scrivi il primo."}</div> : null}
                 {filteredMessages.map((message) => {
-                  const sender = members.find((member) => member.id === message.senderId) ?? { display_name: message.author, avatar_color: "#73b7ff" };
+                  const sender: Profile = members.find((member) => member.id === message.senderId) ?? {
+                    id: message.senderId || message.author,
+                    username: message.author.toLowerCase().replace(/\s+/g, ""),
+                    display_name: message.author,
+                    avatar_color: "#73b7ff",
+                  };
                   return (
-                    <article className="message" key={message.id}>
+                    <article
+                      className="message"
+                      key={message.id}
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        setContextMenu({
+                          x: e.clientX,
+                          y: e.clientY,
+                          user: sender,
+                          inCall: stage.open,
+                        });
+                      }}
+                    >
                       <Avatar profile={sender} />
                       <div className="message-copy">
                         <div className="message-meta">
@@ -885,7 +929,22 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
         <div className="member-heading"><span>Persone</span><span>{members.length || 1}</span></div>
         <div className="member-list">
           {(members.length ? members : [profile]).map((member) => (
-            <button type="button" className="member current-member member-profile-button" key={member.id} onClick={() => setViewedProfile(member)} aria-label={`Profilo di ${member.display_name}`}><span className="member-avatar"><Avatar profile={member} /><i className={`status ${onlineUserIds.includes(member.id) || member.id === session.user.id ? "status-online" : "status-away"}`} /></span><span><strong>{member.display_name}</strong><small>@{member.username}</small></span></button>
+            <button
+              type="button"
+              className="member current-member member-profile-button"
+              key={member.id}
+              onClick={() => setViewedProfile(member)}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                setContextMenu({
+                  x: e.clientX,
+                  y: e.clientY,
+                  user: member,
+                  inCall: stage.open,
+                });
+              }}
+              aria-label={`Profilo di ${member.display_name}`}
+            ><span className="member-avatar"><Avatar profile={member} /><i className={`status ${onlineUserIds.includes(member.id) || member.id === session.user.id ? "status-online" : "status-away"}`} /></span><span><strong>{member.display_name}</strong><small>@{member.username}</small></span></button>
           ))}
         </div>
         <div className="privacy-note"><ShieldCheck size={16} /><p><strong>{keyStatus === "ready" ? "Chiave verificata" : "Supabase connesso"}</strong><span>{identity ? `Dispositivo ${identity.id.slice(0, 8)}` : "Registrazione dispositivo…"}</span></p><i className={`backend-light backend-${keyStatus === "error" ? "degraded" : "ready"}`} /></div>
@@ -901,6 +960,18 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
 
       {modal === "voice" ? <Modal title="Nuovo canale vocale" description={`Crea una stanza vocale persistente in ${activeSpace?.name ?? "questo server"}.`} onClose={() => setModal(null)}><form className="modal-form" onSubmit={submitVoiceChannel}><label>Nome del canale<input autoFocus required maxLength={80} value={formPrimary} onChange={(event) => setFormPrimary(event.target.value)} placeholder="Lounge" /></label>{formError ? <div className="auth-error">{formError}</div> : null}<button className="modal-primary" disabled={busy || !formPrimary.trim()}>{busy ? "Creazione…" : "Crea canale vocale"}</button></form></Modal> : null}
 
+      {contextMenu ? (
+        <UserContextMenu
+          target={contextMenu}
+          currentUserId={session.user.id}
+          onClose={() => setContextMenu(null)}
+          onViewProfile={setViewedProfile}
+          onOpenDm={handleOpenDm}
+          onMention={handleMention}
+          onOpenSettings={() => openModal("settings")}
+          onToast={setToast}
+        />
+      ) : null}
       {toast ? <div className="toast" role="status"><MessageCircleMore size={16} />{toast}</div> : null}
       {sidebarOpen ? <button className="sidebar-scrim" onClick={() => setSidebarOpen(false)} aria-label="Chiudi menu" /> : null}
     </div>

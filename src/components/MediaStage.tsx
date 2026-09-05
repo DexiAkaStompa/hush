@@ -8,6 +8,7 @@ import { playCallSound } from "../lib/interaction-sound";
 import { routeAudio, useMediaSettings } from "../lib/media-settings";
 import { openMicrophone, type MicrophoneCapture } from "../lib/microphone";
 import { ProfileImage } from "./ProfileImage";
+import { useUserAudioPrefs } from "../lib/user-audio";
 import type { Profile } from "../lib/workspace";
 
 type MediaStageProps = {
@@ -21,6 +22,7 @@ type MediaStageProps = {
   memberNames: Record<string, string>;
   selfProfile?: Profile | null;
   memberProfiles?: Record<string, Profile>;
+  onUserContextMenu?: (event: React.MouseEvent, user: Profile, inCall: boolean) => void;
   onMinimize: () => void;
   onClose: () => void;
 };
@@ -42,42 +44,62 @@ function StreamTile({
   muted = false,
   focused = false,
   onFocus,
+  onContextMenu,
 }: {
   stream: MediaStream | null;
   label: string;
-  profile?: Pick<Profile, "display_name" | "avatar_color" | "avatar_path" | "banner_path"> | null;
+  profile?: Pick<Profile, "id" | "display_name" | "avatar_color" | "avatar_path" | "banner_path"> | null;
   muted?: boolean;
   focused?: boolean;
   onFocus?: () => void;
+  onContextMenu?: (event: React.MouseEvent) => void;
 }) {
   const video = useRef<HTMLVideoElement>(null);
   const settings = useMediaSettings();
   const [outputError, setOutputError] = useState("");
   const [audioMuted, setAudioMuted] = useState(muted);
+  const userPrefs = useUserAudioPrefs(profile?.id ?? "");
+  const isMuted = muted || audioMuted || userPrefs.muted;
+
   useEffect(() => {
     if (video.current) video.current.srcObject = stream;
   }, [stream]);
+
   useEffect(() => {
-    if (video.current) video.current.muted = muted || audioMuted;
-  }, [audioMuted, muted]);
+    if (video.current) {
+      video.current.muted = isMuted;
+      video.current.volume = isMuted ? 0 : Math.min(1, userPrefs.volume / 100);
+    }
+  }, [isMuted, userPrefs.volume]);
+
   useEffect(() => {
-    if (!video.current || muted) return;
+    if (!video.current || isMuted) return;
     let active = true;
     void routeAudio(video.current, settings).then(() => { if (active) setOutputError(""); }).catch(() => { if (active) setOutputError("Uscita audio non disponibile: scegline un’altra nelle impostazioni."); });
     return () => { active = false; };
-  }, [settings.outputId, settings.outputVolume, muted]);
+  }, [settings.outputId, settings.outputVolume, isMuted]);
+
   const toggleFullscreen = () => {
     const element = video.current;
     if (!element) return;
     if (document.fullscreenElement === element) void document.exitFullscreen();
     else void element.requestFullscreen?.();
   };
-  const hasVideo = Boolean(stream && stream.getVideoTracks().length > 0);
+
+  const hasVideo = Boolean(stream && stream.getVideoTracks().length > 0 && !userPrefs.videoDisabled);
   const cleanName = (profile?.display_name || label).replace(/\s*\([^)]*\)/g, "").trim();
   const avatarColor = profile?.avatar_color || "#73b7ff";
 
   return (
-    <div className={`video-tile ${focused ? "video-tile-focused" : ""}`}>
+    <div
+      className={`video-tile ${focused ? "video-tile-focused" : ""}`}
+      onContextMenu={(e) => {
+        if (onContextMenu) {
+          e.preventDefault();
+          onContextMenu(e);
+        }
+      }}
+    >
       <video
         ref={video}
         autoPlay
@@ -138,6 +160,7 @@ export function MediaStage({
   memberNames,
   selfProfile,
   memberProfiles,
+  onUserContextMenu,
   onMinimize,
   onClose,
 }: MediaStageProps) {
@@ -534,17 +557,27 @@ export function MediaStage({
           muted
           focused={focusedTile === "local"}
           onFocus={sharing ? () => setFocusedTile((value) => value === "local" ? null : "local") : undefined}
+          onContextMenu={(e) => selfProfile && onUserContextMenu?.(e, selfProfile, true)}
         />
-        {participants.map((participantId) => (
-          <StreamTile
-            key={participantId}
-            stream={remoteStreams[participantId] ?? null}
-            label={memberNames[participantId] ?? memberProfiles?.[participantId]?.display_name ?? "Membro"}
-            profile={memberProfiles?.[participantId] ?? null}
-            focused={focusedTile === participantId}
-            onFocus={() => setFocusedTile((value) => value === participantId ? null : participantId)}
-          />
-        ))}
+        {participants.map((participantId) => {
+          const user = memberProfiles?.[participantId] ?? {
+            id: participantId,
+            username: memberNames[participantId] ?? "membro",
+            display_name: memberNames[participantId] ?? "Membro",
+            avatar_color: "#73b7ff",
+          };
+          return (
+            <StreamTile
+              key={participantId}
+              stream={remoteStreams[participantId] ?? null}
+              label={memberNames[participantId] ?? user.display_name ?? "Membro"}
+              profile={user}
+              focused={focusedTile === participantId}
+              onFocus={() => setFocusedTile((value) => value === participantId ? null : participantId)}
+              onContextMenu={(e) => onUserContextMenu?.(e, user, true)}
+            />
+          );
+        })}
       </div>
       <p className="media-notice" role="status">{notice}</p>
       <div className="call-controls">
