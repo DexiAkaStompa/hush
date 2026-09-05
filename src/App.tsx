@@ -36,6 +36,7 @@ import { SettingsPanel } from "./components/SettingsPanel";
 import { ProfileImage } from "./components/ProfileImage";
 import { UserContextMenu, type ContextMenuTarget } from "./components/UserContextMenu";
 import { IncomingCallDialog } from "./components/IncomingCallDialog";
+import { EmojiPicker } from "./components/EmojiPicker";
 import { ChatAttachment } from "./components/ChatAttachment";
 import { copyText } from "./lib/clipboard";
 import {
@@ -230,8 +231,28 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [pendingPreview, setPendingPreview] = useState<string | null>(null);
   const [uploadingMedia, setUploadingMedia] = useState(false);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const messageEnd = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const messageInputRef = useRef<HTMLInputElement>(null);
+
+  const handleInsertEmoji = useCallback((emoji: string) => {
+    const input = messageInputRef.current;
+    if (input) {
+      const start = input.selectionStart ?? draft.length;
+      const end = input.selectionEnd ?? draft.length;
+      const next = draft.slice(0, start) + emoji + draft.slice(end);
+      setDraft(next);
+      requestAnimationFrame(() => {
+        input.focus();
+        const newPos = start + emoji.length;
+        input.setSelectionRange(newPos, newPos);
+      });
+    } else {
+      setDraft((current) => `${current}${emoji}`);
+    }
+    void playChatSound("reaction");
+  }, [draft]);
 
   const selectFile = useCallback((file: File) => {
     try {
@@ -1108,21 +1129,31 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
                   <ImagePlus size={19} />
                 </button>
                 <input
+                  ref={messageInputRef}
                   value={draft}
                   onChange={(event) => setDraft(event.target.value)}
                   disabled={keyStatus !== "ready" || uploadingMedia}
                   placeholder={keyStatus === "ready" ? (uploadingMedia ? "Cifratura e caricamento immagine…" : `Scrivi in ${activeConversation.name}`) : "In attesa della chiave…"}
                   aria-label="Messaggio"
                 />
-                <button
-                  type="button"
-                  className="composer-emoji-btn"
-                  onClick={() => setDraft((current) => `${current}🙂`)}
-                  disabled={keyStatus !== "ready" || uploadingMedia}
-                  aria-label="Aggiungi emoji"
-                >
-                  <Smile size={19} />
-                </button>
+                <div className="composer-emoji-wrap">
+                  <button
+                    type="button"
+                    className={`composer-emoji-btn ${showEmojiPicker ? "active" : ""}`}
+                    onClick={() => setShowEmojiPicker((current) => !current)}
+                    disabled={keyStatus !== "ready" || uploadingMedia}
+                    aria-label="Aggiungi emoji"
+                    aria-expanded={showEmojiPicker}
+                  >
+                    <Smile size={19} />
+                  </button>
+                  {showEmojiPicker ? (
+                    <EmojiPicker
+                      onSelect={handleInsertEmoji}
+                      onClose={() => setShowEmojiPicker(false)}
+                    />
+                  ) : null}
+                </div>
                 <button
                   className="send-button"
                   type="submit"
