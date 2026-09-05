@@ -8,6 +8,7 @@ import { playCallSound } from "../lib/interaction-sound";
 import { routeAudio, useMediaSettings } from "../lib/media-settings";
 import { openMicrophone, type MicrophoneCapture } from "../lib/microphone";
 import { ProfileImage } from "./ProfileImage";
+import { useSpeakingDetector } from "../lib/speaking-detection";
 import { useUserAudioPrefs } from "../lib/user-audio";
 import type { Profile } from "../lib/workspace";
 
@@ -39,17 +40,21 @@ function initialsFor(value: string) {
 
 function StreamTile({
   stream,
+  audioStream,
   label,
   profile,
   muted = false,
+  isLocalMicMuted = false,
   focused = false,
   onFocus,
   onContextMenu,
 }: {
   stream: MediaStream | null;
+  audioStream?: MediaStream | null;
   label: string;
   profile?: Pick<Profile, "id" | "display_name" | "avatar_color" | "avatar_path" | "banner_path"> | null;
   muted?: boolean;
+  isLocalMicMuted?: boolean;
   focused?: boolean;
   onFocus?: () => void;
   onContextMenu?: (event: React.MouseEvent) => void;
@@ -60,6 +65,7 @@ function StreamTile({
   const [audioMuted, setAudioMuted] = useState(muted);
   const userPrefs = useUserAudioPrefs(profile?.id ?? "");
   const isMuted = muted || audioMuted || userPrefs.muted;
+  const isSpeaking = useSpeakingDetector(audioStream ?? stream, !isLocalMicMuted);
 
   useEffect(() => {
     if (video.current) video.current.srcObject = stream;
@@ -92,7 +98,7 @@ function StreamTile({
 
   return (
     <div
-      className={`video-tile ${focused ? "video-tile-focused" : ""}`}
+      className={`video-tile ${focused ? "video-tile-focused" : ""} ${isSpeaking ? "video-tile-speaking" : ""}`}
       onContextMenu={(e) => {
         if (onContextMenu) {
           e.preventDefault();
@@ -123,7 +129,7 @@ function StreamTile({
             <div className="tile-backdrop-dim" />
           </div>
           <div
-            className="big-avatar"
+            className={`big-avatar ${isSpeaking ? "speaking" : ""}`}
             style={{ backgroundColor: avatarColor }}
           >
             <span className="big-avatar-initials">{initialsFor(cleanName)}</span>
@@ -137,7 +143,11 @@ function StreamTile({
           </div>
         </>
       ) : null}
-      <span className="tile-label">{label}{outputError ? <small role="alert"> · {outputError}</small> : null}</span>
+      <span className="tile-label">
+        {isSpeaking ? <span className="tile-speaking-indicator" /> : null}
+        {label}
+        {outputError ? <small role="alert"> · {outputError}</small> : null}
+      </span>
       {hasVideo ? (
         <div className="tile-actions">
           {onFocus ? <button onClick={onFocus} aria-label={focused ? "Riduci condivisione" : "Ingrandisci condivisione"}>{focused ? <Minimize2 size={15} /> : <MonitorUp size={15} />}</button> : null}
@@ -552,6 +562,8 @@ export function MediaStage({
       <div className="stage-grid call-grid">
         <StreamTile
           stream={localStream}
+          audioStream={localStreamRef.current ?? localStream}
+          isLocalMicMuted={!mic}
           label={`${displayName} (tu)${sharing ? " · schermo" : ""}`}
           profile={selfProfile}
           muted

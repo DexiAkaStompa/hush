@@ -1530,6 +1530,61 @@ html, body, #root { background: var(--app-background); }
   z-index: 2;
   flex-shrink: 0;
   user-select: none;
+  transition: box-shadow 0.18s cubic-bezier(0.16, 1, 0.3, 1), transform 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.big-avatar.speaking {
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5), 0 0 0 4px #23a55a, 0 0 22px rgba(35, 165, 90, 0.75);
+  transform: scale(1.035);
+  animation: speakingAvatarPulse 1.4s ease-in-out infinite alternate;
+}
+
+@keyframes speakingAvatarPulse {
+  0% {
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5), 0 0 0 3.5px #23a55a, 0 0 14px rgba(35, 165, 90, 0.55);
+  }
+  100% {
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5), 0 0 0 5px #2cd26f, 0 0 26px rgba(35, 165, 90, 0.85);
+  }
+}
+
+.video-tile {
+  transition: border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.video-tile.video-tile-speaking {
+  border-color: #23a55a !important;
+  box-shadow: 0 0 0 2.5px #23a55a, 0 10px 32px rgba(35, 165, 90, 0.25);
+}
+
+.tile-speaking-indicator {
+  display: inline-flex;
+  align-items: center;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+
+.tile-speaking-indicator::before {
+  content: "";
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: #23a55a;
+  box-shadow: 0 0 8px #2cd26f;
+  animation: speakingDotPulse 1.2s ease-in-out infinite alternate;
+}
+
+@keyframes speakingDotPulse {
+  0% {
+    transform: scale(0.85);
+    opacity: 0.8;
+  }
+  100% {
+    transform: scale(1.2);
+    opacity: 1;
+    box-shadow: 0 0 12px #2cd26f;
+  }
 }
 
 .big-avatar > img,
