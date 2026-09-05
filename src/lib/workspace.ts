@@ -1,6 +1,7 @@
 import { decryptText, type EncryptedPayload } from "./crypto";
 import { supabase } from "./supabase";
 import type { EncryptedMessageRow } from "./realtime";
+import type { ChatAttachmentMeta } from "./chat-media";
 
 export type Profile = {
   id: string;
@@ -32,6 +33,7 @@ export type DecryptedMessage = {
   author: string;
   initials: string;
   body: string;
+  attachment?: ChatAttachmentMeta | null;
   createdAt: string;
   encrypted: EncryptedPayload;
 };
@@ -122,17 +124,48 @@ export async function loadAndDecryptMessages(
     const profile = row.sender_id ? profileById.get(row.sender_id) : undefined;
     const encrypted = { v: 1 as const, iv: row.nonce, ciphertext: row.ciphertext };
     let body = "Messaggio non decifrabile con la chiave corrente.";
-    try { body = await decryptText(encrypted, key, context); } catch { /* keep explicit failure */ }
+    let attachment: ChatAttachmentMeta | null = null;
+    try {
+      const decrypted = await decryptText(encrypted, key, context);
+      const unpacked = unpackMessageContent(decrypted);
+      body = unpacked.text;
+      attachment = unpacked.attachment;
+    } catch { /* keep explicit failure */ }
     return {
       id: row.id,
       senderId: row.sender_id,
       author: profile?.display_name ?? "Utente eliminato",
       initials: initialsFor(profile?.display_name ?? "Utente eliminato"),
       body,
+      attachment,
       createdAt: row.created_at,
       encrypted,
     } satisfies DecryptedMessage;
   }));
+}
+
+export function unpackMessageContent(decrypted: string): { text: string; attachment: ChatAttachmentMeta | null } {
+  if (decrypted.startsWith("{") && decrypted.includes('"attachment"')) {
+    try {
+      const parsed = JSON.parse(decrypted);
+      if (parsed && typeof parsed === "object") {
+        return {
+          text: typeof parsed.text === "string" ? parsed.text : "",
+          attachment: (parsed.attachment && typeof parsed.attachment === "object") ? parsed.attachment as ChatAttachmentMeta : null,
+        };
+      }
+    } catch {
+      // Fall back to plain text
+    }
+  }
+  return { text: decrypted, attachment: null };
+}
+
+export function packMessageContent(text: string, attachment?: ChatAttachmentMeta | null): string {
+  if (attachment) {
+    return JSON.stringify({ text, attachment });
+  }
+  return text;
 }
 
 export function readableError(error: unknown) {

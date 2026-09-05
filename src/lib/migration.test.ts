@@ -10,6 +10,7 @@ import clientMusicMigrationSource from "../../supabase/migrations/20260821222000
 import keyEnvelopeRpcMigrationSource from "../../supabase/migrations/20260821223000_key_envelope_rpc_fix.sql?raw";
 import userDeletionMigrationSource from "../../supabase/migrations/20260903083330_user_deletion_integrity.sql?raw";
 import profileMediaMigration from "../../supabase/migrations/20260904230343_profile_media.sql?raw";
+import chatMediaMigration from "../../supabase/migrations/20260905000000_chat_media.sql?raw";
 
 const database = new PGlite();
 
@@ -70,6 +71,7 @@ describe("Supabase migrations", () => {
     await database.exec(keyEnvelopeRpcMigration);
     await database.exec(userDeletionMigration);
     await database.exec(profileMediaMigration);
+    await database.exec(chatMediaMigration);
     await database.exec(`
       create function realtime.broadcast_changes(
         text, text, text, name, name, public.encrypted_messages, public.encrypted_messages
@@ -141,6 +143,31 @@ describe("Supabase migrations", () => {
     try {
       await expect(database.query("insert into storage.objects(bucket_id, name) values ('profile-media', $1)", [name])).rejects.toThrow(/row-level security/i);
     } finally { await database.exec("rollback;"); }
+  });
+
+  it("configures chat-media bucket and allows authenticated members to upload and read", async () => {
+    const bucket = await database.query<{ id: string; public: boolean; file_size_limit: string }>(`
+      select id, public, file_size_limit from storage.buckets where id = 'chat-media'
+    `);
+    expect(bucket.rows[0]).toEqual({
+      id: "chat-media",
+      public: false,
+      file_size_limit: 16777216,
+    });
+
+    const user = "99999999-1111-2222-3333-444444444444";
+    const filePath = "channel-1/test-file.bin";
+    await database.exec(`begin; set local role authenticated; select set_config('request.jwt.claim.sub', '${user}', true);`);
+    try {
+      await database.query("insert into storage.objects(bucket_id, name) values ('chat-media', $1)", [filePath]);
+      const read = await database.query("select * from storage.objects where name = $1 and bucket_id = 'chat-media'", [filePath]);
+      expect(read.rows).toHaveLength(1);
+      await database.exec("set local role anon;");
+      const anonRead = await database.query("select * from storage.objects where name = $1 and bucket_id = 'chat-media'", [filePath]);
+      expect(anonRead.rows).toHaveLength(0);
+    } finally {
+      await database.exec("rollback;");
+    }
   });
 
   it("enforces image ownership and profile length constraints in Postgres", async () => {

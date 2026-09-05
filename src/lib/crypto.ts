@@ -70,6 +70,47 @@ export async function decryptText(
   return decoder.decode(plaintext);
 }
 
+export async function encryptBinary(
+  data: ArrayBuffer,
+  key: CryptoKey,
+  context: string,
+): Promise<{ iv: string; ciphertext: ArrayBuffer }> {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ciphertext = await crypto.subtle.encrypt(
+    {
+      name: "AES-GCM",
+      iv,
+      additionalData: encoder.encode(context),
+      tagLength: 128,
+    },
+    key,
+    data,
+  );
+
+  return {
+    iv: bytesToBase64(iv),
+    ciphertext,
+  };
+}
+
+export async function decryptBinary(
+  ciphertext: ArrayBuffer,
+  iv: string,
+  key: CryptoKey,
+  context: string,
+): Promise<ArrayBuffer> {
+  return crypto.subtle.decrypt(
+    {
+      name: "AES-GCM",
+      iv: base64ToBytes(iv),
+      additionalData: encoder.encode(context),
+      tagLength: 128,
+    },
+    key,
+    ciphertext,
+  );
+}
+
 export async function getKeyFingerprint(key: CryptoKey) {
   const rawKey = await crypto.subtle.exportKey("raw", key);
   const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", rawKey));

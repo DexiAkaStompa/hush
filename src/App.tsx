@@ -4,6 +4,8 @@ import {
   ChevronDown,
   Copy,
   Hash,
+  ImagePlus,
+  Loader2,
   LockKeyhole,
   LogOut,
   Menu,
@@ -32,7 +34,13 @@ import { MediaStage } from "./components/MediaStage";
 import { Modal } from "./components/Modal";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { ProfileImage } from "./components/ProfileImage";
+import { ChatAttachment } from "./components/ChatAttachment";
 import { copyText } from "./lib/clipboard";
+import {
+  type ChatAttachmentMeta,
+  uploadEncryptedChatImage,
+  validateChatImage,
+} from "./lib/chat-media";
 import { decryptText, encryptText, getKeyFingerprint } from "./lib/crypto";
 import {
   ensureDeviceIdentity,
@@ -56,7 +64,9 @@ import {
   loadChannels,
   loadConversationMembers,
   loadWorkspace,
+  packMessageContent,
   readableError,
+  unpackMessageContent,
   type Conversation,
   type DecryptedMessage,
   type Profile,
@@ -167,7 +177,62 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [stage, setStage] = useState<CallStage>(EMPTY_CALL_STAGE);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [pendingPreview, setPendingPreview] = useState<string | null>(null);
+  const [uploadingMedia, setUploadingMedia] = useState(false);
   const messageEnd = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const selectFile = useCallback((file: File) => {
+    try {
+      validateChatImage(file);
+    } catch (err) {
+      setToast(err instanceof Error ? err.message : "Immagine non valida");
+      return;
+    }
+    setPendingPreview((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return URL.createObjectURL(file);
+    });
+    setPendingFile(file);
+  }, []);
+
+  const clearPendingFile = useCallback(() => {
+    setPendingPreview((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return null;
+    });
+    setPendingFile(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  }, []);
+
+  const handlePaste = useCallback((event: React.ClipboardEvent) => {
+    const items = event.clipboardData?.items;
+    if (!items) return;
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.type.startsWith("image/")) {
+        const file = item.getAsFile();
+        if (file) {
+          event.preventDefault();
+          selectFile(file);
+          break;
+        }
+      }
+    }
+  }, [selectFile]);
+
+  useEffect(() => {
+    return () => {
+      if (pendingPreview) URL.revokeObjectURL(pendingPreview);
+    };
+  }, [pendingPreview]);
+
+  useEffect(() => {
+    clearPendingFile();
+  }, [activeConversationId, clearPendingFile]);
 
   const activeSpace = useMemo(() => spaces.find((space) => space.id === activeSpaceId) ?? null, [activeSpaceId, spaces]);
   const conversations = useMemo(() => [...channels, ...directMessages], [channels, directMessages]);
@@ -318,8 +383,12 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
           const sender = nextMembers.find((member) => member.id === row.sender_id);
           const encrypted = { v: 1 as const, iv: row.nonce, ciphertext: row.ciphertext };
           let body = "Messaggio non decifrabile con la chiave corrente.";
+          let attachment: ChatAttachmentMeta | null = null;
           try {
-            body = await decryptText(encrypted, key, `hush:conversation:${activeConversation.id}:epoch:0`);
+            const rawDecrypted = await decryptText(encrypted, key, `hush:conversation:${activeConversation.id}:epoch:0`);
+            const unpacked = unpackMessageContent(rawDecrypted);
+            body = unpacked.text;
+            attachment = unpacked.attachment ?? null;
           } catch { /* explicit fallback above */ }
           const mentioned = body.toLocaleLowerCase("it").includes(`@${profile.username.toLocaleLowerCase("it")}`);
           void playChatSound(mentioned ? "mention" : "receive");
@@ -331,6 +400,7 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
             body,
             createdAt: row.created_at,
             encrypted,
+            attachment,
           }]);
         },
         onPresence: setOnlineUserIds,
@@ -520,11 +590,17 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
   const sendMessage = async (event: FormEvent) => {
     event.preventDefault();
     const cleanDraft = draft.trim();
-    if (!cleanDraft || !roomKey || !activeConversation) return;
+    if ((!cleanDraft && !pendingFile) || !roomKey || !activeConversation || uploadingMedia) return;
     try {
+      setUploadingMedia(true);
+      let attachment: ChatAttachmentMeta | null = null;
+      if (pendingFile) {
+        attachment = await uploadEncryptedChatImage(pendingFile, activeConversation.id, roomKey);
+      }
       const id = crypto.randomUUID();
       const context = `hush:conversation:${activeConversation.id}:epoch:0`;
-      const encrypted = await encryptText(cleanDraft, roomKey, context);
+      const packed = packMessageContent(cleanDraft, attachment);
+      const encrypted = await encryptText(packed, roomKey, context);
       await persistEncryptedMessage({
         id,
         conversation_id: activeConversation.id,
@@ -543,11 +619,15 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
         body: cleanDraft,
         createdAt: new Date().toISOString(),
         encrypted,
+        attachment,
       }]);
       setDraft("");
+      clearPendingFile();
       void playChatSound("send");
     } catch (error) {
       setToast(readableError(error));
+    } finally {
+      setUploadingMedia(false);
     }
   };
 
@@ -683,14 +763,100 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
                 {filteredMessages.length === 0 ? <div className="conversation-empty">{search ? "Nessun messaggio corrisponde alla ricerca." : keyStatus === "waiting" ? "Chiave richiesta. Chiedi a un membro di aprire questa conversazione." : "Nessun messaggio. Scrivi il primo."}</div> : null}
                 {filteredMessages.map((message) => {
                   const sender = members.find((member) => member.id === message.senderId) ?? { display_name: message.author, avatar_color: "#73b7ff" };
-                  return <article className="message" key={message.id}><Avatar profile={sender} /><div className="message-copy"><div className="message-meta"><strong>{message.author}</strong><time>{new Intl.DateTimeFormat("it-IT", { hour: "2-digit", minute: "2-digit" }).format(new Date(message.createdAt))}</time><span className="sealed"><LockKeyhole size={11} /> cifrato</span></div><p>{message.body}</p></div></article>;
+                  return (
+                    <article className="message" key={message.id}>
+                      <Avatar profile={sender} />
+                      <div className="message-copy">
+                        <div className="message-meta">
+                          <strong>{message.author}</strong>
+                          <time>{new Intl.DateTimeFormat("it-IT", { hour: "2-digit", minute: "2-digit" }).format(new Date(message.createdAt))}</time>
+                          <span className="sealed"><LockKeyhole size={11} /> cifrato</span>
+                        </div>
+                        {message.body ? <p>{message.body}</p> : null}
+                        {message.attachment ? (
+                          <ChatAttachment
+                            attachment={message.attachment}
+                            conversationId={activeConversation.id}
+                            roomKey={roomKey}
+                          />
+                        ) : null}
+                      </div>
+                    </article>
+                  );
                 })}
                 <div ref={messageEnd} />
               </div>
-              <form className="composer" onSubmit={sendMessage} onKeyDown={(event) => { if (event.key.length === 1 && !event.metaKey && !event.ctrlKey && !event.altKey) void playChatSound("typing"); }} onClick={(event) => { if (event.target instanceof Element && event.target.closest("[aria-label='Aggiungi emoji']")) void playChatSound("reaction"); }}>
-                <input value={draft} onChange={(event) => setDraft(event.target.value)} disabled={keyStatus !== "ready"} placeholder={keyStatus === "ready" ? `Scrivi in ${activeConversation.name}` : "In attesa della chiave…"} aria-label="Messaggio" />
-                <button type="button" onClick={() => setDraft((current) => `${current}🙂`)} aria-label="Aggiungi emoji"><Smile size={19} /></button>
-                <button className="send-button" type="submit" disabled={!draft.trim() || keyStatus !== "ready"} aria-label="Invia messaggio"><Send size={17} /></button>
+              {pendingPreview && pendingFile ? (
+                <div className="composer-attachment-preview">
+                  <div className="composer-attachment-thumb">
+                    <img src={pendingPreview} alt="Anteprima" />
+                  </div>
+                  <div className="composer-attachment-info">
+                    <span className="composer-attachment-name">{pendingFile.name}</span>
+                    <span className="composer-attachment-size">{(pendingFile.size / 1024).toFixed(1)} KB</span>
+                  </div>
+                  <button
+                    type="button"
+                    className="composer-attachment-remove"
+                    onClick={clearPendingFile}
+                    disabled={uploadingMedia}
+                    aria-label="Rimuovi allegato"
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+              ) : null}
+              <form
+                className="composer"
+                onSubmit={sendMessage}
+                onPaste={handlePaste}
+                onKeyDown={(event) => { if (event.key.length === 1 && !event.metaKey && !event.ctrlKey && !event.altKey) void playChatSound("typing"); }}
+                onClick={(event) => { if (event.target instanceof Element && event.target.closest("[aria-label='Aggiungi emoji']")) void playChatSound("reaction"); }}
+              >
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  accept="image/png,image/jpeg,image/gif,image/webp"
+                  style={{ display: "none" }}
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) selectFile(file);
+                  }}
+                />
+                <button
+                  type="button"
+                  className="composer-attach-btn"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={keyStatus !== "ready" || uploadingMedia}
+                  aria-label="Allega immagine"
+                  title="Allega immagine (PNG, JPEG, GIF, WebP fino a 16MB)"
+                >
+                  <ImagePlus size={19} />
+                </button>
+                <input
+                  value={draft}
+                  onChange={(event) => setDraft(event.target.value)}
+                  disabled={keyStatus !== "ready" || uploadingMedia}
+                  placeholder={keyStatus === "ready" ? (uploadingMedia ? "Cifratura e caricamento immagine…" : `Scrivi in ${activeConversation.name}`) : "In attesa della chiave…"}
+                  aria-label="Messaggio"
+                />
+                <button
+                  type="button"
+                  className="composer-emoji-btn"
+                  onClick={() => setDraft((current) => `${current}🙂`)}
+                  disabled={keyStatus !== "ready" || uploadingMedia}
+                  aria-label="Aggiungi emoji"
+                >
+                  <Smile size={19} />
+                </button>
+                <button
+                  className="send-button"
+                  type="submit"
+                  disabled={(!draft.trim() && !pendingFile) || keyStatus !== "ready" || uploadingMedia}
+                  aria-label="Invia messaggio"
+                >
+                  {uploadingMedia ? <Loader2 size={17} className="attachment-spinner" /> : <Send size={17} />}
+                </button>
                 <div className="composer-security"><LockKeyhole size={11} /> AES-256-GCM sul dispositivo</div>
               </form>
             </div>
