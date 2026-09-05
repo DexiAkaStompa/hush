@@ -220,6 +220,8 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
   const statusMenuRef = useRef<HTMLDivElement>(null);
   const ringtoneStopRef = useRef<(() => void) | null>(null);
   const initialLoadedRef = useRef(false);
+  const dmDetailsRef = useRef(dmDetails);
+  dmDetailsRef.current = dmDetails;
 
   // Close status menu when clicking outside
   useEffect(() => {
@@ -444,7 +446,7 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
         const dm = directMessages.find((d) => d.id === row.conversation_id);
         const chan = channels.find((c) => c.id === row.conversation_id);
         const convName = dm
-          ? (dmDetails[dm.id]?.recipient?.display_name || dm.name)
+          ? (dmDetailsRef.current[dm.id]?.recipient?.display_name || dm.name)
           : (chan ? `#${chan.name}` : "Hush");
 
         playMessageNotificationSound();
@@ -471,7 +473,7 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
     return () => {
       unsubscribe();
     };
-  }, [directMessages, channels, activeConversationId, session.user.id, dmDetails]);
+  }, [directMessages, channels, activeConversationId, session.user.id]);
 
   // Listen for incoming calls on all DM conversations
   useEffect(() => {

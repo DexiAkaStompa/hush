@@ -37,6 +37,7 @@ import {
   isChatMuted,
   setChatMuted,
   toggleChatMute,
+  getMutedSetSnapshot,
   showDesktopNotification,
 } from "./desktop-notifications";
 
@@ -112,6 +113,12 @@ describe("notification-sound and desktop-notifications module", () => {
 
       setChatMuted(chatId, false);
       expect(isChatMuted(chatId)).toBe(false);
+    });
+
+    it("maintains referential stability for useSyncExternalStore snapshot equality", () => {
+      const snap1 = getMutedSetSnapshot();
+      const snap2 = getMutedSetSnapshot();
+      expect(snap1).toBe(snap2);
     });
   });
 

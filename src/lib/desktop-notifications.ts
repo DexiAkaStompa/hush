@@ -57,33 +57,48 @@ export function useUserStatus(): UserStatus {
   );
 }
 
-export function getMutedChatIds(): string[] {
-  if (typeof localStorage === "undefined") return [];
-  try {
-    const raw = localStorage.getItem(MUTED_CHATS_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
+// Cached referentially-stable snapshot for useSyncExternalStore
+let cachedMutedRaw: string | null = null;
+let cachedMutedSet: ReadonlySet<string> = new Set();
+const EMPTY_MUTED_SET: ReadonlySet<string> = new Set();
+
+export function getMutedSetSnapshot(): ReadonlySet<string> {
+  if (typeof localStorage === "undefined") return EMPTY_MUTED_SET;
+  const raw = localStorage.getItem(MUTED_CHATS_KEY);
+  if (raw !== cachedMutedRaw) {
+    cachedMutedRaw = raw;
+    try {
+      const parsed = raw ? JSON.parse(raw) : [];
+      cachedMutedSet = new Set(Array.isArray(parsed) ? parsed : []);
+    } catch {
+      cachedMutedSet = EMPTY_MUTED_SET;
+    }
   }
+  return cachedMutedSet;
+}
+
+export function getMutedChatIds(): string[] {
+  return Array.from(getMutedSetSnapshot());
 }
 
 export function isChatMuted(chatId: string | null | undefined): boolean {
   if (!chatId) return false;
-  const list = getMutedChatIds();
-  return list.includes(chatId);
+  return getMutedSetSnapshot().has(chatId);
 }
 
 export function setChatMuted(chatId: string, muted: boolean): void {
   if (!chatId || typeof localStorage === "undefined") return;
-  const current = new Set(getMutedChatIds());
+  const current = new Set(getMutedSetSnapshot());
   if (muted) {
     current.add(chatId);
   } else {
     current.delete(chatId);
   }
-  localStorage.setItem(MUTED_CHATS_KEY, JSON.stringify(Array.from(current)));
+  const nextArr = Array.from(current);
+  const nextRaw = JSON.stringify(nextArr);
+  localStorage.setItem(MUTED_CHATS_KEY, nextRaw);
+  cachedMutedRaw = nextRaw;
+  cachedMutedSet = current;
   notifyMutedSubscribers();
 }
 
@@ -94,12 +109,15 @@ export function toggleChatMute(chatId: string): boolean {
   return next;
 }
 
-export function useMutedChats(): Set<string> {
+export function useMutedChats(): ReadonlySet<string> {
   return useSyncExternalStore(
     (callback) => {
       mutedListeners.add(callback);
       const onStorage = (e: StorageEvent) => {
-        if (e.key === MUTED_CHATS_KEY) callback();
+        if (e.key === MUTED_CHATS_KEY) {
+          getMutedSetSnapshot();
+          callback();
+        }
       };
       window.addEventListener("storage", onStorage);
       return () => {
@@ -107,8 +125,8 @@ export function useMutedChats(): Set<string> {
         window.removeEventListener("storage", onStorage);
       };
     },
-    () => new Set(getMutedChatIds()),
-    () => new Set<string>()
+    getMutedSetSnapshot,
+    () => EMPTY_MUTED_SET
   );
 }
 
