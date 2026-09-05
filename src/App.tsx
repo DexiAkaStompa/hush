@@ -1,6 +1,8 @@
 import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import {
+  Bell,
+  BellOff,
   ChevronDown,
   Copy,
   Hash,
@@ -59,10 +61,23 @@ import {
   persistEncryptedMessage,
   subscribeToConversation,
   subscribeToIncomingCalls,
+  subscribeToBackgroundMessages,
   unsubscribeFromConversation,
+  type EncryptedMessageRow,
   type IncomingCallPayload,
 } from "./lib/realtime";
 import { startIncomingCallRingtone, stopIncomingCallRingtone } from "./lib/ringtone";
+import {
+  getUserStatus,
+  setUserStatus,
+  useUserStatus,
+  isChatMuted,
+  toggleChatMute,
+  useMutedChats,
+  showDesktopNotification,
+  type UserStatus,
+} from "./lib/desktop-notifications";
+import { playMessageNotificationSound } from "./lib/notification-sound";
 import { isSupabaseConfigured, supabase } from "./lib/supabase";
 import { applyTheme, readTheme, type ThemeId } from "./lib/themes";
 import { playCallSound, playChatSound } from "./lib/interaction-sound";
@@ -199,8 +214,24 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
   const [contextMenu, setContextMenu] = useState<ContextMenuTarget | null>(null);
   const [dmDetails, setDmDetails] = useState<Record<string, { recipient: Profile | null; lastMessage?: string | null }>>({});
   const [incomingCall, setIncomingCall] = useState<IncomingCallPayload | null>(null);
+  const userStatus = useUserStatus();
+  const mutedChatIds = useMutedChats();
+  const [showStatusMenu, setShowStatusMenu] = useState(false);
+  const statusMenuRef = useRef<HTMLDivElement>(null);
   const ringtoneStopRef = useRef<(() => void) | null>(null);
   const initialLoadedRef = useRef(false);
+
+  // Close status menu when clicking outside
+  useEffect(() => {
+    if (!showStatusMenu) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (statusMenuRef.current && !statusMenuRef.current.contains(e.target as Node)) {
+        setShowStatusMenu(false);
+      }
+    };
+    window.addEventListener("mousedown", handleClickOutside);
+    return () => window.removeEventListener("mousedown", handleClickOutside);
+  }, [showStatusMenu]);
 
   const updateDmDetails = useCallback(async (dms: Conversation[], devIdentity?: DeviceIdentity | null) => {
     const dmIds = dms.map((d) => d.id);
@@ -392,6 +423,56 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
     setIncomingCall(null);
   };
 
+  // Listen for incoming messages on all non-active conversations
+  useEffect(() => {
+    if (!session.user.id) return;
+    const allOtherConvIds = [
+      ...directMessages.map((d) => d.id),
+      ...channels.map((c) => c.id),
+    ].filter((id) => id !== activeConversationId);
+
+    if (allOtherConvIds.length === 0) return;
+
+    const unsubscribe = subscribeToBackgroundMessages(
+      allOtherConvIds,
+      session.user.id,
+      (row: EncryptedMessageRow) => {
+        if (getUserStatus() === "dnd" || isChatMuted(row.conversation_id)) {
+          return;
+        }
+
+        const dm = directMessages.find((d) => d.id === row.conversation_id);
+        const chan = channels.find((c) => c.id === row.conversation_id);
+        const convName = dm
+          ? (dmDetails[dm.id]?.recipient?.display_name || dm.name)
+          : (chan ? `#${chan.name}` : "Hush");
+
+        playMessageNotificationSound();
+
+        void showDesktopNotification({
+          title: convName,
+          body: "Nuovo messaggio ricevuto",
+          chatId: row.conversation_id,
+          onClick: () => {
+            try {
+              window.focus();
+            } catch {}
+            if (dm) {
+              setActiveSpaceId(null);
+              setActiveConversationId(dm.id);
+            } else if (chan) {
+              setActiveConversationId(chan.id);
+            }
+          },
+        });
+      }
+    );
+
+    return () => {
+      unsubscribe();
+    };
+  }, [directMessages, channels, activeConversationId, session.user.id, dmDetails]);
+
   // Listen for incoming calls on all DM conversations
   useEffect(() => {
     if (!directMessages.length || !session.user.id) return;
@@ -401,7 +482,7 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
       dmIds,
       session.user.id,
       (call) => {
-        if (stage.open) return; // already in call
+        if (stage.open || getUserStatus() === "dnd") return; // already in call or DND
 
         ringtoneStopRef.current?.();
         ringtoneStopRef.current = startIncomingCallRingtone({
@@ -633,6 +714,7 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
       const channel = await subscribeToConversation({
         conversationId: activeConversation.id,
         userId: session.user.id,
+        skipPresence: userStatus === "invisible",
         onMessage: async (row) => {
           if (!current || row.sender_id === session.user.id) return;
           const sender = nextMembers.find((member) => member.id === row.sender_id);
@@ -646,7 +728,26 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
             attachment = unpacked.attachment ?? null;
           } catch { /* explicit fallback above */ }
           const mentioned = body.toLocaleLowerCase("it").includes(`@${profile.username.toLocaleLowerCase("it")}`);
-          void playChatSound(mentioned ? "mention" : "receive");
+          const isDnd = getUserStatus() === "dnd";
+          const isMuted = isChatMuted(activeConversation.id);
+
+          if (!isDnd && !isMuted) {
+            if (!document.hasFocus()) {
+              playMessageNotificationSound();
+              void showDesktopNotification({
+                title: sender?.display_name ? `${sender.display_name} (#${activeConversation.name})` : activeConversation.name,
+                body: attachment ? (body ? `📷 ${body}` : "📷 Immagine") : body,
+                chatId: activeConversation.id,
+                onClick: () => {
+                  try {
+                    window.focus();
+                  } catch {}
+                },
+              });
+            } else {
+              void playChatSound(mentioned ? "mention" : "receive");
+            }
+          }
           setMessages((currentMessages) => currentMessages.some((message) => message.id === row.id) ? currentMessages : [...currentMessages, {
             id: row.id,
             senderId: row.sender_id,
@@ -691,7 +792,7 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
       current = false;
       cleanupRealtime?.();
     };
-  }, [activeConversation, identity, keyRetry, session.user.id]);
+  }, [activeConversation, identity, keyRetry, session.user.id, userStatus]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -936,9 +1037,25 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
             <>
               <div className="channel-section">
                 <div className="section-label"><span>canali di testo</span><button onClick={() => openModal("channel")} aria-label="Crea canale"><Plus size={14} /></button></div>
-                {textChannels.map((channel) => (
-                  <button key={channel.id} className={`channel-row ${activeConversationId === channel.id ? "active" : ""}`} onClick={() => { setActiveConversationId(channel.id); setSidebarOpen(false); setStage((current) => current.open ? { ...current, expanded: false } : current); }}><Hash size={17} /><span>{channel.name}</span></button>
-                ))}
+                {textChannels.map((channel) => {
+                  const muted = isChatMuted(channel.id);
+                  return (
+                    <button
+                      key={channel.id}
+                      className={`channel-row ${activeConversationId === channel.id ? "active" : ""}`}
+                      onClick={() => { setActiveConversationId(channel.id); setSidebarOpen(false); setStage((current) => current.open ? { ...current, expanded: false } : current); }}
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        const next = toggleChatMute(channel.id);
+                        setToast(next ? `Notifiche silenziate per #${channel.name}` : `Notifiche riattivate per #${channel.name}`);
+                      }}
+                    >
+                      <Hash size={17} />
+                      <span>{channel.name}</span>
+                      {muted ? <BellOff size={13} className="sidebar-mute-icon" /> : null}
+                    </button>
+                  );
+                })}
                 {!loading && textChannels.length === 0 ? <p className="sidebar-empty">Nessun canale di testo</p> : null}
               </div>
               <div className="channel-section voice-section">
@@ -987,6 +1104,7 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
                           y: e.clientY,
                           user: partner,
                           inCall: stage.open,
+                          conversationId: conversation.id,
                         });
                       }
                     }}
@@ -1001,7 +1119,7 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
                       )}
                     </span>
                     <span className="dm-copy">
-                      <strong className="dm-name">{displayName}</strong>
+                      <strong className="dm-name">{displayName}{isChatMuted(conversation.id) ? <BellOff size={12} className="sidebar-mute-icon" /> : null}</strong>
                       <small className="dm-snippet">{snippet}</small>
                     </span>
                   </button>
@@ -1018,11 +1136,81 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
             <button className="call-dock-leave" onClick={leaveCall} aria-label="Lascia chiamata"><PhoneOff size={16} /></button>
           </section>
         ) : null}
-        <div className="user-panel">
-          <Avatar profile={profile} />
-          <div className="user-copy"><strong>{profile.display_name}</strong><button onClick={() => { void copyText(profile.username).then(() => setToast("Username copiato")).catch(() => setToast("Copia non riuscita. Il tuo username è @" + profile.username)); }}>@{profile.username}</button></div>
+        <div className="user-panel" ref={statusMenuRef}>
+          <button
+            type="button"
+            className="user-status-avatar-btn"
+            onClick={() => setShowStatusMenu((v) => !v)}
+            aria-label={`Stato utente: ${userStatus}. Clicca per cambiare stato.`}
+            title="Cambia stato"
+          >
+            <Avatar profile={profile} />
+            <span className={`status-badge status-${userStatus}`} />
+          </button>
+          <div className="user-copy">
+            <strong>{profile.display_name}</strong>
+            <div className="user-status-text-row">
+              <button onClick={() => { void copyText(profile.username).then(() => setToast("Username copiato")).catch(() => setToast("Copia non riuscita. Il tuo username è @" + profile.username)); }}>@{profile.username}</button>
+              <button
+                type="button"
+                className={`user-status-label-badge status-label-${userStatus}`}
+                onClick={() => setShowStatusMenu((v) => !v)}
+                title="Cambia stato"
+              >
+                {userStatus === "online" ? "Online" : userStatus === "dnd" ? "Non disturbare" : "Invisibile"}
+              </button>
+            </div>
+          </div>
           <button onClick={() => openModal("settings")} aria-label="Impostazioni"><Settings size={16} /></button>
           <button aria-label="Esci" onClick={() => { void supabase?.auth.signOut(); }}><LogOut size={16} /></button>
+
+          {showStatusMenu ? (
+            <div className="user-status-menu" role="menu">
+              <div className="user-status-menu-header">Imposta il tuo stato</div>
+              <button
+                type="button"
+                className={`user-status-menu-item ${userStatus === "online" ? "selected" : ""}`}
+                onClick={() => {
+                  setUserStatus("online");
+                  setShowStatusMenu(false);
+                }}
+              >
+                <span className="status-dot status-online" />
+                <div className="status-menu-text">
+                  <strong>Online</strong>
+                  <small>Disponibile per notifiche e messaggi</small>
+                </div>
+              </button>
+              <button
+                type="button"
+                className={`user-status-menu-item ${userStatus === "dnd" ? "selected" : ""}`}
+                onClick={() => {
+                  setUserStatus("dnd");
+                  setShowStatusMenu(false);
+                }}
+              >
+                <span className="status-dot status-dnd" />
+                <div className="status-menu-text">
+                  <strong>Non Disturbare</strong>
+                  <small>Nessuna notifica di Windows né suoni</small>
+                </div>
+              </button>
+              <button
+                type="button"
+                className={`user-status-menu-item ${userStatus === "invisible" ? "selected" : ""}`}
+                onClick={() => {
+                  setUserStatus("invisible");
+                  setShowStatusMenu(false);
+                }}
+              >
+                <span className="status-dot status-invisible" />
+                <div className="status-menu-text">
+                  <strong>Invisibile (Appari offline)</strong>
+                  <small>Appari offline agli altri ma puoi chattare</small>
+                </div>
+              </button>
+            </div>
+          ) : null}
         </div>
       </aside>
 
@@ -1033,6 +1221,18 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
           <div className="channel-heading"><strong>{(activeConversation && !activeSpaceId && dmDetails[activeConversation.id]?.recipient?.display_name) ? dmDetails[activeConversation.id].recipient!.display_name : (activeConversation?.name ?? "Il tuo spazio Hush")}</strong><span>{activeConversation ? activeConversation.kind === "voice_channel" ? `${members.length} membri · canale vocale` : `${members.length} membri` : `Benvenuto, ${profile.display_name}`}</span></div>
           {activeConversation ? (
             <div className="header-actions">
+              <button
+                type="button"
+                className={`header-bell-btn ${isChatMuted(activeConversation.id) ? "muted" : ""}`}
+                onClick={() => {
+                  const next = toggleChatMute(activeConversation.id);
+                  setToast(next ? "Notifiche silenziate per questa chat" : "Notifiche riattivate per questa chat");
+                }}
+                aria-label={isChatMuted(activeConversation.id) ? "Notifiche silenziate. Clicca per attivare." : "Notifiche attive. Clicca per silenziare."}
+                title={isChatMuted(activeConversation.id) ? "Notifiche silenziate (Clicca per riattivare)" : "Notifiche attive (Clicca per silenziare)"}
+              >
+                {isChatMuted(activeConversation.id) ? <BellOff size={18} /> : <Bell size={18} />}
+              </button>
               <button onClick={() => startCall(activeConversation, false)} aria-label="Avvia chiamata"><Phone size={18} /></button>
               <button onClick={() => startCall(activeConversation, true)} aria-label="Avvia videochiamata"><Video size={19} /></button>
               {activeSpace ? <button onClick={createInvite} aria-label="Copia invito"><UserPlus size={19} /></button> : null}
@@ -1237,7 +1437,7 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
                 });
               }}
               aria-label={`Profilo di ${member.display_name}`}
-            ><span className="member-avatar"><Avatar profile={member} /><i className={`status ${onlineUserIds.includes(member.id) || member.id === session.user.id ? "status-online" : "status-away"}`} /></span><span><strong>{member.display_name}</strong><small>@{member.username}</small></span></button>
+            ><span className="member-avatar"><Avatar profile={member} /><i className={`status ${member.id === session.user.id ? (userStatus === "invisible" ? "status-away" : userStatus === "dnd" ? "status-dnd" : "status-online") : (onlineUserIds.includes(member.id) ? "status-online" : "status-away")}`} /></span><span><strong>{member.display_name}</strong><small>@{member.username}</small></span></button>
           ))}
         </div>
         <div className="privacy-note"><ShieldCheck size={16} /><p><strong>{keyStatus === "ready" ? "Chiave verificata" : "Supabase connesso"}</strong><span>{identity ? `Dispositivo ${identity.id.slice(0, 8)}` : "Registrazione dispositivo…"}</span></p><i className={`backend-light backend-${keyStatus === "error" ? "degraded" : "ready"}`} /></div>

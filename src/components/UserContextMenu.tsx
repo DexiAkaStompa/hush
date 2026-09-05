@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import {
   AtSign,
+  Bell,
+  BellOff,
   Copy,
   MessageSquare,
   Settings,
@@ -17,6 +19,7 @@ import {
   setUserVolume,
   useUserAudioPrefs,
 } from "../lib/user-audio";
+import { isChatMuted, toggleChatMute } from "../lib/desktop-notifications";
 import type { Profile } from "../lib/workspace";
 
 export type ContextMenuTarget = {
@@ -24,6 +27,7 @@ export type ContextMenuTarget = {
   y: number;
   user: Profile;
   inCall?: boolean;
+  conversationId?: string;
 };
 
 type UserContextMenuProps = {
@@ -251,6 +255,21 @@ export function UserContextMenu({
       ) : null}
 
       <div className="user-context-divider" />
+
+      {target.conversationId ? (
+        <button
+          type="button"
+          className="user-context-item"
+          onClick={() => {
+            const next = toggleChatMute(target.conversationId!);
+            onToast?.(next ? "Notifiche silenziate per questa chat" : "Notifiche riattivate per questa chat");
+            onClose();
+          }}
+        >
+          {isChatMuted(target.conversationId) ? <Bell size={15} /> : <BellOff size={15} />}
+          <span>{isChatMuted(target.conversationId) ? "Riattiva notifiche chat" : "Silenzia notifiche chat"}</span>
+        </button>
+      ) : null}
 
       {/* Copy utilities */}
       <button

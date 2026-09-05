@@ -20,4 +20,10 @@ contextBridge.exposeInMainWorld("hushWindow", {
     return () => ipcRenderer.removeListener("window:maximized-change", handler);
   },
   searchMusic: (query, provider) => ipcRenderer.invoke("music:search", query, provider),
+  showNotification: (options) => ipcRenderer.invoke("notification:show", options),
+  onNotificationClick: (listener) => {
+    const handler = (_event) => listener();
+    ipcRenderer.on("notification:clicked", handler);
+    return () => ipcRenderer.removeListener("notification:clicked", handler);
+  },
 });

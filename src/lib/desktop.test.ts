@@ -10,13 +10,14 @@ function desktopHarness() {
   const frame = { url: "hush://app/index.html" };
   const window = { isDestroyed: () => false, webContents: { send, mainFrame: frame } };
   const app = { getVersion: () => "0.5.0", isPackaged: true, enableSandbox() {}, requestSingleInstanceLock: () => true,
-    whenReady: () => new Promise(() => {}), on() {}, quit() {} };
+    whenReady: () => new Promise(() => {}), on() {}, quit() {}, setAppUserModelId: vi.fn() };
   const updater = Object.assign(new EventEmitter(), {
     checkForUpdates: vi.fn().mockResolvedValue(null), setFeedURL: vi.fn(), quitAndInstall: vi.fn(),
   });
   const electron = { app, clipboard, BrowserWindow: { fromWebContents: (contents: unknown) => contents === window.webContents ? window : null },
     ipcMain: { on() {}, handle: (channel: string, handler: (...args: any[]) => any) => handlers.set(channel, handler) },
     protocol: { registerSchemesAsPrivileged() {} }, dialog: { showMessageBox: vi.fn().mockResolvedValue({ response: 1 }) },
+    Notification: class { constructor() {} show() {} on() {} static isSupported() { return true; } },
   };
   const context: Record<string, any> = {
     require: (name: string) => name === "electron" ? electron : name === "electron-updater" ? { autoUpdater: updater } : {},

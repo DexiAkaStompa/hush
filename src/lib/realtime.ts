@@ -40,6 +40,7 @@ export function extractBroadcastRecord(payload: unknown): EncryptedMessageRow | 
 type ConversationSubscription = {
   conversationId: string;
   userId: string;
+  skipPresence?: boolean;
   onMessage: (message: EncryptedMessageRow) => void;
   onPresence: (userIds: string[]) => void;
   onStatus: (status: RealtimeStatus) => void;
@@ -69,7 +70,9 @@ export async function subscribeToConversation(options: ConversationSubscription)
     .subscribe(async (status) => {
       if (status === "SUBSCRIBED") {
         options.onStatus("connected");
-        await channel.track({ userId: options.userId, onlineAt: new Date().toISOString() });
+        if (!options.skipPresence) {
+          await channel.track({ userId: options.userId, onlineAt: new Date().toISOString() });
+        }
       } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
         options.onStatus("error");
       } else if (status === "CLOSED") {
@@ -158,6 +161,34 @@ export function subscribeToIncomingCalls(
           onCallCancelled?.(payload.conversationId);
         }
       });
+    channel.subscribe();
+    return channel;
+  });
+
+  return () => {
+    channels.forEach((ch) => {
+      void client.removeChannel(ch);
+    });
+  };
+}
+
+export function subscribeToBackgroundMessages(
+  conversationIds: string[],
+  userId: string,
+  onMessage: (message: EncryptedMessageRow) => void
+): () => void {
+  if (!supabase || conversationIds.length === 0) return () => {};
+  const client = supabase;
+  const channels = conversationIds.map((id) => {
+    const channel = client.channel(conversationTopic(id), {
+      config: { private: true, broadcast: { self: false } },
+    });
+    channel.on("broadcast", { event: "INSERT" }, (event) => {
+      const record = extractBroadcastRecord(event);
+      if (record && record.sender_id !== userId) {
+        onMessage(record);
+      }
+    });
     channel.subscribe();
     return channel;
   });

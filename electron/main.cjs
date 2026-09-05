@@ -8,10 +8,15 @@ const {
   net,
   protocol,
   session,
+  Notification,
 } = require("electron");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
 const { autoUpdater } = require("electron-updater");
+
+if (process.platform === "win32" && typeof app.setAppUserModelId === "function") {
+  app.setAppUserModelId("app.hush.private");
+}
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -156,6 +161,29 @@ ipcMain.on("window:toggle-maximize", (event) => {
 });
 ipcMain.on("window:close", (event) => windowForEvent(event)?.close());
 ipcMain.handle("window:is-maximized", (event) => windowForEvent(event)?.isMaximized() ?? false);
+
+ipcMain.handle("notification:show", async (event, options) => {
+  if (!windowForEvent(event) || !options || typeof options !== "object") return;
+  if (!Notification.isSupported()) return;
+
+  const notif = new Notification({
+    title: String(options.title || "Hush"),
+    body: String(options.body || ""),
+    silent: true,
+    icon: iconPath(),
+  });
+
+  notif.on("click", () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
+      mainWindow.focus();
+      mainWindow.webContents.send("notification:clicked");
+    }
+  });
+
+  notif.show();
+});
 
 ipcMain.handle("music:search", async (event, rawQuery, provider = "youtube") => {
   if (!windowForEvent(event) || typeof rawQuery !== "string") throw new Error("Richiesta non autorizzata.");

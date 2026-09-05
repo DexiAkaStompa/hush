@@ -25,6 +25,12 @@ import {
   stopIncomingCallRingtone,
   useCustomRingtone,
 } from "../lib/ringtone";
+import {
+  previewNotificationSound,
+  removeCustomNotificationSound,
+  saveCustomNotificationSound,
+  useCustomNotificationSound,
+} from "../lib/notification-sound";
 
 const tabs = [
   { id: "profile", label: "Il mio profilo", icon: UserRound },
@@ -211,6 +217,155 @@ function RingtoneSettings() {
   );
 }
 
+function NotificationSoundSettings() {
+  const customSound = useCustomNotificationSound();
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [saving, setSaving] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const stopRef = useRef<(() => void) | null>(null);
+
+  useEffect(() => {
+    return () => {
+      stopRef.current?.();
+      stopRef.current = null;
+    };
+  }, []);
+
+  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    setError("");
+    setNotice("");
+    setSaving(true);
+    try {
+      await saveCustomNotificationSound(file);
+      setNotice(`Suono salvato: ${file.name}`);
+      if (isPlaying) {
+        stopRef.current?.();
+      }
+      setIsPlaying(true);
+      stopRef.current = previewNotificationSound();
+      setTimeout(() => setIsPlaying(false), 2500);
+    } catch (err) {
+      setError(readableError(err));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleReset = async () => {
+    setError("");
+    setNotice("");
+    if (isPlaying) {
+      stopRef.current?.();
+      stopRef.current = null;
+      setIsPlaying(false);
+    }
+    try {
+      await removeCustomNotificationSound();
+      setNotice("Ripristinato suono predefinito");
+    } catch (err) {
+      setError(readableError(err));
+    }
+  };
+
+  const togglePreview = () => {
+    if (isPlaying) {
+      stopRef.current?.();
+      stopRef.current = null;
+      setIsPlaying(false);
+    } else {
+      setIsPlaying(true);
+      setError("");
+      stopRef.current = previewNotificationSound();
+      setTimeout(() => setIsPlaying(false), 2500);
+    }
+  };
+
+  return (
+    <div className="ringtone-card">
+      <div className="ringtone-card-header">
+        <Bell size={18} className="ringtone-icon" />
+        <div className="ringtone-card-title">
+          <strong>Suono notifica nuovi messaggi</strong>
+          <span className="settings-hint">
+            {customSound ? (
+              <>
+                File MP3: <strong>{customSound.name}</strong>{" "}
+                ({(customSound.size / (1024 * 1024)).toFixed(2)} MB)
+              </>
+            ) : (
+              "Predefinito · Chime melodico Hush"
+            )}
+          </span>
+        </div>
+      </div>
+
+      <input
+        type="file"
+        ref={fileInputRef}
+        accept="audio/mpeg,audio/mp3,audio/wav,audio/ogg,audio/m4a,audio/*"
+        style={{ display: "none" }}
+        disabled={saving}
+        onChange={(e) => void handleFileChange(e)}
+      />
+
+      <div className="ringtone-actions">
+        <button
+          type="button"
+          className="settings-secondary"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={saving}
+        >
+          <Upload size={14} />
+          {saving ? "Salvataggio…" : customSound ? "Cambia file MP3…" : "Carica file MP3…"}
+        </button>
+
+        <button
+          type="button"
+          className={`settings-secondary ${isPlaying ? "active" : ""}`}
+          onClick={togglePreview}
+        >
+          {isPlaying ? (
+            <>
+              <Square size={14} /> Ferma prova
+            </>
+          ) : (
+            <>
+              <Play size={14} /> Prova suono
+            </>
+          )}
+        </button>
+
+        {customSound ? (
+          <button
+            type="button"
+            className="settings-secondary"
+            onClick={() => void handleReset()}
+            disabled={saving}
+          >
+            <RotateCcw size={14} /> Ripristina predefinito
+          </button>
+        ) : null}
+      </div>
+
+      {notice ? (
+        <p className="settings-notice" role="status">
+          <Check size={13} /> {notice}
+        </p>
+      ) : null}
+      {error ? (
+        <div className="auth-error" role="alert">
+          {error}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function VoiceSettings({ inCall }: { inCall: boolean }) {
   const settings = useMediaSettings();
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
@@ -301,6 +456,7 @@ function VoiceSettings({ inCall }: { inCall: boolean }) {
       <audio ref={playback} autoPlay muted={!monitoring} />
     </div>
     <RingtoneSettings />
+    <NotificationSoundSettings />
     {error ? <div className="auth-error" role="alert">{error}</div> : null}
     <button type="button" className="settings-secondary" onClick={() => change(DEFAULT_MEDIA_SETTINGS)}>Ripristina impostazioni audio</button>
   </div>;
