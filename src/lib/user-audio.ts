@@ -1,9 +1,11 @@
 import { useSyncExternalStore } from "react";
 
 export type UserAudioPrefs = {
-  readonly volume: number; // 0 to 200, default 100
-  readonly muted: boolean; // default false
+  readonly volume: number; // 0 to 200, default 100 (Voice volume)
+  readonly muted: boolean; // default false (Voice muted)
   readonly videoDisabled: boolean; // default false
+  readonly streamVolume: number; // 0 to 200, default 100 (Stream volume)
+  readonly streamMuted: boolean; // default false (Stream muted)
 };
 
 const STORAGE_KEY = "hush_user_audio_prefs";
@@ -12,6 +14,8 @@ export const DEFAULT_USER_AUDIO_PREFS: Readonly<UserAudioPrefs> = Object.freeze(
   volume: 100,
   muted: false,
   videoDisabled: false,
+  streamVolume: 100,
+  streamMuted: false,
 });
 
 let cache: Record<string, Readonly<UserAudioPrefs>> | null = null;
@@ -26,8 +30,13 @@ function normalizeUserAudioPrefs(data: unknown): Readonly<UserAudioPrefs> {
       : 100;
   const muted = Boolean(obj.muted);
   const videoDisabled = Boolean(obj.videoDisabled);
+  const streamVolume =
+    typeof obj.streamVolume === "number" && Number.isFinite(obj.streamVolume)
+      ? Math.max(0, Math.min(200, Math.round(obj.streamVolume)))
+      : 100;
+  const streamMuted = Boolean(obj.streamMuted);
 
-  if (volume === 100 && !muted && !videoDisabled) {
+  if (volume === 100 && !muted && !videoDisabled && streamVolume === 100 && !streamMuted) {
     return DEFAULT_USER_AUDIO_PREFS;
   }
 
@@ -35,6 +44,8 @@ function normalizeUserAudioPrefs(data: unknown): Readonly<UserAudioPrefs> {
     volume,
     muted,
     videoDisabled,
+    streamVolume,
+    streamMuted,
   });
 }
 
@@ -122,6 +133,34 @@ export function setUserVideoDisabled(userId: string, disabled: boolean) {
   store[userId] = Object.freeze({
     ...current,
     videoDisabled: isVideoDisabled,
+  });
+  saveToStorage();
+}
+
+export function setStreamVolume(userId: string, volume: number) {
+  if (!userId) return;
+  const store = loadFromStorage();
+  const current = getUserAudioPrefs(userId);
+  const clamped = Math.max(0, Math.min(200, Math.round(volume)));
+  if (current.streamVolume === clamped) return;
+
+  store[userId] = Object.freeze({
+    ...current,
+    streamVolume: clamped,
+  });
+  saveToStorage();
+}
+
+export function setStreamMuted(userId: string, muted: boolean) {
+  if (!userId) return;
+  const store = loadFromStorage();
+  const current = getUserAudioPrefs(userId);
+  const isMuted = Boolean(muted);
+  if (current.streamMuted === isMuted) return;
+
+  store[userId] = Object.freeze({
+    ...current,
+    streamMuted: isMuted,
   });
   saveToStorage();
 }

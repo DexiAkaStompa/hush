@@ -322,6 +322,52 @@ ipcMain.handle("gdrive:is-configured", (event) => {
   return Boolean(config?.GDRIVE_REFRESH_TOKEN && config?.GDRIVE_FOLDER_ID);
 });
 
+ipcMain.handle("gdrive:get-setup-code", (event) => {
+  if (!windowForEvent(event)) throw new Error("Richiesta non autorizzata.");
+  const config = getGDriveConfig();
+  if (!config?.GDRIVE_REFRESH_TOKEN || !config?.GDRIVE_FOLDER_ID) {
+    throw new Error("Nessuna configurazione Google Drive attiva su questo dispositivo.");
+  }
+  return Buffer.from(JSON.stringify(config), "utf-8").toString("base64");
+});
+
+ipcMain.handle("gdrive:import-setup-code", (event, rawCode) => {
+  if (!windowForEvent(event) || typeof rawCode !== "string") throw new Error("Richiesta non autorizzata.");
+  const cleaned = rawCode.trim().replace(/^HUSH-GDRIVE-/, "");
+  let parsed = null;
+  try {
+    if (cleaned.startsWith("{")) {
+      parsed = JSON.parse(cleaned);
+    } else {
+      const decoded = Buffer.from(cleaned, "base64").toString("utf-8");
+      parsed = JSON.parse(decoded);
+    }
+  } catch {
+    throw new Error("Il codice fornito non è valido o è corrotto.");
+  }
+
+  if (!parsed?.GDRIVE_CLIENT_ID || !parsed?.GDRIVE_CLIENT_SECRET || !parsed?.GDRIVE_REFRESH_TOKEN || !parsed?.GDRIVE_FOLDER_ID) {
+    throw new Error("Dati di configurazione incompleti.");
+  }
+
+  const targetPaths = [
+    path.join(app.getPath("userData"), "gdrive-config.json"),
+    path.join(process.env.APPDATA || "", "Hush", "gdrive-config.json"),
+    path.join(process.env.APPDATA || "", "hush-private-space", "gdrive-config.json"),
+  ];
+
+  for (const targetPath of targetPaths) {
+    try {
+      const dir = path.dirname(targetPath);
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(targetPath, JSON.stringify(parsed, null, 2), "utf-8");
+    } catch {}
+  }
+
+  gdriveConfigCache = parsed;
+  return true;
+});
+
 ipcMain.handle("gdrive:upload", async (event, payload) => {
   if (!windowForEvent(event) || !payload || !payload.data) throw new Error("Richiesta non autorizzata.");
   const config = getGDriveConfig();

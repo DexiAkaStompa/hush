@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import {
   Bell,
   Check,
+  Copy,
   Download,
   HardDrive,
   Mic,
@@ -512,6 +513,11 @@ function UpdateSettings({ inCall }: { inCall: boolean }) {
 
 function StorageSettings() {
   const [isConfigured, setIsConfigured] = useState<boolean | null>(null);
+  const [importCode, setImportCode] = useState("");
+  const [copied, setCopied] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+  const [importing, setImporting] = useState(false);
 
   useEffect(() => {
     if (window.hushWindow?.isGDriveConfigured) {
@@ -520,6 +526,47 @@ function StorageSettings() {
       setIsConfigured(false);
     }
   }, []);
+
+  const handleCopyCode = async () => {
+    setError("");
+    setSuccess("");
+    try {
+      if (!window.hushWindow?.getGDriveSetupCode) {
+        throw new Error("Funzionalità non disponibile su questo client.");
+      }
+      const code = await window.hushWindow.getGDriveSetupCode();
+      if (window.hushWindow?.copyText) {
+        await window.hushWindow.copyText(code);
+      } else if (navigator.clipboard) {
+        await navigator.clipboard.writeText(code);
+      }
+      setCopied(true);
+      setSuccess("Codice di configurazione copiato negli appunti! Invialo ai membri del gruppo.");
+      setTimeout(() => setCopied(false), 3000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Impossibile estrarre il codice.");
+    }
+  };
+
+  const handleImport = async () => {
+    if (!importCode.trim()) return;
+    setError("");
+    setSuccess("");
+    setImporting(true);
+    try {
+      if (!window.hushWindow?.importGDriveSetupCode) {
+        throw new Error("L'importazione richiede l'app Desktop di Hush.");
+      }
+      await window.hushWindow.importGDriveSetupCode(importCode.trim());
+      setIsConfigured(true);
+      setImportCode("");
+      setSuccess("Google Drive (5 TB) collegato con successo su questa postazione!");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Codice non valido.");
+    } finally {
+      setImporting(false);
+    }
+  };
 
   return (
     <div className="modal-form settings-form">
@@ -530,7 +577,7 @@ function StorageSettings() {
 
       <div className="update-card" role="status" style={{ alignItems: "flex-start", gap: 16 }}>
         <HardDrive size={32} style={{ marginTop: 2, flexShrink: 0, color: isConfigured ? "#52c41a" : undefined }} />
-        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, flex: 1 }}>
           <strong style={{ fontSize: 16 }}>
             {isConfigured === null
               ? "Verifica configurazione in corso…"
@@ -542,11 +589,57 @@ function StorageSettings() {
             {isConfigured
               ? "I media crittografati vengono salvati direttamente nel tuo Google Drive personale nella cartella Hush-Media, azzerando l'uso dello spazio su Supabase."
               : window.hushWindow
-              ? "Google Drive non risulta ancora configurato su questa postazione. I file vengono temporaneamente salvati su Supabase Storage."
+              ? "Google Drive non risulta ancora collegato su questa postazione. Incolla il codice di condivisione dell'amministratore per collegarlo."
               : "Disponibile nell'app Desktop di Hush con account Google Drive collegato."}
           </span>
         </div>
       </div>
+
+      {isConfigured && window.hushWindow?.getGDriveSetupCode ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 4 }}>
+          <p className="settings-hint">
+            Condividi l'accesso ai tuoi 5 TB con i membri del tuo gruppo per permettere anche a loro di caricare i file su Google Drive:
+          </p>
+          <button
+            type="button"
+            className="modal-primary"
+            onClick={handleCopyCode}
+            style={{ display: "inline-flex", alignItems: "center", gap: 8, alignSelf: "flex-start" }}
+          >
+            {copied ? <Check size={16} /> : <Copy size={16} />}
+            <span>{copied ? "Codice Copiato!" : "Copia Codice per i Membri"}</span>
+          </button>
+        </div>
+      ) : null}
+
+      {!isConfigured && window.hushWindow?.importGDriveSetupCode ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 6 }}>
+          <h4>Collega con Codice di Condivisione</h4>
+          <p className="settings-hint">
+            Incolla qui il codice di configurazione ricevuto per collegare l'archiviazione Google Drive (5 TB):
+          </p>
+          <textarea
+            className="form-textarea"
+            rows={3}
+            placeholder="Incolla qui il codice..."
+            value={importCode}
+            onChange={(e) => setImportCode(e.target.value)}
+            style={{ fontFamily: "monospace", fontSize: 12 }}
+          />
+          <button
+            type="button"
+            className="modal-primary"
+            onClick={handleImport}
+            disabled={importing || !importCode.trim()}
+            style={{ alignSelf: "flex-start" }}
+          >
+            {importing ? "Collegamento in corso…" : "Collega Google Drive"}
+          </button>
+        </div>
+      ) : null}
+
+      {success ? <p className="settings-hint" style={{ color: "#52c41a", fontWeight: 600 }}>{success}</p> : null}
+      {error ? <p className="auth-error" role="alert">{error}</p> : null}
     </div>
   );
 }

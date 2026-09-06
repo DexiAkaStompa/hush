@@ -10,7 +10,7 @@ import { applyTrackBitrate, optimizeSdpQuality } from "../lib/webrtc-quality";
 import { openMicrophone, type MicrophoneCapture } from "../lib/microphone";
 import { ProfileImage } from "./ProfileImage";
 import { useSpeakingDetector } from "../lib/speaking-detection";
-import { setUserMuted, useUserAudioPrefs } from "../lib/user-audio";
+import { setStreamMuted, setUserMuted, useUserAudioPrefs } from "../lib/user-audio";
 import type { Profile } from "../lib/workspace";
 
 type MediaStageProps = {
@@ -44,47 +44,15 @@ function initialsFor(value: string) {
   return value.trim().split(/\s+/).slice(0, 2).map((word) => word[0]).join("").toUpperCase() || "TU";
 }
 
-type ScreenAudioMixer = {
-  mixedTrack: MediaStreamTrack;
-  close: () => void;
+type PeerStreamState = {
+  screenStreamId: string | null;
+  voiceStream: MediaStream;
+  screenStream: MediaStream;
 };
-
-function createScreenAudioMixer(micTrack: MediaStreamTrack, screenAudioTrack: MediaStreamTrack): ScreenAudioMixer {
-  const ctx = new AudioContext({ sampleRate: 48000 });
-  const micStream = new MediaStream([micTrack]);
-  const screenStream = new MediaStream([screenAudioTrack]);
-  const micSource = ctx.createMediaStreamSource(micStream);
-  const screenSource = ctx.createMediaStreamSource(screenStream);
-  const dest = ctx.createMediaStreamDestination();
-
-  // Split and duplicate mic into BOTH Left and Right channels so voice is centered
-  const micSplitter = ctx.createChannelSplitter(2);
-  const micMerger = ctx.createChannelMerger(2);
-  micSource.connect(micSplitter);
-  micSplitter.connect(micMerger, 0, 0);
-  micSplitter.connect(micMerger, 0, 1);
-  micMerger.connect(dest);
-
-  // Desktop audio is already true stereo (system sounds, games, video)
-  screenSource.connect(dest);
-
-  const mixedTrack = dest.stream.getAudioTracks()[0];
-  const close = () => {
-    try {
-      micSource.disconnect();
-      screenSource.disconnect();
-      micSplitter.disconnect();
-      micMerger.disconnect();
-      mixedTrack.stop();
-      void ctx.close().catch(() => undefined);
-    } catch {}
-  };
-
-  return { mixedTrack, close };
-}
 
 function StreamTile({
   stream,
+  voiceStream,
   audioStream,
   label,
   profile,
@@ -95,6 +63,7 @@ function StreamTile({
   onContextMenu,
 }: {
   stream: MediaStream | null;
+  voiceStream?: MediaStream | null;
   audioStream?: MediaStream | null;
   label: string;
   profile?: Pick<Profile, "id" | "display_name" | "avatar_color" | "avatar_path" | "banner_path"> | null;
@@ -105,18 +74,34 @@ function StreamTile({
   onContextMenu?: (event: React.MouseEvent) => void;
 }) {
   const video = useRef<HTMLVideoElement>(null);
+  const voiceAudio = useRef<HTMLAudioElement>(null);
   const settings = useMediaSettings();
   const [outputError, setOutputError] = useState("");
   const userPrefs = useUserAudioPrefs(profile?.id ?? "");
-  const isMuted = muted || userPrefs.muted;
-  const isSpeaking = useSpeakingDetector(audioStream ?? stream, !isLocalMicMuted);
-  const hasVideo = Boolean(stream && stream.getVideoTracks().length > 0 && !userPrefs.videoDisabled);
-  const effectiveVolume = isMuted ? 0 : Math.max(0, Math.min(1, (userPrefs.volume / 100) * (settings.outputVolume / 100)));
 
+  const hasVideo = Boolean(stream && stream.getVideoTracks().length > 0 && !userPrefs.videoDisabled);
+
+  // Fallback voice stream: if voiceStream is provided use it, otherwise if tile has no video use stream audio
+  const effectiveVoiceStream = voiceStream && voiceStream.getAudioTracks().length > 0
+    ? voiceStream
+    : (!hasVideo && stream && stream.getAudioTracks().length > 0 ? stream : (audioStream ?? null));
+
+  // Microphone Voice controls
+  const isVoiceMuted = muted || userPrefs.muted;
+  const effectiveVoiceVolume = isVoiceMuted ? 0 : Math.max(0, Math.min(1, (userPrefs.volume / 100) * (settings.outputVolume / 100)));
+
+  // Stream (game / desktop audio) controls
+  const isStreamMuted = muted || userPrefs.streamMuted;
+  const effectiveStreamVolume = isStreamMuted ? 0 : Math.max(0, Math.min(1, (userPrefs.streamVolume / 100) * (settings.outputVolume / 100)));
+
+  // Speaking indicator listens to voice microphone
+  const isSpeaking = useSpeakingDetector(effectiveVoiceStream, !isLocalMicMuted);
+
+  // 1. Play Stream video & desktop audio in <video>
   useEffect(() => {
     if (video.current) {
       video.current.srcObject = stream;
-      if (stream && !isMuted) {
+      if (stream && !isStreamMuted) {
         void video.current.play().catch(() => undefined);
       }
     }
@@ -124,19 +109,45 @@ function StreamTile({
 
   useEffect(() => {
     if (video.current) {
-      video.current.muted = isMuted;
-      video.current.volume = effectiveVolume;
+      video.current.muted = isStreamMuted;
+      video.current.volume = effectiveStreamVolume;
     }
-  }, [isMuted, effectiveVolume]);
+  }, [isStreamMuted, effectiveStreamVolume]);
 
   useEffect(() => {
     if (!video.current) return;
     let active = true;
-    void routeAudio(video.current, settings, effectiveVolume)
+    void routeAudio(video.current, settings, effectiveStreamVolume)
       .then(() => { if (active) setOutputError(""); })
       .catch(() => { if (active) setOutputError("Uscita audio non disponibile: scegline un’altra nelle impostazioni."); });
     return () => { active = false; };
-  }, [settings.outputId, settings.outputVolume, effectiveVolume]);
+  }, [settings.outputId, settings.outputVolume, effectiveStreamVolume]);
+
+  // 2. Play Microphone voice in dedicated <audio> element (isolated from stream audio)
+  useEffect(() => {
+    if (voiceAudio.current) {
+      voiceAudio.current.srcObject = effectiveVoiceStream;
+      if (effectiveVoiceStream && !isVoiceMuted) {
+        void voiceAudio.current.play().catch(() => undefined);
+      }
+    }
+  }, [effectiveVoiceStream]);
+
+  useEffect(() => {
+    if (voiceAudio.current) {
+      voiceAudio.current.muted = isVoiceMuted;
+      voiceAudio.current.volume = effectiveVoiceVolume;
+    }
+  }, [isVoiceMuted, effectiveVoiceVolume]);
+
+  useEffect(() => {
+    if (!voiceAudio.current || !effectiveVoiceStream) return;
+    let active = true;
+    void routeAudio(voiceAudio.current, settings, effectiveVoiceVolume)
+      .then(() => { if (active) setOutputError(""); })
+      .catch(() => {});
+    return () => { active = false; };
+  }, [settings.outputId, settings.outputVolume, effectiveVoiceVolume, effectiveVoiceStream]);
 
   const toggleFullscreen = () => {
     const element = video.current;
@@ -159,11 +170,21 @@ function StreamTile({
         }
       }}
     >
+      {/* Voice audio stream played separately so muting the stream never cuts off user voice */}
+      {effectiveVoiceStream && effectiveVoiceStream !== stream ? (
+        <audio
+          ref={voiceAudio}
+          autoPlay
+          playsInline
+          muted={isVoiceMuted}
+        />
+      ) : null}
+
       <video
         ref={video}
         autoPlay
         playsInline
-        muted={isMuted}
+        muted={isStreamMuted}
         onContextMenu={(e) => {
           if (onContextMenu) {
             e.preventDefault();
@@ -216,12 +237,12 @@ function StreamTile({
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                setUserMuted(profile.id, !userPrefs.muted);
+                setStreamMuted(profile.id, !userPrefs.streamMuted);
               }}
-              title={userPrefs.muted ? "Riattiva audio stream" : "Muta audio stream"}
-              aria-label={userPrefs.muted ? "Riattiva audio dello stream" : "Muta audio dello stream"}
+              title={userPrefs.streamMuted ? "Riattiva audio stream" : "Muta audio stream"}
+              aria-label={userPrefs.streamMuted ? "Riattiva audio dello stream" : "Muta audio dello stream"}
             >
-              {userPrefs.muted ? <VolumeX size={15} /> : <Volume2 size={15} />}
+              {userPrefs.streamMuted ? <VolumeX size={15} /> : <Volume2 size={15} />}
             </button>
           ) : null}
         </div>
@@ -257,13 +278,15 @@ export function MediaStage({
   const [notice, setNotice] = useState("Connessione diretta in preparazione…");
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [remoteStreams, setRemoteStreams] = useState<Record<string, MediaStream>>({});
+  const [remoteVoiceStreams, setRemoteVoiceStreams] = useState<Record<string, MediaStream>>({});
   const [participants, setParticipants] = useState<string[]>([]);
   const [streamingPeers, setStreamingPeers] = useState<Set<string>>(new Set());
   const [focusedTile, setFocusedTile] = useState<string | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
   const microphoneRef = useRef<MicrophoneCapture | null>(null);
   const screenStreamRef = useRef<MediaStream | null>(null);
-  const screenMixerRef = useRef<ScreenAudioMixer | null>(null);
+  const peerStreamMap = useRef(new Map<string, PeerStreamState>());
+  const screenAudioSendersRef = useRef(new Map<string, RTCRtpSender>());
   const peersRef = useRef(new Map<string, RTCPeerConnection>());
   const channelRef = useRef<RealtimeChannel | null>(null);
 
@@ -310,9 +333,19 @@ export function MediaStage({
       });
       localStreamRef.current?.getTracks().forEach((track) => {
         const sender = peer.addTrack(track, localStreamRef.current!);
-        const kind = track.kind === "audio" ? "audio" : (screenStreamRef.current?.getTrackById(track.id) ? "screen" : "camera");
+        const kind = track.kind === "audio" ? "audio" : "camera";
         void applyTrackBitrate(sender, kind, settingsRef.current);
       });
+      if (screenStreamRef.current) {
+        screenStreamRef.current.getTracks().forEach((track) => {
+          const sender = peer.addTrack(track, screenStreamRef.current!);
+          const kind = track.kind === "video" ? "screen" : "audio";
+          if (track.kind === "audio") {
+            screenAudioSendersRef.current.set(peerId, sender);
+          }
+          void applyTrackBitrate(sender, kind, settingsRef.current);
+        });
+      }
       peer.onicecandidate = (event) => {
         if (!event.candidate) return;
         void sendSignal(peerId, {
@@ -323,15 +356,89 @@ export function MediaStage({
         }).catch(() => reportCallError("Connessione diretta interrotta durante la negoziazione."));
       };
       peer.ontrack = (event) => {
-        setRemoteStreams((current) => {
-          const stream = current[peerId] ?? new MediaStream();
-          if (!stream.getTrackById(event.track.id)) stream.addTrack(event.track);
-          return { ...current, [peerId]: new MediaStream(stream.getTracks()) };
-        });
+        const track = event.track;
+        const incomingStream = event.streams[0];
+        const streamId = incomingStream?.id;
+
+        let peerEntry = peerStreamMap.current.get(peerId);
+        if (!peerEntry) {
+          peerEntry = {
+            screenStreamId: null,
+            voiceStream: new MediaStream(),
+            screenStream: new MediaStream(),
+          };
+          peerStreamMap.current.set(peerId, peerEntry);
+        }
+
+        if (track.kind === "video") {
+          if (streamId) peerEntry.screenStreamId = streamId;
+          if (!peerEntry.screenStream.getTrackById(track.id)) {
+            peerEntry.screenStream.addTrack(track);
+          }
+          // If incomingStream has audio tracks (system/game sound), assign them to screenStream
+          if (incomingStream) {
+            incomingStream.getAudioTracks().forEach((audioTrack) => {
+              if (!peerEntry!.screenStream.getTrackById(audioTrack.id)) {
+                peerEntry!.screenStream.addTrack(audioTrack);
+              }
+              if (peerEntry!.voiceStream.getTrackById(audioTrack.id)) {
+                peerEntry!.voiceStream.removeTrack(audioTrack);
+              }
+            });
+          }
+        } else if (track.kind === "audio") {
+          const hasExistingVoiceTrack = peerEntry.voiceStream.getAudioTracks().some(
+            (t) => t.readyState === "live" && t.id !== track.id
+          );
+          const isScreenAudio =
+            (streamId && peerEntry.screenStreamId === streamId) ||
+            Boolean(incomingStream && incomingStream.getVideoTracks().length > 0) ||
+            hasExistingVoiceTrack;
+
+          if (isScreenAudio) {
+            if (!peerEntry.screenStream.getTrackById(track.id)) {
+              peerEntry.screenStream.addTrack(track);
+            }
+          } else {
+            if (!peerEntry.voiceStream.getTrackById(track.id)) {
+              peerEntry.voiceStream.addTrack(track);
+            }
+          }
+        }
+
+        const handleEnded = () => {
+          peerEntry?.voiceStream.removeTrack(track);
+          peerEntry?.screenStream.removeTrack(track);
+          setRemoteStreams((current) => ({
+            ...current,
+            [peerId]: new MediaStream(peerEntry?.screenStream.getTracks() ?? []),
+          }));
+          setRemoteVoiceStreams((current) => ({
+            ...current,
+            [peerId]: new MediaStream(peerEntry?.voiceStream.getTracks() ?? []),
+          }));
+        };
+        track.addEventListener("ended", handleEnded, { once: true });
+
+        setRemoteStreams((current) => ({
+          ...current,
+          [peerId]: new MediaStream(peerEntry!.screenStream.getTracks()),
+        }));
+        setRemoteVoiceStreams((current) => ({
+          ...current,
+          [peerId]: new MediaStream(peerEntry!.voiceStream.getTracks()),
+        }));
       };
       peer.onconnectionstatechange = () => {
         if (!["failed", "closed", "disconnected"].includes(peer.connectionState)) return;
+        peerStreamMap.current.delete(peerId);
+        screenAudioSendersRef.current.delete(peerId);
         setRemoteStreams((current) => {
+          const next = { ...current };
+          delete next[peerId];
+          return next;
+        });
+        setRemoteVoiceStreams((current) => {
           const next = { ...current };
           delete next[peerId];
           return next;
@@ -391,7 +498,14 @@ export function MediaStage({
         if (activePeerIds.has(peerId)) continue;
         peer.close();
         peers.delete(peerId);
+        peerStreamMap.current.delete(peerId);
+        screenAudioSendersRef.current.delete(peerId);
         setRemoteStreams((current) => {
+          const next = { ...current };
+          delete next[peerId];
+          return next;
+        });
+        setRemoteVoiceStreams((current) => {
           const next = { ...current };
           delete next[peerId];
           return next;
@@ -464,8 +578,8 @@ export function MediaStage({
         void client.removeChannel(channel);
       }
       channelRef.current = null;
-      screenMixerRef.current?.close();
-      screenMixerRef.current = null;
+      screenAudioSendersRef.current.clear();
+      peerStreamMap.current.clear();
       localStreamRef.current?.getTracks().forEach((track) => track.stop());
       screenStreamRef.current?.getTracks().forEach((track) => track.stop());
       localStreamRef.current = null;
@@ -474,6 +588,7 @@ export function MediaStage({
       peers.clear();
       pendingIce.clear();
       setRemoteStreams({});
+      setRemoteVoiceStreams({});
       setParticipants([]);
       setLocalStream(null);
       setMic(false);
@@ -593,23 +708,26 @@ export function MediaStage({
 
   const toggleShare = async () => {
     if (sharing) {
-      if (screenMixerRef.current) {
-        screenMixerRef.current.close();
-        screenMixerRef.current = null;
-      }
+      screenAudioSendersRef.current.forEach((sender, peerId) => {
+        const peer = peersRef.current.get(peerId);
+        if (peer && sender) {
+          try { peer.removeTrack(sender); } catch {}
+        }
+      });
+      screenAudioSendersRef.current.clear();
+
       const screenStream = screenStreamRef.current;
       screenStream?.getTracks().forEach((track) => track.stop());
       screenStreamRef.current = null;
       const cameraTrack = localStreamRef.current?.getVideoTracks()[0] ?? null;
-      const micTrack = localStreamRef.current?.getAudioTracks()[0] ?? null;
       peersRef.current.forEach((peer) => {
         const videoSender = peer.getSenders().find((candidate) => candidate.track?.kind === "video");
-        if (videoSender) void videoSender.replaceTrack(cameraTrack);
-        if (micTrack) {
-          const audioSender = peer.getSenders().find((candidate) => candidate.track?.kind === "audio");
-          if (audioSender) {
-            void audioSender.replaceTrack(micTrack);
-            void applyTrackBitrate(audioSender, "audio", settingsRef.current);
+        if (videoSender) {
+          if (cameraTrack) {
+            void videoSender.replaceTrack(cameraTrack);
+            void applyTrackBitrate(videoSender, "camera", settingsRef.current);
+          } else {
+            try { peer.removeTrack(videoSender); } catch {}
           }
         }
       });
@@ -628,20 +746,8 @@ export function MediaStage({
       screenStreamRef.current = stream;
       const screenTrack = stream.getVideoTracks()[0];
       const screenAudioTrack = stream.getAudioTracks()[0];
-      const micTrack = localStreamRef.current?.getAudioTracks()[0];
 
-      let outgoingAudioTrack = micTrack ?? null;
-      if (screenAudioTrack && micTrack) {
-        try {
-          const mixer = createScreenAudioMixer(micTrack, screenAudioTrack);
-          screenMixerRef.current = mixer;
-          outgoingAudioTrack = mixer.mixedTrack;
-        } catch (mixErr) {
-          console.warn("Could not mix screen audio with mic:", mixErr);
-        }
-      }
-
-      peersRef.current.forEach((peer) => {
+      peersRef.current.forEach((peer, peerId) => {
         const videoSender = peer.getSenders().find((candidate) => candidate.track?.kind === "video");
         if (videoSender) {
           void videoSender.replaceTrack(screenTrack);
@@ -651,12 +757,10 @@ export function MediaStage({
           void applyTrackBitrate(newSender, "screen", settingsRef.current);
         }
 
-        if (outgoingAudioTrack && outgoingAudioTrack !== micTrack) {
-          const audioSender = peer.getSenders().find((candidate) => candidate.track?.kind === "audio");
-          if (audioSender) {
-            void audioSender.replaceTrack(outgoingAudioTrack);
-            void applyTrackBitrate(audioSender, "audio", settingsRef.current);
-          }
+        if (screenAudioTrack) {
+          const audioSender = peer.addTrack(screenAudioTrack, stream);
+          screenAudioSendersRef.current.set(peerId, audioSender);
+          void applyTrackBitrate(audioSender, "audio", settingsRef.current);
         }
       });
 
@@ -670,22 +774,25 @@ export function MediaStage({
 
       screenTrack.addEventListener("ended", () => {
         if (screenStreamRef.current !== stream) return;
-        if (screenMixerRef.current) {
-          screenMixerRef.current.close();
-          screenMixerRef.current = null;
-        }
+        screenAudioSendersRef.current.forEach((sender, peerId) => {
+          const peer = peersRef.current.get(peerId);
+          if (peer && sender) {
+            try { peer.removeTrack(sender); } catch {}
+          }
+        });
+        screenAudioSendersRef.current.clear();
+
         stream.getTracks().forEach((track) => track.stop());
         screenStreamRef.current = null;
         const cameraTrack = localStreamRef.current?.getVideoTracks()[0] ?? null;
-        const originalMicTrack = localStreamRef.current?.getAudioTracks()[0] ?? null;
         peersRef.current.forEach((peer) => {
           const videoSender = peer.getSenders().find((candidate) => candidate.track?.kind === "video");
-          if (videoSender) void videoSender.replaceTrack(cameraTrack);
-          if (originalMicTrack) {
-            const audioSender = peer.getSenders().find((candidate) => candidate.track?.kind === "audio");
-            if (audioSender) {
-              void audioSender.replaceTrack(originalMicTrack);
-              void applyTrackBitrate(audioSender, "audio", settingsRef.current);
+          if (videoSender) {
+            if (cameraTrack) {
+              void videoSender.replaceTrack(cameraTrack);
+              void applyTrackBitrate(videoSender, "camera", settingsRef.current);
+            } else {
+              try { peer.removeTrack(videoSender); } catch {}
             }
           }
         });
@@ -713,6 +820,7 @@ export function MediaStage({
       <div className="stage-grid call-grid">
         <StreamTile
           stream={localStream}
+          voiceStream={localStreamRef.current ?? localStream}
           audioStream={localStreamRef.current ?? localStream}
           isLocalMicMuted={!mic}
           label={`${displayName} (tu)${sharing ? " · schermo" : ""}`}
@@ -736,6 +844,7 @@ export function MediaStage({
             <StreamTile
               key={participantId}
               stream={remoteStreams[participantId] ?? null}
+              voiceStream={remoteVoiceStreams[participantId] ?? null}
               label={`${memberNames[participantId] ?? user.display_name ?? "Membro"}${isScreenShare ? " · schermo" : ""}`}
               profile={user}
               focused={focusedTile === participantId}

@@ -21,6 +21,8 @@ afterAll(() => {
 import {
   getUserAudioPrefs,
   resetUserAudioPrefs,
+  setStreamMuted,
+  setStreamVolume,
   setUserMuted,
   setUserVideoDisabled,
   setUserVolume,
@@ -41,6 +43,8 @@ describe("user-audio store", () => {
       volume: 100,
       muted: false,
       videoDisabled: false,
+      streamVolume: 100,
+      streamMuted: false,
     });
   });
 
@@ -58,17 +62,35 @@ describe("user-audio store", () => {
     expect(getUserAudioPrefs(userId).volume).toBe(126);
   });
 
-  it("toggles mute and videoDisabled independently", () => {
+  it("sets and clamps stream volume between 0 and 200", () => {
+    setStreamVolume(userId, 150);
+    expect(getUserAudioPrefs(userId).streamVolume).toBe(150);
+
+    setStreamVolume(userId, 300);
+    expect(getUserAudioPrefs(userId).streamVolume).toBe(200);
+
+    setStreamVolume(userId, -20);
+    expect(getUserAudioPrefs(userId).streamVolume).toBe(0);
+  });
+
+  it("toggles mute, streamMute, and videoDisabled independently", () => {
     setUserMuted(userId, true);
     expect(getUserAudioPrefs(userId).muted).toBe(true);
+    expect(getUserAudioPrefs(userId).streamMuted).toBe(false);
     expect(getUserAudioPrefs(userId).videoDisabled).toBe(false);
 
-    setUserVideoDisabled(userId, true);
+    setStreamMuted(userId, true);
     expect(getUserAudioPrefs(userId).muted).toBe(true);
-    expect(getUserAudioPrefs(userId).videoDisabled).toBe(true);
+    expect(getUserAudioPrefs(userId).streamMuted).toBe(true);
+    expect(getUserAudioPrefs(userId).videoDisabled).toBe(false);
 
     setUserMuted(userId, false);
     expect(getUserAudioPrefs(userId).muted).toBe(false);
+    expect(getUserAudioPrefs(userId).streamMuted).toBe(true);
+
+    setUserVideoDisabled(userId, true);
+    expect(getUserAudioPrefs(userId).muted).toBe(false);
+    expect(getUserAudioPrefs(userId).streamMuted).toBe(true);
     expect(getUserAudioPrefs(userId).videoDisabled).toBe(true);
   });
 
@@ -82,20 +104,27 @@ describe("user-audio store", () => {
     setUserMuted(userId, true);
     expect(listener).toHaveBeenCalledTimes(2);
 
+    setStreamMuted(userId, true);
+    expect(listener).toHaveBeenCalledTimes(3);
+
     unsubscribe();
     setUserVolume(userId, 100);
-    expect(listener).toHaveBeenCalledTimes(2);
+    expect(listener).toHaveBeenCalledTimes(3);
   });
 
   it("resets user audio prefs", () => {
     setUserVolume(userId, 150);
     setUserMuted(userId, true);
+    setStreamVolume(userId, 50);
+    setStreamMuted(userId, true);
     resetUserAudioPrefs(userId);
 
     expect(getUserAudioPrefs(userId)).toEqual({
       volume: 100,
       muted: false,
       videoDisabled: false,
+      streamVolume: 100,
+      streamMuted: false,
     });
   });
 

@@ -24,6 +24,8 @@ interface HushWindowControls {
     downloadUrl: string;
   }>;
   downloadGDriveMedia?: (payload: { fileId: string; downloadUrl?: string }) => Promise<number[] | Uint8Array>;
+  getGDriveSetupCode?: () => Promise<string>;
+  importGDriveSetupCode?: (code: string) => Promise<boolean>;
 }
 
 interface Window {

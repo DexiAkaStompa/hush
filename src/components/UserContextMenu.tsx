@@ -15,6 +15,8 @@ import {
 import { ProfileImage } from "./ProfileImage";
 import { copyText } from "../lib/clipboard";
 import {
+  setStreamMuted,
+  setStreamVolume,
   setUserMuted,
   setUserVideoDisabled,
   setUserVolume,
@@ -205,7 +207,7 @@ export function UserContextMenu({
             className="user-context-section-label"
             style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}
           >
-            <span>{target.isStream ? "Audio & Stream" : "Audio & Video"}</span>
+            <span>{target.isStream ? "Audio Stream" : "Audio & Video"}</span>
             {target.isStream ? (
               <span className="user-context-badge">
                 <MonitorUp size={11} /> {target.isScreenShare ? "Schermo" : "Stream"}
@@ -213,13 +215,130 @@ export function UserContextMenu({
             ) : null}
           </div>
 
+          {target.isStream ? (
+            <>
+              {/* Stream audio controls */}
+              <div className="user-context-slider-row">
+                <div className="user-context-slider-header">
+                  <span>Volume stream (gioco / sistema)</span>
+                  <button
+                    type="button"
+                    className="user-context-volume-reset"
+                    title="Ripristina volume stream al 100%"
+                    onClick={() => setStreamVolume(target.user.id, 100)}
+                  >
+                    {prefs.streamVolume}%
+                  </button>
+                </div>
+                <div className="user-context-slider-track">
+                  {prefs.streamMuted || prefs.streamVolume === 0 ? <VolumeX size={14} /> : <Volume2 size={14} />}
+                  <input
+                    type="range"
+                    min={0}
+                    max={200}
+                    step={1}
+                    value={prefs.streamVolume}
+                    onChange={(e) => setStreamVolume(target.user.id, Number(e.target.value))}
+                    aria-label={`Volume stream per ${target.user.display_name}`}
+                  />
+                </div>
+              </div>
+
+              <div className="user-context-presets" role="group" aria-label="Preimpostazioni volume stream">
+                <button
+                  type="button"
+                  className={`user-context-preset-btn ${prefs.streamMuted || prefs.streamVolume === 0 ? "active" : ""}`}
+                  onClick={() => setStreamMuted(target.user.id, true)}
+                  title="Muta audio stream"
+                >
+                  Muto
+                </button>
+                <button
+                  type="button"
+                  className={`user-context-preset-btn ${!prefs.streamMuted && prefs.streamVolume === 50 ? "active" : ""}`}
+                  onClick={() => {
+                    setStreamMuted(target.user.id, false);
+                    setStreamVolume(target.user.id, 50);
+                  }}
+                  title="Imposta volume stream al 50%"
+                >
+                  50%
+                </button>
+                <button
+                  type="button"
+                  className={`user-context-preset-btn ${!prefs.streamMuted && prefs.streamVolume === 100 ? "active" : ""}`}
+                  onClick={() => {
+                    setStreamMuted(target.user.id, false);
+                    setStreamVolume(target.user.id, 100);
+                  }}
+                  title="Imposta volume stream al 100%"
+                >
+                  100%
+                </button>
+                <button
+                  type="button"
+                  className={`user-context-preset-btn ${!prefs.streamMuted && prefs.streamVolume === 150 ? "active" : ""}`}
+                  onClick={() => {
+                    setStreamMuted(target.user.id, false);
+                    setStreamVolume(target.user.id, 150);
+                  }}
+                  title="Imposta volume stream al 150%"
+                >
+                  150%
+                </button>
+                <button
+                  type="button"
+                  className={`user-context-preset-btn ${!prefs.streamMuted && prefs.streamVolume === 200 ? "active" : ""}`}
+                  onClick={() => {
+                    setStreamMuted(target.user.id, false);
+                    setStreamVolume(target.user.id, 200);
+                  }}
+                  title="Imposta volume stream al 200%"
+                >
+                  200%
+                </button>
+              </div>
+
+              <label className="user-context-checkbox-item">
+                <div className="user-context-checkbox-label">
+                  <VolumeX size={15} />
+                  <span>Silenzia solo audio stream</span>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={prefs.streamMuted}
+                  onChange={(e) => setStreamMuted(target.user.id, e.target.checked)}
+                />
+              </label>
+
+              <label className="user-context-checkbox-item">
+                <div className="user-context-checkbox-label">
+                  <VideoOff size={15} />
+                  <span>Nascondi video stream</span>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={prefs.videoDisabled}
+                  onChange={(e) => setUserVideoDisabled(target.user.id, e.target.checked)}
+                />
+              </label>
+
+              <div className="user-context-divider" />
+
+              <div className="user-context-section-label">
+                <span>Microfono Utente (Voce)</span>
+              </div>
+            </>
+          ) : null}
+
+          {/* Voice microphone audio controls */}
           <div className="user-context-slider-row">
             <div className="user-context-slider-header">
-              <span>{target.isStream ? "Volume stream" : "Volume utente"}</span>
+              <span>{target.isStream ? "Volume voce utente" : "Volume utente"}</span>
               <button
                 type="button"
                 className="user-context-volume-reset"
-                title="Ripristina al 100%"
+                title="Ripristina volume voce al 100%"
                 onClick={() => setUserVolume(target.user.id, 100)}
               >
                 {prefs.volume}%
@@ -234,70 +353,15 @@ export function UserContextMenu({
                 step={1}
                 value={prefs.volume}
                 onChange={(e) => setUserVolume(target.user.id, Number(e.target.value))}
-                aria-label={target.isStream ? `Volume stream per ${target.user.display_name}` : `Volume per ${target.user.display_name}`}
+                aria-label={`Volume voce per ${target.user.display_name}`}
               />
             </div>
-          </div>
-
-          <div className="user-context-presets" role="group" aria-label="Preimpostazioni volume">
-            <button
-              type="button"
-              className={`user-context-preset-btn ${prefs.muted || prefs.volume === 0 ? "active" : ""}`}
-              onClick={() => setUserMuted(target.user.id, true)}
-              title="Muta audio"
-            >
-              Muto
-            </button>
-            <button
-              type="button"
-              className={`user-context-preset-btn ${!prefs.muted && prefs.volume === 50 ? "active" : ""}`}
-              onClick={() => {
-                setUserMuted(target.user.id, false);
-                setUserVolume(target.user.id, 50);
-              }}
-              title="Imposta volume al 50%"
-            >
-              50%
-            </button>
-            <button
-              type="button"
-              className={`user-context-preset-btn ${!prefs.muted && prefs.volume === 100 ? "active" : ""}`}
-              onClick={() => {
-                setUserMuted(target.user.id, false);
-                setUserVolume(target.user.id, 100);
-              }}
-              title="Imposta volume al 100%"
-            >
-              100%
-            </button>
-            <button
-              type="button"
-              className={`user-context-preset-btn ${!prefs.muted && prefs.volume === 150 ? "active" : ""}`}
-              onClick={() => {
-                setUserMuted(target.user.id, false);
-                setUserVolume(target.user.id, 150);
-              }}
-              title="Imposta volume al 150%"
-            >
-              150%
-            </button>
-            <button
-              type="button"
-              className={`user-context-preset-btn ${!prefs.muted && prefs.volume === 200 ? "active" : ""}`}
-              onClick={() => {
-                setUserMuted(target.user.id, false);
-                setUserVolume(target.user.id, 200);
-              }}
-              title="Imposta volume al 200%"
-            >
-              200%
-            </button>
           </div>
 
           <label className="user-context-checkbox-item">
             <div className="user-context-checkbox-label">
               <VolumeX size={15} />
-              <span>{target.isStream ? "Silenzia audio stream" : "Silenzia per me"}</span>
+              <span>{target.isStream ? "Silenzia microfono utente" : "Silenzia per me"}</span>
             </div>
             <input
               type="checkbox"
@@ -306,17 +370,19 @@ export function UserContextMenu({
             />
           </label>
 
-          <label className="user-context-checkbox-item">
-            <div className="user-context-checkbox-label">
-              <VideoOff size={15} />
-              <span>{target.isStream ? "Nascondi video stream" : "Disabilita video"}</span>
-            </div>
-            <input
-              type="checkbox"
-              checked={prefs.videoDisabled}
-              onChange={(e) => setUserVideoDisabled(target.user.id, e.target.checked)}
-            />
-          </label>
+          {!target.isStream ? (
+            <label className="user-context-checkbox-item">
+              <div className="user-context-checkbox-label">
+                <VideoOff size={15} />
+                <span>Disabilita video</span>
+              </div>
+              <input
+                type="checkbox"
+                checked={prefs.videoDisabled}
+                onChange={(e) => setUserVideoDisabled(target.user.id, e.target.checked)}
+              />
+            </label>
+          ) : null}
         </>
       ) : null}
 
