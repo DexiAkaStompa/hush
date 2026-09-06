@@ -210,6 +210,114 @@ ipcMain.handle("music:search", async (event, rawQuery, provider = "youtube") => 
     : [];
 });
 
+let gdriveConfigCache = null;
+function getGDriveConfig() {
+  if (gdriveConfigCache) return gdriveConfigCache;
+  try {
+    const configPath = app.isPackaged
+      ? path.join(app.getPath("userData"), "gdrive-config.json")
+      : path.join(__dirname, "..", "gdrive-config.json");
+    if (fs.existsSync(configPath)) {
+      gdriveConfigCache = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+    } else {
+      const userPath = path.join(app.getPath("userData"), "gdrive-config.json");
+      if (fs.existsSync(userPath)) {
+        gdriveConfigCache = JSON.parse(fs.readFileSync(userPath, "utf-8"));
+      }
+    }
+  } catch {
+    gdriveConfigCache = null;
+  }
+  return gdriveConfigCache;
+}
+
+async function getGDriveAccessToken() {
+  const config = getGDriveConfig();
+  if (!config?.GDRIVE_REFRESH_TOKEN) throw new Error("Google Drive non configurato.");
+  const res = await net.fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      client_id: config.GDRIVE_CLIENT_ID,
+      client_secret: config.GDRIVE_CLIENT_SECRET,
+      refresh_token: config.GDRIVE_REFRESH_TOKEN,
+      grant_type: "refresh_token",
+    }),
+  });
+  const data = await res.json();
+  if (!res.ok || !data.access_token) {
+    throw new Error("Impossibile rinnovare il token Google Drive: " + (data.error_description || res.status));
+  }
+  return data.access_token;
+}
+
+ipcMain.handle("gdrive:is-configured", (event) => {
+  if (!windowForEvent(event)) return false;
+  const config = getGDriveConfig();
+  return Boolean(config?.GDRIVE_REFRESH_TOKEN && config?.GDRIVE_FOLDER_ID);
+});
+
+ipcMain.handle("gdrive:upload", async (event, payload) => {
+  if (!windowForEvent(event) || !payload || !payload.data) throw new Error("Richiesta non autorizzata.");
+  const config = getGDriveConfig();
+  if (!config?.GDRIVE_FOLDER_ID) throw new Error("Cartella Google Drive non configurata.");
+  const accessToken = await getGDriveAccessToken();
+
+  const boundary = "-------314159265358979323846";
+  const delimiter = "\r\n--" + boundary + "\r\n";
+  const closeDelim = "\r\n--" + boundary + "--";
+
+  const metadata = JSON.stringify({
+    name: String(payload.name || "attachment.bin"),
+    parents: [config.GDRIVE_FOLDER_ID],
+    mimeType: "application/octet-stream",
+  });
+
+  const fileData = Buffer.from(payload.data);
+  const multipartBody = Buffer.concat([
+    Buffer.from(
+      delimiter +
+      "Content-Type: application/json; charset=UTF-8\r\n\r\n" +
+      metadata +
+      delimiter +
+      "Content-Type: application/octet-stream\r\n\r\n"
+    ),
+    fileData,
+    Buffer.from(closeDelim),
+  ]);
+
+  const uploadRes = await net.fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,size", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": `multipart/related; boundary=${boundary}`,
+    },
+    body: multipartBody,
+  });
+
+  const uploadData = await uploadRes.json();
+  if (!uploadRes.ok || !uploadData.id) {
+    throw new Error("Upload Google Drive non riuscito: " + (uploadData?.error?.message || uploadRes.status));
+  }
+
+  // Set file to anyone with the link can view
+  await net.fetch(`https://www.googleapis.com/drive/v3/files/${uploadData.id}/permissions`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ role: "reader", type: "anyone" }),
+  }).catch(() => undefined);
+
+  const downloadUrl = `https://drive.usercontent.google.com/download?id=${uploadData.id}&export=download&authuser=0`;
+
+  return {
+    fileId: uploadData.id,
+    downloadUrl,
+  };
+});
+
 function iconPath() {
   return app.isPackaged
     ? path.join(process.resourcesPath, "app.asar", "build", "icon.png")
@@ -350,7 +458,7 @@ function configureContentSecurityPolicy() {
       "script-src 'self' 'wasm-unsafe-eval'",
       "worker-src 'self'",
       "style-src 'self' 'unsafe-inline'",
-      "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://music.hush.contact https://*.youtube.com https://*.googlevideo.com https://open.spotify.com",
+      "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://music.hush.contact https://*.youtube.com https://*.googlevideo.com https://open.spotify.com https://*.googleapis.com https://drive.usercontent.google.com https://*.google.com",
       "img-src 'self' data: blob: https:",
       "media-src 'self' blob: https:",
       "frame-src https://www.youtube-nocookie.com https://www.youtube.com https://open.spotify.com",
