@@ -1082,6 +1082,35 @@ body::before, body::after { display: none; }
   border-radius: 10px;
   background: var(--blue);
   cursor: pointer;
+  transition: opacity .15s ease, background .15s ease;
+}
+.music-search-row button:disabled {
+  opacity: .5;
+  cursor: not-allowed;
+}
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+.spin {
+  animation: spin .85s linear infinite;
+}
+.music-search-status, .music-search-feedback {
+  margin: 0;
+  padding: 6px 9px;
+  border-radius: 9px;
+  font-size: 9px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.music-search-status {
+  color: var(--blue);
+  background: color-mix(in srgb, var(--blue) 12%, transparent);
+}
+.music-search-empty {
+  color: var(--muted);
+  background: color-mix(in srgb, var(--soft-surface) 65%, transparent);
 }
 .music-search-results { display: grid; gap: 4px; max-height: 170px; overflow: auto; }
 .music-search-result {

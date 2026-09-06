@@ -11,7 +11,23 @@ if (!config.sharedSecret) throw new Error("BRIDGE_SHARED_SECRET non configurato.
 
 const app = Fastify({ logger: true });
 await app.register(cors, {
-  origin: config.allowedOrigins.length ? config.allowedOrigins : false,
+  origin: (origin, cb) => {
+    cb(null, true);
+  },
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Authorization", "Content-Type", "Accept", "Range"],
+  exposedHeaders: ["Content-Range", "Accept-Ranges", "Content-Length"],
+});
+
+app.setErrorHandler((error, request, reply) => {
+  const origin = request.headers.origin;
+  if (origin) {
+    reply.header("Access-Control-Allow-Origin", origin);
+    reply.header("Access-Control-Allow-Credentials", "true");
+  }
+  const status = error.statusCode && error.statusCode >= 400 && error.statusCode < 600 ? error.statusCode : 500;
+  reply.code(status).send({ error: error.message || "internal_error" });
 });
 
 app.addHook("onRequest", async (request, reply) => {

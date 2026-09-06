@@ -1,6 +1,6 @@
 import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import type { RealtimeChannel } from "@supabase/supabase-js";
-import { Link2, Music2, Pause, Play, RotateCcw, Search, SkipForward, Volume2, VolumeX, X } from "lucide-react";
+import { Link2, Loader2, Music2, Pause, Play, RotateCcw, Search, SkipForward, Volume2, VolumeX, X } from "lucide-react";
 import { playMusicSound } from "../lib/interaction-sound";
 import {
   calibrateServerClock,
@@ -59,6 +59,8 @@ export function RoomMusic({ conversationId }: { conversationId: string }) {
   const [searchProvider, setSearchProvider] = useState<"youtube" | "spotify">("youtube");
   const [searchResults, setSearchResults] = useState<Array<{ title: string; author: string; url: string; artworkUrl: string | null; length: number }>>([]);
   const [searching, setSearching] = useState(false);
+  const [searchedQuery, setSearchedQuery] = useState<string | null>(null);
+  const [searchNotice, setSearchNotice] = useState("");
   const [streamUrl, setStreamUrl] = useState<string | null>(null);
   const [autoplayBlocked, setAutoplayBlocked] = useState(false);
 
@@ -273,19 +275,33 @@ export function RoomMusic({ conversationId }: { conversationId: string }) {
       .then((saved) => { if (saved) setEditorOpen(false); });
   };
 
-  const searchMusic = async (event: FormEvent) => {
-    event.preventDefault();
+  const searchMusic = async (event?: FormEvent) => {
+    if (event) event.preventDefault();
     const query = searchQuery.trim();
-    if (!query || (!window.hushWindow?.searchMusic && !isMusicBridgeConfigured)) return;
+    if (!query || query.length < 2) return;
     setSearching(true);
+    setSearchNotice("");
     setNotice("");
+    setSearchedQuery(query);
     try {
-      setSearchResults(isMusicBridgeConfigured
-        ? await searchMusicBridge(query, searchProvider)
-        : await window.hushWindow!.searchMusic(query, searchProvider));
+      let results: Array<{ title: string; author: string; url: string; artworkUrl: string | null; length: number }> = [];
+      if (typeof window !== "undefined" && window.hushWindow?.searchMusic) {
+        try {
+          results = await window.hushWindow.searchMusic(query, searchProvider);
+        } catch (desktopErr) {
+          console.warn("Desktop search error:", desktopErr);
+        }
+      }
+      if (results.length === 0 && isMusicBridgeConfigured) {
+        results = await searchMusicBridge(query, searchProvider);
+      }
+      setSearchResults(results);
+      if (results.length === 0) {
+        setSearchNotice(`Nessun brano trovato per "${query}".`);
+      }
     } catch (error) {
       setSearchResults([]);
-      setNotice(commandError(error));
+      setSearchNotice(commandError(error));
     } finally {
       setSearching(false);
     }
@@ -294,7 +310,15 @@ export function RoomMusic({ conversationId }: { conversationId: string }) {
   const chooseSearchResult = (result: { title: string; url: string }) => {
     void playMusicSound("skipNext");
     void commit({ sourceUrl: result.url, title: result.title, playing: true, position: 0 })
-      .then((saved) => { if (saved) { setSearchResults([]); setSearchQuery(""); setEditorOpen(false); } });
+      .then((saved) => {
+        if (saved) {
+          setSearchResults([]);
+          setSearchQuery("");
+          setSearchedQuery(null);
+          setSearchNotice("");
+          setEditorOpen(false);
+        }
+      });
   };
 
   const currentPosition = () => {
@@ -480,11 +504,72 @@ export function RoomMusic({ conversationId }: { conversationId: string }) {
           <label>Titolo facoltativo<input maxLength={200} value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Titolo per la stanza" /></label>
           <div className="music-search-divider"><span>oppure cerca</span></div>
           <div className="music-search-row">
-            <select value={searchProvider} onChange={(event) => setSearchProvider(event.target.value as "youtube" | "spotify")} aria-label="Servizio di ricerca"><option value="youtube">YouTube</option><option value="spotify">Spotify</option></select>
-            <input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Cerca una canzone..." />
-            <button type="button" onClick={searchMusic} disabled={searching || searchQuery.trim().length < 2} aria-label="Cerca"><Search size={15} /></button>
+            <select
+              value={searchProvider}
+              onChange={(event) => setSearchProvider(event.target.value as "youtube" | "spotify")}
+              disabled={searching}
+              aria-label="Servizio di ricerca"
+            >
+              <option value="youtube">YouTube</option>
+              <option value="spotify">Spotify</option>
+            </select>
+            <input
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  if (!searching && searchQuery.trim().length >= 2) {
+                    void searchMusic();
+                  }
+                }
+              }}
+              placeholder="Cerca una canzone o artista..."
+              disabled={searching}
+            />
+            <button
+              type="button"
+              onClick={() => void searchMusic()}
+              disabled={searching || searchQuery.trim().length < 2}
+              aria-label={searching ? "Ricerca in corso…" : "Cerca"}
+              title={searching ? "Ricerca in corso…" : "Cerca"}
+            >
+              {searching ? <Loader2 size={15} className="spin" /> : <Search size={15} />}
+            </button>
           </div>
-          {searchResults.length ? <div className="music-search-results">{searchResults.map((result) => <button type="button" className="music-search-result" key={result.url} onClick={() => chooseSearchResult(result)}><span>{result.artworkUrl ? <img src={result.artworkUrl} alt="" /> : <Music2 size={14} />}</span><span><strong>{result.title}</strong><small>{result.author}</small></span><Play size={14} /></button>)}</div> : null}
+          {searching ? (
+            <div className="music-search-status">
+              <Loader2 size={13} className="spin" />
+              <span>Ricerca di &ldquo;{searchQuery.trim()}&rdquo; su {searchProvider === "spotify" ? "Spotify" : "YouTube"}…</span>
+            </div>
+          ) : null}
+          {!searching && searchNotice ? (
+            <p className="music-search-feedback music-search-empty" role="status">{searchNotice}</p>
+          ) : null}
+          {!searching && searchedQuery && searchResults.length === 0 && !searchNotice ? (
+            <p className="music-search-feedback music-search-empty">Nessun brano trovato per &ldquo;{searchedQuery}&rdquo;.</p>
+          ) : null}
+          {searchResults.length ? (
+            <div className="music-search-results">
+              {searchResults.map((result) => (
+                <button
+                  type="button"
+                  className="music-search-result"
+                  key={result.url}
+                  onClick={() => chooseSearchResult(result)}
+                >
+                  <span>
+                    {result.artworkUrl ? <img src={result.artworkUrl} alt="" /> : <Music2 size={14} />}
+                  </span>
+                  <span>
+                    <strong>{result.title}</strong>
+                    <small>{result.author} {result.length ? `• ${formatMusicTime(result.length / 1000)}` : ""}</small>
+                  </span>
+                  <Play size={14} />
+                </button>
+              ))}
+            </div>
+          ) : null}
           <button className="music-source-submit" disabled={busy}>{busy ? "Sincronizzo…" : "Riproduci per tutti"}</button>
           <p>Funzionano file MP3/AAC/Ogg e radio con URL diretto. Le pagine YouTube o Spotify non sono flussi audio. URL e posizione sono visibili a Supabase; la sorgente riceve la connessione di ogni client.</p>
         </form>

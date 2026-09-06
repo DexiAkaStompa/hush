@@ -185,29 +185,87 @@ ipcMain.handle("notification:show", async (event, options) => {
   notif.show();
 });
 
+async function searchYouTubeDirect(query) {
+  const url = `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
+  const response = await net.fetch(url, {
+    headers: {
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      "Accept-Language": "it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7",
+    },
+  });
+  if (!response.ok) throw new Error(`YouTube ha risposto ${response.status}`);
+  const html = await response.text();
+  const m = html.match(/var ytInitialData = ({.*?});<\/script>/s) || html.match(/ytInitialData = ({.*?});<\/script>/s);
+  if (!m) return [];
+  const data = JSON.parse(m[1]);
+  const contents = data.contents?.twoColumnSearchResultsRenderer?.primaryContents?.sectionListRenderer?.contents || [];
+  const tracks = [];
+  for (const section of contents) {
+    const renderers = section.itemSectionRenderer?.contents || [];
+    for (const r of renderers) {
+      if (r.videoRenderer) {
+        const v = r.videoRenderer;
+        const lengthStr = v.lengthText?.simpleText || "";
+        let lengthMs = 0;
+        if (lengthStr) {
+          const parts = lengthStr.split(":").map(Number);
+          if (parts.length === 2) lengthMs = (parts[0] * 60 + parts[1]) * 1000;
+          else if (parts.length === 3) lengthMs = (parts[0] * 3600 + parts[1] * 60 + parts[2]) * 1000;
+        }
+        const title = v.title?.runs?.[0]?.text || "Senza titolo";
+        const author = v.ownerText?.runs?.[0]?.text || "";
+        const artworkUrl = v.thumbnail?.thumbnails?.[v.thumbnail.thumbnails.length - 1]?.url || null;
+        tracks.push({
+          title: String(title).slice(0, 200),
+          author: String(author).slice(0, 120),
+          url: `https://www.youtube.com/watch?v=${v.videoId}`,
+          artworkUrl,
+          length: lengthMs,
+        });
+      }
+    }
+  }
+  return tracks.slice(0, 10);
+}
+
 ipcMain.handle("music:search", async (event, rawQuery, provider = "youtube") => {
   if (!windowForEvent(event) || typeof rawQuery !== "string") throw new Error("Richiesta non autorizzata.");
   const query = rawQuery.trim().slice(0, 200);
   if (query.length < 2) return [];
-  const prefix = provider === "spotify" ? "spsearch:" : "ytsearch:";
-  const endpoint = `https://${publicLavalink.host}/v4/loadtracks?identifier=${encodeURIComponent(`${prefix}${query}`)}`;
-  const response = await net.fetch(endpoint, {
-    headers: { Authorization: publicLavalink.password, Accept: "application/json" },
-  });
-  if (!response.ok) throw new Error(`Lavalink ha risposto ${response.status}.`);
-  const payload = await response.json();
-  if (payload?.loadType === "loadfailed" || payload?.loadType === "error") {
-    throw new Error(payload?.data?.message || "Ricerca musicale non disponibile.");
+
+  // 1. Direct YouTube search (instant, no third-party Lavalink dependency)
+  try {
+    const searchQuery = provider === "spotify" ? `${query} audio` : query;
+    const directResults = await searchYouTubeDirect(searchQuery);
+    if (directResults.length > 0) return directResults;
+  } catch (err) {
+    console.warn("Direct YouTube search error, trying Lavalink fallback:", err);
   }
-  return Array.isArray(payload?.data)
-    ? payload.data.slice(0, 8).map((track) => ({
-      title: String(track?.info?.title || "Senza titolo").slice(0, 200),
-      author: String(track?.info?.author || "").slice(0, 120),
-      url: typeof track?.info?.uri === "string" ? track.info.uri : "",
-      artworkUrl: typeof track?.info?.artworkUrl === "string" ? track.info.artworkUrl : null,
-      length: Number.isFinite(track?.info?.length) ? track.info.length : 0,
-    })).filter((track) => track.url.startsWith("https://"))
-    : [];
+
+  // 2. Fallback to Lavalink if available
+  try {
+    const prefix = provider === "spotify" ? "spsearch:" : "ytsearch:";
+    const endpoint = `https://${publicLavalink.host}/v4/loadtracks?identifier=${encodeURIComponent(`${prefix}${query}`)}`;
+    const response = await net.fetch(endpoint, {
+      headers: { Authorization: publicLavalink.password, Accept: "application/json" },
+    });
+    if (response.ok) {
+      const payload = await response.json();
+      if (Array.isArray(payload?.data)) {
+        return payload.data.slice(0, 8).map((track) => ({
+          title: String(track?.info?.title || "Senza titolo").slice(0, 200),
+          author: String(track?.info?.author || "").slice(0, 120),
+          url: typeof track?.info?.uri === "string" ? track.info.uri : "",
+          artworkUrl: typeof track?.info?.artworkUrl === "string" ? track.info.artworkUrl : null,
+          length: Number.isFinite(track?.info?.length) ? track.info.length : 0,
+        })).filter((track) => track.url.startsWith("https://"));
+      }
+    }
+  } catch {
+    // ignore
+  }
+
+  return [];
 });
 
 let gdriveConfigCache = null;

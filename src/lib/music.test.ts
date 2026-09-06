@@ -71,4 +71,27 @@ describe("client music synchronization", () => {
     const midEmbed = providerEmbedUrl("https://www.youtube.com/watch?v=dQw4w9WgXcQ", "youtube", 45.2, true);
     expect(midEmbed).toContain("start=45");
   });
+
+  it("uses desktop window.hushWindow.searchMusic when available", async () => {
+    const { searchMusicBridge } = await import("./musicBridge");
+    const mockTrack = {
+      title: "Test Track",
+      author: "Artist",
+      url: "https://www.youtube.com/watch?v=123",
+      artworkUrl: null,
+      length: 180000,
+    };
+    const originalWindow = globalThis.window;
+    globalThis.window = {
+      hushWindow: {
+        searchMusic: async () => [mockTrack],
+      },
+    } as unknown as Window & typeof globalThis;
+
+    const results = await searchMusicBridge("test query", "youtube");
+    expect(results).toHaveLength(1);
+    expect(results[0].title).toBe("Test Track");
+
+    globalThis.window = originalWindow;
+  });
 });

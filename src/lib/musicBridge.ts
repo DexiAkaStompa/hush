@@ -27,6 +27,14 @@ export async function requestMusicStream(source: string, position = 0) {
 }
 
 export async function searchMusicBridge(query: string, provider: "youtube" | "spotify") {
+  if (typeof window !== "undefined" && window.hushWindow?.searchMusic) {
+    try {
+      const results = await window.hushWindow.searchMusic(query, provider);
+      if (Array.isArray(results) && results.length > 0) return results;
+    } catch (err) {
+      console.warn("Desktop search error, falling back to bridge HTTP:", err);
+    }
+  }
   const payload = await bridgeRequest("/v1/search", { q: query, source: provider }) as {
     tracks?: Array<{ title: string; author: string; url: string; artworkUrl: string | null; length: number }>;
   };
