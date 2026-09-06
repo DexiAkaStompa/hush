@@ -43,6 +43,16 @@ jobs:
         shell: bash
         run: test "${RELEASE_TAG#v}" = "$(node -p "require('./package.json').version")"
 
+      - name: Inject Google Drive config
+        env:
+          GDRIVE_CONFIG_JSON: ${{ secrets.GDRIVE_CONFIG_JSON }}
+          GDRIVE_CLIENT_ID: ${{ secrets.GDRIVE_CLIENT_ID }}
+          GDRIVE_CLIENT_SECRET: ${{ secrets.GDRIVE_CLIENT_SECRET }}
+          GDRIVE_REFRESH_TOKEN: ${{ secrets.GDRIVE_REFRESH_TOKEN }}
+          GDRIVE_FOLDER_ID: ${{ secrets.GDRIVE_FOLDER_ID }}
+        run: |
+          node -e "const fs = require('fs'); if (process.env.GDRIVE_CONFIG_JSON) { fs.writeFileSync('gdrive-config.json', process.env.GDRIVE_CONFIG_JSON.trim(), 'utf-8'); console.log('Injected gdrive-config.json from GDRIVE_CONFIG_JSON'); } else if (process.env.GDRIVE_REFRESH_TOKEN && process.env.GDRIVE_FOLDER_ID) { const cfg = { GDRIVE_CLIENT_ID: process.env.GDRIVE_CLIENT_ID || '', GDRIVE_CLIENT_SECRET: process.env.GDRIVE_CLIENT_SECRET || '', GDRIVE_REFRESH_TOKEN: process.env.GDRIVE_REFRESH_TOKEN || '', GDRIVE_FOLDER_ID: process.env.GDRIVE_FOLDER_ID || '' }; fs.writeFileSync('gdrive-config.json', JSON.stringify(cfg, null, 2), 'utf-8'); console.log('Injected gdrive-config.json from individual secrets'); }"
+
       - name: Build Windows installer metadata
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
@@ -83,6 +93,16 @@ jobs:
 
       - name: Verify tag matches package version
         run: test "${RELEASE_TAG#v}" = "$(node -p "require('./package.json').version")"
+
+      - name: Inject Google Drive config
+        env:
+          GDRIVE_CONFIG_JSON: ${{ secrets.GDRIVE_CONFIG_JSON }}
+          GDRIVE_CLIENT_ID: ${{ secrets.GDRIVE_CLIENT_ID }}
+          GDRIVE_CLIENT_SECRET: ${{ secrets.GDRIVE_CLIENT_SECRET }}
+          GDRIVE_REFRESH_TOKEN: ${{ secrets.GDRIVE_REFRESH_TOKEN }}
+          GDRIVE_FOLDER_ID: ${{ secrets.GDRIVE_FOLDER_ID }}
+        run: |
+          node -e "const fs = require('fs'); if (process.env.GDRIVE_CONFIG_JSON) { fs.writeFileSync('gdrive-config.json', process.env.GDRIVE_CONFIG_JSON.trim(), 'utf-8'); console.log('Injected gdrive-config.json from GDRIVE_CONFIG_JSON'); } else if (process.env.GDRIVE_REFRESH_TOKEN && process.env.GDRIVE_FOLDER_ID) { const cfg = { GDRIVE_CLIENT_ID: process.env.GDRIVE_CLIENT_ID || '', GDRIVE_CLIENT_SECRET: process.env.GDRIVE_CLIENT_SECRET || '', GDRIVE_REFRESH_TOKEN: process.env.GDRIVE_REFRESH_TOKEN || '', GDRIVE_FOLDER_ID: process.env.GDRIVE_FOLDER_ID || '' }; fs.writeFileSync('gdrive-config.json', JSON.stringify(cfg, null, 2), 'utf-8'); console.log('Injected gdrive-config.json from individual secrets'); }"
 
       - name: Build Linux packages and metadata
         env:

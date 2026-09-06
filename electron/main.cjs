@@ -272,11 +272,31 @@ ipcMain.handle("music:search", async (event, rawQuery, provider = "youtube") => 
 let gdriveConfigCache = null;
 function getGDriveConfig() {
   if (gdriveConfigCache) return gdriveConfigCache;
+
+  // 1. Check environment variables
+  if (process.env.GDRIVE_REFRESH_TOKEN && process.env.GDRIVE_FOLDER_ID) {
+    gdriveConfigCache = {
+      GDRIVE_CLIENT_ID: process.env.GDRIVE_CLIENT_ID || "",
+      GDRIVE_CLIENT_SECRET: process.env.GDRIVE_CLIENT_SECRET || "",
+      GDRIVE_REFRESH_TOKEN: process.env.GDRIVE_REFRESH_TOKEN || "",
+      GDRIVE_FOLDER_ID: process.env.GDRIVE_FOLDER_ID || "",
+    };
+    return gdriveConfigCache;
+  }
+  if (process.env.GDRIVE_CONFIG_JSON) {
+    try {
+      gdriveConfigCache = JSON.parse(process.env.GDRIVE_CONFIG_JSON);
+      if (gdriveConfigCache?.GDRIVE_REFRESH_TOKEN) return gdriveConfigCache;
+    } catch {}
+  }
+
+  // 2. Check filesystem candidate paths
   try {
     const candidatePaths = [
       path.join(app.getPath("userData"), "gdrive-config.json"),
       path.join(process.resourcesPath || "", "gdrive-config.json"),
       path.join(process.resourcesPath || "", "app", "gdrive-config.json"),
+      path.join(app.getAppPath(), "gdrive-config.json"),
       path.join(__dirname, "..", "gdrive-config.json"),
       path.join(process.cwd(), "gdrive-config.json"),
       path.join(process.env.APPDATA || "", "Hush", "gdrive-config.json"),
