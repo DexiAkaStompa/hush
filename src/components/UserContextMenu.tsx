@@ -5,6 +5,7 @@ import {
   BellOff,
   Copy,
   MessageSquare,
+  MonitorUp,
   Settings,
   User,
   VideoOff,
@@ -28,6 +29,8 @@ export type ContextMenuTarget = {
   user: Profile;
   inCall?: boolean;
   conversationId?: string;
+  isStream?: boolean;
+  isScreenShare?: boolean;
 };
 
 type UserContextMenuProps = {
@@ -198,13 +201,21 @@ export function UserContextMenu({
         <>
           <div className="user-context-divider" />
 
-          <div className="user-context-section-label">
-            <span>Audio & Video</span>
+          <div
+            className="user-context-section-label"
+            style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}
+          >
+            <span>{target.isStream ? "Audio & Stream" : "Audio & Video"}</span>
+            {target.isStream ? (
+              <span className="user-context-badge">
+                <MonitorUp size={11} /> {target.isScreenShare ? "Schermo" : "Stream"}
+              </span>
+            ) : null}
           </div>
 
           <div className="user-context-slider-row">
             <div className="user-context-slider-header">
-              <span>Volume utente</span>
+              <span>{target.isStream ? "Volume stream" : "Volume utente"}</span>
               <button
                 type="button"
                 className="user-context-volume-reset"
@@ -223,15 +234,70 @@ export function UserContextMenu({
                 step={1}
                 value={prefs.volume}
                 onChange={(e) => setUserVolume(target.user.id, Number(e.target.value))}
-                aria-label={`Volume per ${target.user.display_name}`}
+                aria-label={target.isStream ? `Volume stream per ${target.user.display_name}` : `Volume per ${target.user.display_name}`}
               />
             </div>
+          </div>
+
+          <div className="user-context-presets" role="group" aria-label="Preimpostazioni volume">
+            <button
+              type="button"
+              className={`user-context-preset-btn ${prefs.muted || prefs.volume === 0 ? "active" : ""}`}
+              onClick={() => setUserMuted(target.user.id, true)}
+              title="Muta audio"
+            >
+              Muto
+            </button>
+            <button
+              type="button"
+              className={`user-context-preset-btn ${!prefs.muted && prefs.volume === 50 ? "active" : ""}`}
+              onClick={() => {
+                setUserMuted(target.user.id, false);
+                setUserVolume(target.user.id, 50);
+              }}
+              title="Imposta volume al 50%"
+            >
+              50%
+            </button>
+            <button
+              type="button"
+              className={`user-context-preset-btn ${!prefs.muted && prefs.volume === 100 ? "active" : ""}`}
+              onClick={() => {
+                setUserMuted(target.user.id, false);
+                setUserVolume(target.user.id, 100);
+              }}
+              title="Imposta volume al 100%"
+            >
+              100%
+            </button>
+            <button
+              type="button"
+              className={`user-context-preset-btn ${!prefs.muted && prefs.volume === 150 ? "active" : ""}`}
+              onClick={() => {
+                setUserMuted(target.user.id, false);
+                setUserVolume(target.user.id, 150);
+              }}
+              title="Imposta volume al 150%"
+            >
+              150%
+            </button>
+            <button
+              type="button"
+              className={`user-context-preset-btn ${!prefs.muted && prefs.volume === 200 ? "active" : ""}`}
+              onClick={() => {
+                setUserMuted(target.user.id, false);
+                setUserVolume(target.user.id, 200);
+              }}
+              title="Imposta volume al 200%"
+            >
+              200%
+            </button>
           </div>
 
           <label className="user-context-checkbox-item">
             <div className="user-context-checkbox-label">
               <VolumeX size={15} />
-              <span>Silenzia per me</span>
+              <span>{target.isStream ? "Silenzia audio stream" : "Silenzia per me"}</span>
             </div>
             <input
               type="checkbox"
@@ -243,7 +309,7 @@ export function UserContextMenu({
           <label className="user-context-checkbox-item">
             <div className="user-context-checkbox-label">
               <VideoOff size={15} />
-              <span>Disabilita video</span>
+              <span>{target.isStream ? "Nascondi video stream" : "Disabilita video"}</span>
             </div>
             <input
               type="checkbox"

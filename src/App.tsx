@@ -1263,8 +1263,15 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
           memberNames={stage.memberNames}
           selfProfile={profile}
           memberProfiles={memberProfilesMap}
-          onUserContextMenu={(e, user, inCall) => {
-            setContextMenu({ x: e.clientX, y: e.clientY, user, inCall });
+          onUserContextMenu={(e, user, inCall, meta) => {
+            setContextMenu({
+              x: e.clientX,
+              y: e.clientY,
+              user,
+              inCall,
+              isStream: meta?.isStream,
+              isScreenShare: meta?.isScreenShare,
+            });
           }}
           onMinimize={() => setStage((current) => ({ ...current, expanded: false }))}
           onClose={leaveCall}

@@ -1973,6 +1973,52 @@ html, body, #root { background: var(--app-background); }
   cursor: pointer;
 }
 
+.user-context-badge {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(110, 231, 183, 0.15);
+  color: var(--mint);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.user-context-presets {
+  display: flex;
+  gap: 4px;
+  padding: 2px 10px 6px 10px;
+}
+
+.user-context-preset-btn {
+  flex: 1;
+  padding: 3px 0;
+  font-size: 11px;
+  font-family: inherit;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--frost);
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.user-context-preset-btn:hover {
+  background: rgba(110, 231, 183, 0.15);
+  border-color: rgba(110, 231, 183, 0.4);
+  color: var(--mint);
+}
+
+.user-context-preset-btn.active {
+  background: rgba(110, 231, 183, 0.25);
+  border-color: var(--mint);
+  color: var(--mint);
+  font-weight: 600;
+}
+
 /* Incoming Call Dialog */
 .incoming-call-overlay {
   position: fixed;

@@ -10,7 +10,7 @@ import { applyTrackBitrate, optimizeSdpQuality } from "../lib/webrtc-quality";
 import { openMicrophone, type MicrophoneCapture } from "../lib/microphone";
 import { ProfileImage } from "./ProfileImage";
 import { useSpeakingDetector } from "../lib/speaking-detection";
-import { useUserAudioPrefs } from "../lib/user-audio";
+import { setUserMuted, useUserAudioPrefs } from "../lib/user-audio";
 import type { Profile } from "../lib/workspace";
 
 type MediaStageProps = {
@@ -24,7 +24,12 @@ type MediaStageProps = {
   memberNames: Record<string, string>;
   selfProfile?: Profile | null;
   memberProfiles?: Record<string, Profile>;
-  onUserContextMenu?: (event: React.MouseEvent, user: Profile, inCall: boolean) => void;
+  onUserContextMenu?: (
+    event: React.MouseEvent,
+    user: Profile,
+    inCall: boolean,
+    meta?: { isStream?: boolean; isScreenShare?: boolean }
+  ) => void;
   onMinimize: () => void;
   onClose: () => void;
 };
@@ -102,10 +107,11 @@ function StreamTile({
   const video = useRef<HTMLVideoElement>(null);
   const settings = useMediaSettings();
   const [outputError, setOutputError] = useState("");
-  const [audioMuted, setAudioMuted] = useState(muted);
   const userPrefs = useUserAudioPrefs(profile?.id ?? "");
-  const isMuted = muted || audioMuted || userPrefs.muted;
+  const isMuted = muted || userPrefs.muted;
   const isSpeaking = useSpeakingDetector(audioStream ?? stream, !isLocalMicMuted);
+  const hasVideo = Boolean(stream && stream.getVideoTracks().length > 0 && !userPrefs.videoDisabled);
+  const effectiveVolume = isMuted ? 0 : Math.max(0, Math.min(1, (userPrefs.volume / 100) * (settings.outputVolume / 100)));
 
   useEffect(() => {
     if (video.current) {
@@ -119,16 +125,18 @@ function StreamTile({
   useEffect(() => {
     if (video.current) {
       video.current.muted = isMuted;
-      video.current.volume = isMuted ? 0 : Math.min(1, userPrefs.volume / 100);
+      video.current.volume = effectiveVolume;
     }
-  }, [isMuted, userPrefs.volume]);
+  }, [isMuted, effectiveVolume]);
 
   useEffect(() => {
-    if (!video.current || isMuted) return;
+    if (!video.current) return;
     let active = true;
-    void routeAudio(video.current, settings).then(() => { if (active) setOutputError(""); }).catch(() => { if (active) setOutputError("Uscita audio non disponibile: scegline un’altra nelle impostazioni."); });
+    void routeAudio(video.current, settings, effectiveVolume)
+      .then(() => { if (active) setOutputError(""); })
+      .catch(() => { if (active) setOutputError("Uscita audio non disponibile: scegline un’altra nelle impostazioni."); });
     return () => { active = false; };
-  }, [settings.outputId, settings.outputVolume, isMuted]);
+  }, [settings.outputId, settings.outputVolume, effectiveVolume]);
 
   const toggleFullscreen = () => {
     const element = video.current;
@@ -137,7 +145,6 @@ function StreamTile({
     else void element.requestFullscreen?.();
   };
 
-  const hasVideo = Boolean(stream && stream.getVideoTracks().length > 0 && !userPrefs.videoDisabled);
   const cleanName = (profile?.display_name || label).replace(/\s*\([^)]*\)/g, "").trim();
   const avatarColor = profile?.avatar_color || "#73b7ff";
 
@@ -147,6 +154,7 @@ function StreamTile({
       onContextMenu={(e) => {
         if (onContextMenu) {
           e.preventDefault();
+          e.stopPropagation();
           onContextMenu(e);
         }
       }}
@@ -155,7 +163,14 @@ function StreamTile({
         ref={video}
         autoPlay
         playsInline
-        muted={muted || audioMuted}
+        muted={isMuted}
+        onContextMenu={(e) => {
+          if (onContextMenu) {
+            e.preventDefault();
+            e.stopPropagation();
+            onContextMenu(e);
+          }
+        }}
         style={{ display: hasVideo ? "block" : "none" }}
       />
       {!hasVideo ? (
@@ -197,7 +212,18 @@ function StreamTile({
         <div className="tile-actions">
           {onFocus ? <button onClick={onFocus} aria-label={focused ? "Riduci condivisione" : "Ingrandisci condivisione"}>{focused ? <Minimize2 size={15} /> : <MonitorUp size={15} />}</button> : null}
           <button onClick={toggleFullscreen} aria-label="Apri a schermo intero"><Maximize2 size={15} /></button>
-          {!muted ? <button onClick={() => setAudioMuted((value) => !value)} aria-label={audioMuted ? "Riattiva audio del riquadro" : "Muta audio del riquadro"}>{audioMuted ? <VolumeX size={15} /> : <Volume2 size={15} />}</button> : null}
+          {!muted && profile?.id ? (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setUserMuted(profile.id, !userPrefs.muted);
+              }}
+              title={userPrefs.muted ? "Riattiva audio stream" : "Muta audio stream"}
+              aria-label={userPrefs.muted ? "Riattiva audio dello stream" : "Muta audio dello stream"}
+            >
+              {userPrefs.muted ? <VolumeX size={15} /> : <Volume2 size={15} />}
+            </button>
+          ) : null}
         </div>
       ) : null}
     </div>
@@ -232,6 +258,7 @@ export function MediaStage({
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [remoteStreams, setRemoteStreams] = useState<Record<string, MediaStream>>({});
   const [participants, setParticipants] = useState<string[]>([]);
+  const [streamingPeers, setStreamingPeers] = useState<Set<string>>(new Set());
   const [focusedTile, setFocusedTile] = useState<string | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
   const microphoneRef = useRef<MicrophoneCapture | null>(null);
@@ -348,10 +375,17 @@ export function MediaStage({
 
     const syncPresence = () => {
       if (!channel) return;
-      const state = channel.presenceState() as Record<string, Array<{ userId?: string; inCall?: boolean }>>;
-      const peerIds = [...new Set(Object.values(state).flat()
+      const state = channel.presenceState() as Record<string, Array<{ userId?: string; inCall?: boolean; sharing?: boolean }>>;
+      const entries = Object.values(state).flat();
+      const peerIds = [...new Set(entries
         .filter((entry) => entry.inCall && entry.userId && entry.userId !== userId)
         .map((entry) => entry.userId!))];
+      const streamingIds = new Set(
+        entries
+          .filter((entry) => entry.inCall && entry.userId && entry.sharing)
+          .map((entry) => entry.userId!)
+      );
+      setStreamingPeers(streamingIds);
       const activePeerIds = new Set(peerIds);
       for (const [peerId, peer] of peers) {
         if (activePeerIds.has(peerId)) continue;
@@ -392,7 +426,7 @@ export function MediaStage({
         .on("presence", { event: "sync" }, syncPresence)
         .subscribe((status) => {
           if (status === "SUBSCRIBED") {
-            void channel?.track({ userId, inCall: true, joinedAt: new Date().toISOString() })
+            void channel?.track({ userId, inCall: true, sharing: false, joinedAt: new Date().toISOString() })
               .then(() => setNotice("Chiamata WebRTC cifrata. In attesa degli altri membri…"))
               .catch(() => reportCallError("Presence non disponibile per questa chiamata."));
           } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
@@ -581,6 +615,7 @@ export function MediaStage({
       });
       setSharing(false);
       setFocusedTile(null);
+      void channelRef.current?.track({ userId, inCall: true, sharing: false, joinedAt: new Date().toISOString() });
       setLocalStream(localStreamRef.current ? new MediaStream(localStreamRef.current.getTracks()) : null);
       await renegotiatePeers();
       void playCallSound("disabled");
@@ -628,6 +663,7 @@ export function MediaStage({
       setLocalStream(stream);
       setSharing(true);
       setFocusedTile("local");
+      void channelRef.current?.track({ userId, inCall: true, sharing: true, joinedAt: new Date().toISOString() });
       setNotice(screenAudioTrack
         ? "Schermo condiviso in alta risoluzione a 60 FPS con audio di sistema e microfono."
         : "Schermo condiviso in alta risoluzione a 60 FPS.");
@@ -655,6 +691,7 @@ export function MediaStage({
         });
         setSharing(false);
         setFocusedTile(null);
+        void channelRef.current?.track({ userId, inCall: true, sharing: false, joinedAt: new Date().toISOString() });
         setLocalStream(localStreamRef.current ? new MediaStream(localStreamRef.current.getTracks()) : null);
         void renegotiatePeers();
       }, { once: true });
@@ -683,7 +720,7 @@ export function MediaStage({
           muted
           focused={focusedTile === "local"}
           onFocus={sharing ? () => setFocusedTile((value) => value === "local" ? null : "local") : undefined}
-          onContextMenu={(e) => selfProfile && onUserContextMenu?.(e, selfProfile, true)}
+          onContextMenu={(e) => selfProfile && onUserContextMenu?.(e, selfProfile, true, { isStream: sharing, isScreenShare: sharing })}
         />
         {participants.map((participantId) => {
           const user = memberProfiles?.[participantId] ?? {
@@ -692,15 +729,18 @@ export function MediaStage({
             display_name: memberNames[participantId] ?? "Membro",
             avatar_color: "#73b7ff",
           };
+          const isScreenShare = streamingPeers.has(participantId);
+          const hasStreamVideo = Boolean(remoteStreams[participantId]?.getVideoTracks().length);
+          const isStream = isScreenShare || hasStreamVideo;
           return (
             <StreamTile
               key={participantId}
               stream={remoteStreams[participantId] ?? null}
-              label={memberNames[participantId] ?? user.display_name ?? "Membro"}
+              label={`${memberNames[participantId] ?? user.display_name ?? "Membro"}${isScreenShare ? " · schermo" : ""}`}
               profile={user}
               focused={focusedTile === participantId}
               onFocus={() => setFocusedTile((value) => value === participantId ? null : participantId)}
-              onContextMenu={(e) => onUserContextMenu?.(e, user, true)}
+              onContextMenu={(e) => onUserContextMenu?.(e, user, true, { isStream, isScreenShare })}
             />
           );
         })}

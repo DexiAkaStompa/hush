@@ -104,8 +104,8 @@ export function screenConstraints(settings: MediaSettings): DisplayMediaStreamOp
     },
   };
 }
-export async function routeAudio(element: HTMLMediaElement, settings: Pick<MediaSettings, "outputId" | "outputVolume">) {
-  element.volume = settings.outputVolume / 100;
+export async function routeAudio(element: HTMLMediaElement, settings: Pick<MediaSettings, "outputId" | "outputVolume">, effectiveVolume?: number) {
+  element.volume = typeof effectiveVolume === "number" ? Math.max(0, Math.min(1, effectiveVolume)) : (settings.outputVolume / 100);
   if ("setSinkId" in element) await element.setSinkId(settings.outputId);
   else if (settings.outputId) throw new Error("La selezione dell’uscita audio non è supportata da questo browser.");
 }

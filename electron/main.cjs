@@ -11,6 +11,7 @@ const {
   Notification,
 } = require("electron");
 const path = require("node:path");
+const fs = require("node:fs");
 const { pathToFileURL } = require("node:url");
 const { autoUpdater } = require("electron-updater");
 
@@ -279,6 +280,7 @@ function getGDriveConfig() {
       path.join(__dirname, "..", "gdrive-config.json"),
       path.join(process.cwd(), "gdrive-config.json"),
       path.join(process.env.APPDATA || "", "Hush", "gdrive-config.json"),
+      path.join(process.env.APPDATA || "", "hush-private-space", "gdrive-config.json"),
       "c:\\Users\\matti\\Desktop\\code\\Hush-app\\gdrive-config.json",
     ];
     for (const p of candidatePaths) {
