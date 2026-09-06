@@ -439,9 +439,23 @@ function VoiceSettings({ inCall }: { inCall: boolean }) {
     {selectDevice("Microfono", "audioinput", "inputId")}
     {selectDevice("Cuffie o altoparlanti delle chiamate", "audiooutput", "outputId")}
     {selectDevice("Videocamera", "videoinput", "cameraId")}
+    <label>Risoluzione videocamera<select value={settings.videoQuality} onChange={(event) => change({ videoQuality: event.target.value as MediaSettings["videoQuality"] })}>
+      <option value="1080p">1080p Full HD (Consigliata)</option>
+      <option value="720p">720p HD</option>
+      <option value="1440p">1440p 2K Ultra HD</option>
+    </select></label>
+    <label>Fluidità condivisione schermo<select value={settings.screenFps} onChange={(event) => change({ screenFps: Number(event.target.value) as 30 | 60 })}>
+      <option value={60}>60 FPS · Massima fluidità (Consigliata)</option>
+      <option value={30}>30 FPS · Minore consumo banda</option>
+    </select></label>
     <p className="settings-hint">Avvia il test per autorizzare il microfono e vedere i nomi dei dispositivi.</p>
     <label>Volume microfono · {settings.inputVolume}%<input type="range" min="0" max="200" step="5" value={settings.inputVolume} onChange={(event) => change({ inputVolume: Number(event.target.value) })} /></label>
     <label>Volume chiamate · {settings.outputVolume}%<input type="range" min="0" max="100" value={settings.outputVolume} onChange={(event) => change({ outputVolume: Number(event.target.value) })} /></label>
+    <label>Qualità e bitrate audio<select value={settings.audioQuality} onChange={(event) => change({ audioQuality: event.target.value as MediaSettings["audioQuality"] })}>
+      <option value="high">Alta fedeltà · 128 kbps (Consigliata)</option>
+      <option value="ultra">Studio Ultra HD · 256 kbps</option>
+      <option value="standard">Standard · 64 kbps</option>
+    </select></label>
     <label>Riduzione del rumore<select value={settings.noise} onChange={(event) => change({ noise: event.target.value as MediaSettings["noise"] })}>
       <option value="rnnoise">Avanzata · RNNoise</option><option value="standard">Standard</option><option value="off">Disattivata</option>
     </select></label>

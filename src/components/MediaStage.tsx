@@ -5,7 +5,8 @@ import { callTopic, type WebRtcSignal } from "../lib/realtime";
 import { supabase } from "../lib/supabase";
 import { RoomMusic } from "./RoomMusic";
 import { playCallSound } from "../lib/interaction-sound";
-import { routeAudio, useMediaSettings } from "../lib/media-settings";
+import { cameraConstraints, routeAudio, screenConstraints, useMediaSettings } from "../lib/media-settings";
+import { applyTrackBitrate, optimizeSdpQuality } from "../lib/webrtc-quality";
 import { openMicrophone, type MicrophoneCapture } from "../lib/microphone";
 import { ProfileImage } from "./ProfileImage";
 import { useSpeakingDetector } from "../lib/speaking-detection";
@@ -221,8 +222,9 @@ export function MediaStage({
     const negotiate = async (peerId: string, peer: RTCPeerConnection) => {
       if (peer.signalingState !== "stable") return;
       const offer = await peer.createOffer();
-      await peer.setLocalDescription(offer);
-      if (offer.sdp) await sendSignal(peerId, { kind: "offer", sdp: offer.sdp });
+      const sdp = optimizeSdpQuality(offer.sdp || "", settingsRef.current);
+      await peer.setLocalDescription({ type: "offer", sdp });
+      if (sdp) await sendSignal(peerId, { kind: "offer", sdp });
     };
 
     const ensurePeer = (peerId: string) => {
@@ -234,7 +236,11 @@ export function MediaStage({
           { urls: "stun:stun.l.google.com:19302" },
         ],
       });
-      localStreamRef.current?.getTracks().forEach((track) => peer.addTrack(track, localStreamRef.current!));
+      localStreamRef.current?.getTracks().forEach((track) => {
+        const sender = peer.addTrack(track, localStreamRef.current!);
+        const kind = track.kind === "audio" ? "audio" : (screenStreamRef.current?.getTrackById(track.id) ? "screen" : "camera");
+        void applyTrackBitrate(sender, kind, settingsRef.current);
+      });
       peer.onicecandidate = (event) => {
         if (!event.candidate) return;
         void sendSignal(peerId, {
@@ -276,8 +282,9 @@ export function MediaStage({
         await peer.setRemoteDescription({ type: "offer", sdp: payload.signal.sdp });
         await flushPendingIce(payload.senderId, peer);
         const answer = await peer.createAnswer();
-        await peer.setLocalDescription(answer);
-        if (answer.sdp) await sendSignal(payload.senderId, { kind: "answer", sdp: answer.sdp });
+        const sdp = optimizeSdpQuality(answer.sdp || "", settingsRef.current);
+        await peer.setLocalDescription({ type: "answer", sdp });
+        if (sdp) await sendSignal(payload.senderId, { kind: "answer", sdp });
         return;
       }
       if (payload.signal.kind === "answer") {
@@ -353,7 +360,7 @@ export function MediaStage({
       reportCallError("Impossibile aprire il canale della chiamata. Controlla la configurazione Supabase.");
     });
 
-    if (startWithVideo) void navigator.mediaDevices.getUserMedia({ video: settingsRef.current.cameraId ? { deviceId: { exact: settingsRef.current.cameraId } } : true })
+    if (startWithVideo) void navigator.mediaDevices.getUserMedia({ video: cameraConstraints(settingsRef.current) })
       .then((stream) => {
         if (!active) { stream.getTracks().forEach((track) => track.stop()); return; }
         const local = localStreamRef.current ?? new MediaStream();
@@ -362,7 +369,10 @@ export function MediaStage({
         setLocalStream(new MediaStream(local.getTracks()));
         setCamera(true);
         peers.forEach((peer, peerId) => {
-          stream.getTracks().forEach((track) => peer.addTrack(track, local));
+          stream.getTracks().forEach((track) => {
+            const sender = peer.addTrack(track, local);
+            void applyTrackBitrate(sender, "camera", settingsRef.current);
+          });
           void negotiate(peerId, peer).catch(() => reportCallError("Impossibile collegare la videocamera."));
         });
       }).catch(() => reportCallError("Videocamera non disponibile. Controlla dispositivo e permessi nelle impostazioni."));
@@ -412,8 +422,13 @@ export function MediaStage({
       if (!screenStreamRef.current) setLocalStream(new MediaStream(local.getTracks()));
       await Promise.all([...peersRef.current.values()].map(async (peer) => {
         const sender = peer.getSenders().find((candidate) => candidate.track?.kind === "audio" && !screenStreamRef.current?.getTrackById(candidate.track.id));
-        if (sender) await sender.replaceTrack(track);
-        else peer.addTrack(track, local);
+        if (sender) {
+          await sender.replaceTrack(track);
+          void applyTrackBitrate(sender, "audio", settingsRef.current);
+        } else {
+          const newSender = peer.addTrack(track, local);
+          void applyTrackBitrate(newSender, "audio", settingsRef.current);
+        }
       }));
       if (!active) return;
       await renegotiatePeers();
@@ -435,12 +450,13 @@ export function MediaStage({
     for (const [peerId, peer] of peersRef.current) {
       if (peer.signalingState !== "stable") continue;
       const offer = await peer.createOffer();
-      await peer.setLocalDescription(offer);
-      if (offer.sdp) {
+      const sdp = optimizeSdpQuality(offer.sdp || "", settingsRef.current);
+      await peer.setLocalDescription({ type: "offer", sdp });
+      if (sdp) {
         await channel.send({
           type: "broadcast",
           event: "webrtc.call.signal",
-          payload: { senderId: userId, targetId: peerId, signal: { kind: "offer", sdp: offer.sdp } },
+          payload: { senderId: userId, targetId: peerId, signal: { kind: "offer", sdp } },
         });
       }
     }
@@ -466,7 +482,7 @@ export function MediaStage({
     }
     try {
       const generation = callGeneration.current;
-      const stream = await navigator.mediaDevices.getUserMedia({ video: settings.cameraId ? { deviceId: { exact: settings.cameraId } } : true });
+      const stream = await navigator.mediaDevices.getUserMedia({ video: cameraConstraints(settings) });
       if (generation !== callGeneration.current) { stream.getTracks().forEach((track) => track.stop()); return; }
       const track = stream.getVideoTracks()[0];
       if (!track) return;
@@ -477,7 +493,13 @@ export function MediaStage({
       localStreamRef.current = nextStream;
       await Promise.all([...peersRef.current.values()].map(async (peer) => {
         const sender = peer.getSenders().find((candidate) => candidate.track?.kind === "video");
-        if (sender) await sender.replaceTrack(track); else peer.addTrack(track, nextStream);
+        if (sender) {
+          await sender.replaceTrack(track);
+          void applyTrackBitrate(sender, "camera", settingsRef.current);
+        } else {
+          const newSender = peer.addTrack(track, nextStream);
+          void applyTrackBitrate(newSender, "camera", settingsRef.current);
+        }
       }));
       setLocalStream(new MediaStream(nextStream.getTracks()));
       setCamera(true);
@@ -512,20 +534,28 @@ export function MediaStage({
     }
     try {
       const generation = callGeneration.current;
-      const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+      const stream = await navigator.mediaDevices.getDisplayMedia(screenConstraints(settingsRef.current));
       if (generation !== callGeneration.current) { stream.getTracks().forEach((track) => track.stop()); return; }
       screenStreamRef.current = stream;
       const screenTrack = stream.getVideoTracks()[0];
       peersRef.current.forEach((peer) => {
         const sender = peer.getSenders().find((candidate) => candidate.track?.kind === "video");
-        if (sender) void sender.replaceTrack(screenTrack);
-        else peer.addTrack(screenTrack, stream);
-        stream.getAudioTracks().forEach((track) => peer.addTrack(track, stream));
+        if (sender) {
+          void sender.replaceTrack(screenTrack);
+          void applyTrackBitrate(sender, "screen", settingsRef.current);
+        } else {
+          const newSender = peer.addTrack(screenTrack, stream);
+          void applyTrackBitrate(newSender, "screen", settingsRef.current);
+        }
+        stream.getAudioTracks().forEach((track) => {
+          const audioSender = peer.addTrack(track, stream);
+          void applyTrackBitrate(audioSender, "audio", settingsRef.current);
+        });
       });
       setLocalStream(stream);
       setSharing(true);
       setFocusedTile("local");
-      setNotice("Schermo condiviso direttamente con i peer della chiamata.");
+      setNotice("Schermo condiviso in alta risoluzione a 60 FPS con audio stereo.");
       screenTrack.addEventListener("ended", () => {
         if (screenStreamRef.current !== stream) return;
         stream.getTracks().forEach((track) => track.stop());

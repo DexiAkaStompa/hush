@@ -1,5 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
-import { DEFAULT_MEDIA_SETTINGS, microphoneConstraints, normalizeMediaSettings, routeAudio } from "./media-settings";
+import {
+  DEFAULT_MEDIA_SETTINGS,
+  cameraConstraints,
+  microphoneConstraints,
+  normalizeMediaSettings,
+  routeAudio,
+  screenConstraints,
+} from "./media-settings";
 import { validateProfileImage } from "./profile-media";
 
 describe("media preferences", () => {
@@ -22,6 +29,39 @@ describe("media preferences", () => {
     expect(element.setSinkId).toHaveBeenCalledWith("headset");
     await routeAudio(element as unknown as HTMLMediaElement, { outputId: "", outputVolume: 100 });
     expect(element.setSinkId).toHaveBeenLastCalledWith("");
+  });
+  it("normalizes video quality, audio quality, and screen fps settings", () => {
+    expect(normalizeMediaSettings({ videoQuality: "1440p", audioQuality: "ultra", screenFps: 60 })).toMatchObject({
+      videoQuality: "1440p",
+      audioQuality: "ultra",
+      screenFps: 60,
+    });
+    expect(normalizeMediaSettings({ videoQuality: "invalid", audioQuality: "invalid", screenFps: 120 })).toMatchObject({
+      videoQuality: "1080p",
+      audioQuality: "high",
+      screenFps: 60,
+    });
+  });
+  it("generates camera constraints tailored to selected video quality", () => {
+    const hdConstraints = cameraConstraints({ ...DEFAULT_MEDIA_SETTINGS, videoQuality: "1080p", cameraId: "webcam-1" });
+    expect(hdConstraints).toMatchObject({
+      deviceId: { exact: "webcam-1" },
+      width: { ideal: 1920 },
+      height: { ideal: 1080 },
+    });
+  });
+  it("generates high-definition 60fps screen sharing constraints with stereo audio", () => {
+    const constraints = screenConstraints(DEFAULT_MEDIA_SETTINGS);
+    expect(constraints).toMatchObject({
+      video: {
+        width: { ideal: 2560 },
+        height: { ideal: 1440 },
+        frameRate: { ideal: 60, max: 60 },
+      },
+      audio: {
+        channelCount: 2,
+      },
+    });
   });
 });
 
