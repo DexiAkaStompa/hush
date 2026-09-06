@@ -52,7 +52,15 @@ function createScreenAudioMixer(micTrack: MediaStreamTrack, screenAudioTrack: Me
   const screenSource = ctx.createMediaStreamSource(screenStream);
   const dest = ctx.createMediaStreamDestination();
 
-  micSource.connect(dest);
+  // Split and duplicate mic into BOTH Left and Right channels so voice is centered
+  const micSplitter = ctx.createChannelSplitter(2);
+  const micMerger = ctx.createChannelMerger(2);
+  micSource.connect(micSplitter);
+  micSplitter.connect(micMerger, 0, 0);
+  micSplitter.connect(micMerger, 0, 1);
+  micMerger.connect(dest);
+
+  // Desktop audio is already true stereo (system sounds, games, video)
   screenSource.connect(dest);
 
   const mixedTrack = dest.stream.getAudioTracks()[0];
@@ -60,6 +68,8 @@ function createScreenAudioMixer(micTrack: MediaStreamTrack, screenAudioTrack: Me
     try {
       micSource.disconnect();
       screenSource.disconnect();
+      micSplitter.disconnect();
+      micMerger.disconnect();
       mixedTrack.stop();
       void ctx.close().catch(() => undefined);
     } catch {}
