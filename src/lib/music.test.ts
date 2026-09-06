@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { extractMusicBroadcast, formatMusicTime, isDirectMusicUrl, musicTopic, synchronizedMusicPosition } from "./music";
+import {
+  calibrateServerClock,
+  extractMusicBroadcast,
+  formatMusicTime,
+  isDirectMusicUrl,
+  musicTopic,
+  providerEmbedUrl,
+  setServerClockSkew,
+  synchronizedMusicPosition,
+} from "./music";
 
 const state = {
   conversation_id: "room-1",
@@ -30,5 +39,36 @@ describe("client music synchronization", () => {
     expect(extractMusicBroadcast({ payload: { new: state } })?.revision).toBe(2);
     expect(formatMusicTime(125.9)).toBe("2:05");
     expect(musicTopic("room-1")).toBe("music:room-1");
+  });
+
+  it("calibrates clock skew and prevents 8s jump on newly started tracks", () => {
+    // Simulate user PC being 8000ms ahead of server
+    const serverTimestamp = "2026-08-21T12:00:00.000Z";
+    const serverTimeMs = Date.parse(serverTimestamp);
+    const clientTimeMs = serverTimeMs + 8000;
+
+    // Calibrate: client received response at clientTimeMs with 100ms round trip
+    calibrateServerClock(serverTimestamp, clientTimeMs - 100, clientTimeMs);
+
+    const freshTrack = {
+      ...state,
+      position_seconds: 0,
+      anchor_at: serverTimestamp,
+    };
+
+    // With clock skew calibrated, effectiveNow is aligned to serverTimeMs, not clientTimeMs + 8s
+    const position = synchronizedMusicPosition(freshTrack, clientTimeMs);
+    expect(position).toBe(0);
+
+    // Reset skew for other tests
+    setServerClockSkew(0);
+  });
+
+  it("omits start query parameter on YouTube embeds when position is near beginning", () => {
+    const freshEmbed = providerEmbedUrl("https://www.youtube.com/watch?v=dQw4w9WgXcQ", "youtube", 0.5, true);
+    expect(freshEmbed).not.toContain("start=");
+
+    const midEmbed = providerEmbedUrl("https://www.youtube.com/watch?v=dQw4w9WgXcQ", "youtube", 45.2, true);
+    expect(midEmbed).toContain("start=45");
   });
 });

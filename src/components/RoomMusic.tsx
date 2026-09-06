@@ -3,6 +3,7 @@ import type { RealtimeChannel } from "@supabase/supabase-js";
 import { Link2, Music2, Pause, Play, RotateCcw, Search, SkipForward, Volume2, VolumeX, X } from "lucide-react";
 import { playMusicSound } from "../lib/interaction-sound";
 import {
+  calibrateServerClock,
   extractMusicBroadcast,
   formatMusicTime,
   isDirectMusicUrl,
@@ -14,6 +15,7 @@ import {
   type ConversationMusicState,
 } from "../lib/music";
 import { isMusicBridgeConfigured, requestMusicStream, searchMusicBridge } from "../lib/musicBridge";
+import { routeAudio, useMediaSettings } from "../lib/media-settings";
 import { supabase } from "../lib/supabase";
 
 const VOLUME_KEY = "hush:room-music-volume:v1";
@@ -41,6 +43,7 @@ function commandError(error: unknown) {
 
 export function RoomMusic({ conversationId }: { conversationId: string }) {
   const audio = useRef<HTMLAudioElement>(null);
+  const mediaSettings = useMediaSettings();
   const [music, setMusic] = useState<ConversationMusicState | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
   const [sourceUrl, setSourceUrl] = useState("");
@@ -57,6 +60,7 @@ export function RoomMusic({ conversationId }: { conversationId: string }) {
   const [searchResults, setSearchResults] = useState<Array<{ title: string; author: string; url: string; artworkUrl: string | null; length: number }>>([]);
   const [searching, setSearching] = useState(false);
   const [streamUrl, setStreamUrl] = useState<string | null>(null);
+  const [autoplayBlocked, setAutoplayBlocked] = useState(false);
 
   useEffect(() => {
     const client = supabase;
@@ -67,11 +71,15 @@ export function RoomMusic({ conversationId }: { conversationId: string }) {
     const acceptBroadcast = (payload: unknown) => {
       const next = extractMusicBroadcast(payload);
       if (!active || !next || next.conversation_id !== conversationId) return;
+      if (next.updated_at) {
+        calibrateServerClock(next.updated_at);
+      }
       setMusic((current) => !current || next.revision >= current.revision ? next : current);
       setNotice("");
     };
 
     const loadCurrentState = async () => {
+      const requestStart = Date.now();
       const { data, error } = await client
         .from("conversation_music_state")
         .select("*")
@@ -82,9 +90,15 @@ export function RoomMusic({ conversationId }: { conversationId: string }) {
         setNotice("Musica non configurata su Supabase: applica l’ultima migrazione.");
         return;
       }
+      if (data?.updated_at) {
+        calibrateServerClock(data.updated_at, requestStart);
+      }
       setMusic(normalizeMusicState(data));
       setNotice("");
     };
+
+    // Immediately load current state on mount so users entering active call don't wait on realtime channel
+    void loadCurrentState();
 
     const subscribe = async () => {
       await client.realtime.setAuth();
@@ -118,6 +132,11 @@ export function RoomMusic({ conversationId }: { conversationId: string }) {
   }, [muted, volume]);
 
   useEffect(() => {
+    if (!audio.current) return;
+    void routeAudio(audio.current, mediaSettings).catch(() => undefined);
+  }, [mediaSettings.outputId, mediaSettings.outputVolume]);
+
+  useEffect(() => {
     const player = audio.current;
     if (!player) return;
     if (!music?.source_url) {
@@ -127,6 +146,7 @@ export function RoomMusic({ conversationId }: { conversationId: string }) {
       player.load();
       setDuration(0);
       setPlayhead(0);
+      setAutoplayBlocked(false);
       return;
     }
     let active = true;
@@ -142,21 +162,30 @@ export function RoomMusic({ conversationId }: { conversationId: string }) {
         if (!active) return;
         const maximum = Number.isFinite(player.duration) ? Math.max(0, player.duration - 0.1) : expected;
         const target = Math.min(expected, maximum);
-        if (Math.abs(player.currentTime - target) > 1.1) player.currentTime = target;
+        if (Math.abs(player.currentTime - target) > 1.2) player.currentTime = target;
         if (music.is_playing) {
-          void player.play().catch(() => setNotice("Premi Play per autorizzare l'audio su questo dispositivo."));
+          player.play().then(() => {
+            if (active) setAutoplayBlocked(false);
+          }).catch(() => {
+            if (active) setAutoplayBlocked(true);
+          });
         } else {
           player.pause();
+          setAutoplayBlocked(false);
         }
         setPlayhead(target);
       };
-      player.addEventListener("loadedmetadata", alignPlayback, { once: true });
+      if (player.readyState >= HTMLMediaElement.HAVE_METADATA) {
+        alignPlayback();
+      } else {
+        player.addEventListener("loadedmetadata", alignPlayback, { once: true });
+      }
     };
 
-    if (provider === "direct" || !isMusicBridgeConfigured) {
+    if (provider === "direct") {
       setStreamUrl(null);
       setSource(music.source_url);
-    } else {
+    } else if (isMusicBridgeConfigured) {
       setStreamUrl(null);
       setNotice("Connessione al music bridge…");
       void requestMusicStream(music.source_url, expected)
@@ -167,6 +196,15 @@ export function RoomMusic({ conversationId }: { conversationId: string }) {
           }
         })
         .catch((error) => active && setNotice(commandError(error)));
+    } else {
+      // Direct embed iframe handles YouTube / Spotify without loading web pages in audio element
+      setStreamUrl(null);
+      player.pause();
+      player.removeAttribute("src");
+      player.load();
+      setDuration(0);
+      setPlayhead(expected);
+      setAutoplayBlocked(false);
     }
     return () => { active = false; };
   }, [music]);
@@ -183,7 +221,7 @@ export function RoomMusic({ conversationId }: { conversationId: string }) {
       if (!music?.is_playing || player.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return;
       const expected = synchronizedMusicPosition(music);
       if (Number.isFinite(player.duration) && expected >= player.duration) return;
-      if (Math.abs(player.currentTime - expected) > 2) player.currentTime = expected;
+      if (Math.abs(player.currentTime - expected) > 2.5) player.currentTime = expected;
     }, 1000);
     return () => window.clearInterval(timer);
   }, [music, streamUrl]);
@@ -198,6 +236,7 @@ export function RoomMusic({ conversationId }: { conversationId: string }) {
     if (!client) return false;
     setBusy(true);
     setNotice("");
+    const requestStart = Date.now();
     try {
       const { data, error } = await client.rpc("set_conversation_music_state", {
         p_conversation_id: conversationId,
@@ -207,6 +246,9 @@ export function RoomMusic({ conversationId }: { conversationId: string }) {
         p_position_seconds: Math.max(0, next.position),
       });
       if (error) throw error;
+      if (data && typeof data === "object" && "updated_at" in data && typeof (data as { updated_at: unknown }).updated_at === "string") {
+        calibrateServerClock((data as { updated_at: string }).updated_at, requestStart);
+      }
       const normalized = normalizeMusicState(data);
       if (normalized) setMusic(normalized);
       return true;
@@ -262,9 +304,28 @@ export function RoomMusic({ conversationId }: { conversationId: string }) {
       : music ? synchronizedMusicPosition(music) : 0;
   };
 
+  const unblockLocalAudio = () => {
+    setAutoplayBlocked(false);
+    const player = audio.current;
+    if (player && music?.is_playing) {
+      const expected = synchronizedMusicPosition(music);
+      if (Number.isFinite(player.duration) && player.duration > 0) {
+        player.currentTime = Math.min(expected, Math.max(0, player.duration - 0.1));
+      } else {
+        player.currentTime = expected;
+      }
+      void player.play().catch(() => setAutoplayBlocked(true));
+      setPlayhead(expected);
+    }
+  };
+
   const togglePlayback = () => {
     if (!music?.source_url) {
       setEditorOpen(true);
+      return;
+    }
+    if (music.is_playing && autoplayBlocked) {
+      unblockLocalAudio();
       return;
     }
     const nextPlaying = !music.is_playing;
@@ -324,13 +385,33 @@ export function RoomMusic({ conversationId }: { conversationId: string }) {
       ) : null}
       <div className="music-identity">
         <span className={`music-orbit ${music?.is_playing ? "music-orbit-live" : ""}`}><Music2 size={17} /></span>
-        <span><small>musica condivisa</small><strong>{music?.title ?? "Nessuna traccia"}</strong></span>
+        <span>
+          <small>musica condivisa</small>
+          <strong>{music?.title ?? "Nessuna traccia"}</strong>
+          {autoplayBlocked && music?.is_playing ? (
+            <button type="button" className="music-autoplay-badge" onClick={unblockLocalAudio}>
+              <Play size={10} /> Clicca per ascoltare
+            </button>
+          ) : null}
+        </span>
       </div>
 
       {music?.source_url ? (
         <div className="music-transport">
-          <button className="music-play" onClick={togglePlayback} disabled={busy} aria-label={music.is_playing ? "Metti in pausa per tutti" : "Riproduci per tutti"}>
-            {music.is_playing ? <Pause size={17} /> : <Play size={17} />}
+          <button
+            className={`music-play ${autoplayBlocked && music.is_playing ? "music-play-unblock" : ""}`}
+            onClick={togglePlayback}
+            disabled={busy}
+            aria-label={
+              autoplayBlocked && music.is_playing
+                ? "Clicca per avviare l'ascolto per te"
+                : music.is_playing
+                ? "Metti in pausa per tutti"
+                : "Riproduci per tutti"
+            }
+            title={autoplayBlocked && music.is_playing ? "Clicca per ascoltare la musica della stanza" : undefined}
+          >
+            {music.is_playing && !autoplayBlocked ? <Pause size={17} /> : <Play size={17} />}
           </button>
           <button
             onClick={() => {

@@ -31,7 +31,8 @@ export function providerEmbedUrl(value: string, provider: Exclude<MusicProvider,
       const id = url.hostname === "youtu.be" ? url.pathname.slice(1) : url.searchParams.get("v") || url.pathname.split("/").filter(Boolean).at(-1);
       if (!id) return null;
       const params = new URLSearchParams({ autoplay: playing ? "1" : "0", controls: "1", playsinline: "1", rel: "0", origin: "https://hush.app", widget_referrer: "https://hush.app/" });
-      if (position > 0) params.set("start", String(Math.floor(position)));
+      const floored = Math.floor(position);
+      if (floored >= 2) params.set("start", String(floored));
       if (muted) params.set("mute", "1");
       return `https://www.youtube-nocookie.com/embed/${encodeURIComponent(id)}?${params}`;
     }
@@ -84,11 +85,50 @@ export function extractMusicBroadcast(payload: unknown) {
   return normalizeMusicState(inner.new ?? inner.record ?? inner);
 }
 
-export function synchronizedMusicPosition(state: ConversationMusicState, now = Date.now()) {
+let serverClockOffsetMs = 0;
+
+export function setServerClockSkew(offsetMs: number) {
+  if (Number.isFinite(offsetMs)) {
+    serverClockOffsetMs = offsetMs;
+  }
+}
+
+export function getServerClockSkew() {
+  return serverClockOffsetMs;
+}
+
+export function calibrateServerClock(
+  serverIsoDate: string,
+  requestStartedAt?: number,
+  responseReceivedAt = Date.now(),
+) {
+  const serverTime = Date.parse(serverIsoDate);
+  if (!Number.isFinite(serverTime)) return serverClockOffsetMs;
+  const roundTrip = typeof requestStartedAt === "number" && requestStartedAt > 0
+    ? Math.max(0, responseReceivedAt - requestStartedAt)
+    : 0;
+  const estimatedServerNow = serverTime + (roundTrip / 2);
+  serverClockOffsetMs = estimatedServerNow - responseReceivedAt;
+  return serverClockOffsetMs;
+}
+
+export function synchronizedMusicPosition(
+  state: ConversationMusicState,
+  now = Date.now(),
+  applyClockSkew = true,
+) {
   if (!state.is_playing) return state.position_seconds;
   const anchor = Date.parse(state.anchor_at);
   if (!Number.isFinite(anchor)) return state.position_seconds;
-  return Math.max(0, state.position_seconds + (now - anchor) / 1000);
+  const effectiveNow = applyClockSkew ? now + serverClockOffsetMs : now;
+  const elapsed = (effectiveNow - anchor) / 1000;
+
+  // When a track just started from 0, keep it clean at 0 during initial startup window (< 1.5s)
+  if (state.position_seconds === 0 && elapsed >= 0 && elapsed < 1.5) {
+    return 0;
+  }
+
+  return Math.max(0, state.position_seconds + elapsed);
 }
 
 export function formatMusicTime(value: number) {
