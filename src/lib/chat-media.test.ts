@@ -109,3 +109,41 @@ test("downloadAndDecryptChatImage downloads and decrypts from Google Drive", asy
 
   globalThis.fetch = originalFetch;
 });
+
+test("downloadAndDecryptChatImage uses desktop IPC download when available", async () => {
+  const key = await createRoomKey();
+  const rawBytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
+  const { encryptBinary } = await import("./crypto");
+  const { iv, ciphertext } = await encryptBinary(rawBytes.buffer, key, "hush:attachment:conv-ipc");
+
+  const mockDownload = vi.fn().mockResolvedValue(new Uint8Array(ciphertext));
+
+  (globalThis as unknown as { window: { hushWindow?: unknown } }).window = {
+    hushWindow: {
+      downloadGDriveMedia: mockDownload,
+    },
+  };
+
+  const url = await downloadAndDecryptChatImage(
+    {
+      id: "media-ipc",
+      path: "gdrive:ipc-123",
+      name: "test.png",
+      type: "image/png",
+      size: rawBytes.length,
+      iv,
+      storage: "gdrive",
+      gdrive_file_id: "ipc-123",
+    },
+    "conv-ipc",
+    key,
+  );
+
+  expect(mockDownload).toHaveBeenCalledWith({
+    fileId: "ipc-123",
+    downloadUrl: undefined,
+  });
+  expect(url).toMatch(/^blob:/);
+
+  delete (globalThis as unknown as { window?: unknown }).window;
+});

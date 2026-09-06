@@ -3,6 +3,7 @@ import {
   Bell,
   Check,
   Download,
+  HardDrive,
   Mic,
   Palette,
   Play,
@@ -36,6 +37,7 @@ const tabs = [
   { id: "profile", label: "Il mio profilo", icon: UserRound },
   { id: "voice", label: "Voce e video", icon: Mic },
   { id: "appearance", label: "Aspetto", icon: Palette },
+  { id: "storage", label: "Archiviazione", icon: HardDrive },
   { id: "updates", label: "Aggiornamenti", icon: Download },
 ] as const;
 
@@ -508,6 +510,47 @@ function UpdateSettings({ inCall }: { inCall: boolean }) {
   </div>;
 }
 
+function StorageSettings() {
+  const [isConfigured, setIsConfigured] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    if (window.hushWindow?.isGDriveConfigured) {
+      window.hushWindow.isGDriveConfigured().then(setIsConfigured).catch(() => setIsConfigured(false));
+    } else {
+      setIsConfigured(false);
+    }
+  }, []);
+
+  return (
+    <div className="modal-form settings-form">
+      <h3>Archiviazione Media & Cloud</h3>
+      <p className="settings-hint">
+        Tutti i media inviati in chat (immagini e allegati) vengono crittografati end-to-end con AES-256-GCM sul tuo computer prima del salvataggio.
+      </p>
+
+      <div className="update-card" role="status" style={{ alignItems: "flex-start", gap: 16 }}>
+        <HardDrive size={32} style={{ marginTop: 2, flexShrink: 0, color: isConfigured ? "#52c41a" : undefined }} />
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <strong style={{ fontSize: 16 }}>
+            {isConfigured === null
+              ? "Verifica configurazione in corso…"
+              : isConfigured
+              ? "Google Drive (5 TB) · Collegato e Attivo"
+              : "Supabase Storage (Fallback standard)"}
+          </strong>
+          <span style={{ fontSize: 13, opacity: 0.85, lineHeight: 1.5 }}>
+            {isConfigured
+              ? "I media crittografati vengono salvati direttamente nel tuo Google Drive personale nella cartella Hush-Media, azzerando l'uso dello spazio su Supabase."
+              : window.hushWindow
+              ? "Google Drive non risulta ancora configurato su questa postazione. I file vengono temporaneamente salvati su Supabase Storage."
+              : "Disponibile nell'app Desktop di Hush con account Google Drive collegato."}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function SettingsPanel({ profile, theme, onThemeChange, onSaved, onClose, inCall }: {
   profile: Profile; theme: ThemeId; onThemeChange: (theme: ThemeId) => void;
   onSaved: (profile: Profile) => void; onClose: () => void; inCall: boolean;
@@ -553,6 +596,7 @@ export function SettingsPanel({ profile, theme, onThemeChange, onSaved, onClose,
       </form> : null}
       {tab === "voice" ? <VoiceSettings inCall={inCall} /> : null}
       {tab === "appearance" ? <div className="settings-form"><h3>Un’atmosfera tutta tua</h3><p className="settings-hint">Il tema si applica subito e rimane salvato su questo dispositivo.</p><div className="theme-grid">{THEMES.map((option) => <button type="button" className={`theme-option ${theme === option.id ? "selected" : ""}`} key={option.id} aria-pressed={theme === option.id} onClick={() => onThemeChange(option.id)}><span className="theme-swatches">{option.swatches.map((swatch) => <i key={swatch} style={{ backgroundColor: swatch }} />)}</span><span><strong>{option.name}</strong><small>{option.description}</small></span></button>)}</div></div> : null}
+      {tab === "storage" ? <StorageSettings /> : null}
       {tab === "updates" ? <UpdateSettings inCall={inCall} /> : null}
     </div></div>
   </Modal>;

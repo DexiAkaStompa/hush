@@ -43,23 +43,28 @@ export async function uploadEncryptedChatImage(
   const isGDriveActive = desktop?.isGDriveConfigured ? await desktop.isGDriveConfigured().catch(() => false) : false;
 
   if (isGDriveActive && desktop?.uploadGDriveMedia) {
-    const gdriveResult = await desktop.uploadGDriveMedia({
-      name: `${conversationId}-${fileId}.bin`,
-      data: Array.from(new Uint8Array(ciphertext)),
-      mimeType: "application/octet-stream",
-    });
+    try {
+      const gdriveResult = await desktop.uploadGDriveMedia({
+        name: `${conversationId}-${fileId}.bin`,
+        data: new Uint8Array(ciphertext),
+        mimeType: "application/octet-stream",
+      });
 
-    return {
-      id: fileId,
-      path: `gdrive:${gdriveResult.fileId}`,
-      name: file.name || "immagine",
-      type: file.type,
-      size: file.size,
-      iv,
-      storage: "gdrive",
-      gdrive_file_id: gdriveResult.fileId,
-      download_url: gdriveResult.downloadUrl,
-    };
+      return {
+        id: fileId,
+        path: `gdrive:${gdriveResult.fileId}`,
+        name: file.name || "immagine",
+        type: file.type,
+        size: file.size,
+        iv,
+        storage: "gdrive",
+        gdrive_file_id: gdriveResult.fileId,
+        download_url: gdriveResult.downloadUrl,
+      };
+    } catch (gdriveErr) {
+      console.error("Upload Google Drive non riuscito:", gdriveErr);
+      throw new Error("Caricamento su Google Drive fallito: " + (gdriveErr instanceof Error ? gdriveErr.message : String(gdriveErr)));
+    }
   }
 
   // Fallback to Supabase Storage
@@ -107,16 +112,48 @@ export async function downloadAndDecryptChatImage(
 
   if (attachment.storage === "gdrive" || attachment.path.startsWith("gdrive:") || attachment.gdrive_file_id) {
     const fileId = attachment.gdrive_file_id || attachment.path.replace(/^gdrive:/, "");
-    const downloadUrl = attachment.download_url || `https://drive.usercontent.google.com/download?id=${fileId}&export=download&authuser=0`;
-    const response = await fetch(downloadUrl).catch(() => null);
-    if (!response || !response.ok) {
-      const fallbackUrl = `https://drive.google.com/uc?export=download&id=${fileId}`;
-      const fallbackRes = await fetch(fallbackUrl);
-      if (!fallbackRes.ok) throw new Error("Impossibile scaricare l'allegato da Google Drive.");
-      encryptedBuffer = await fallbackRes.arrayBuffer();
-    } else {
-      encryptedBuffer = await response.arrayBuffer();
+    const desktop = typeof window !== "undefined" ? window.hushWindow : undefined;
+
+    let buf: ArrayBuffer | null = null;
+    if (desktop?.downloadGDriveMedia) {
+      try {
+        const data = await desktop.downloadGDriveMedia({
+          fileId,
+          downloadUrl: attachment.download_url,
+        });
+        const uint8 = data instanceof Uint8Array ? data : new Uint8Array(data);
+        const copy = new Uint8Array(uint8.byteLength);
+        copy.set(uint8);
+        buf = copy.buffer;
+      } catch (err) {
+        console.warn("Desktop GDrive download failed, falling back to direct fetch:", err);
+      }
     }
+
+    if (!buf) {
+      const urls = [
+        attachment.download_url,
+        `https://drive.usercontent.google.com/download?id=${fileId}&export=download&authuser=0`,
+        `https://drive.google.com/uc?export=download&id=${fileId}`,
+      ].filter(Boolean) as string[];
+
+      let response: Response | null = null;
+      for (const url of urls) {
+        try {
+          const res = await fetch(url);
+          if (res.ok) {
+            response = res;
+            break;
+          }
+        } catch {}
+      }
+
+      if (!response || !response.ok) {
+        throw new Error("Impossibile scaricare l'allegato da Google Drive.");
+      }
+      buf = await response.arrayBuffer();
+    }
+    encryptedBuffer = buf;
   } else {
     if (!supabase) throw new Error("Connessione a Supabase non disponibile.");
     const { data, error } = await supabase.storage.from("chat-media").download(attachment.path);

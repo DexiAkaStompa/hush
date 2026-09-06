@@ -272,15 +272,19 @@ let gdriveConfigCache = null;
 function getGDriveConfig() {
   if (gdriveConfigCache) return gdriveConfigCache;
   try {
-    const configPath = app.isPackaged
-      ? path.join(app.getPath("userData"), "gdrive-config.json")
-      : path.join(__dirname, "..", "gdrive-config.json");
-    if (fs.existsSync(configPath)) {
-      gdriveConfigCache = JSON.parse(fs.readFileSync(configPath, "utf-8"));
-    } else {
-      const userPath = path.join(app.getPath("userData"), "gdrive-config.json");
-      if (fs.existsSync(userPath)) {
-        gdriveConfigCache = JSON.parse(fs.readFileSync(userPath, "utf-8"));
+    const candidatePaths = [
+      path.join(app.getPath("userData"), "gdrive-config.json"),
+      path.join(process.resourcesPath || "", "gdrive-config.json"),
+      path.join(process.resourcesPath || "", "app", "gdrive-config.json"),
+      path.join(__dirname, "..", "gdrive-config.json"),
+      path.join(process.cwd(), "gdrive-config.json"),
+      path.join(process.env.APPDATA || "", "Hush", "gdrive-config.json"),
+      "c:\\Users\\matti\\Desktop\\code\\Hush-app\\gdrive-config.json",
+    ];
+    for (const p of candidatePaths) {
+      if (p && fs.existsSync(p)) {
+        gdriveConfigCache = JSON.parse(fs.readFileSync(p, "utf-8"));
+        break;
       }
     }
   } catch {
@@ -292,7 +296,8 @@ function getGDriveConfig() {
 async function getGDriveAccessToken() {
   const config = getGDriveConfig();
   if (!config?.GDRIVE_REFRESH_TOKEN) throw new Error("Google Drive non configurato.");
-  const res = await net.fetch("https://oauth2.googleapis.com/token", {
+  const fetchFn = typeof fetch === "function" ? fetch : net.fetch;
+  const res = await fetchFn("https://oauth2.googleapis.com/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
@@ -331,7 +336,12 @@ ipcMain.handle("gdrive:upload", async (event, payload) => {
     mimeType: "application/octet-stream",
   });
 
-  const fileData = Buffer.from(payload.data);
+  const fileData = Buffer.isBuffer(payload.data)
+    ? payload.data
+    : payload.data instanceof Uint8Array
+      ? Buffer.from(payload.data.buffer, payload.data.byteOffset, payload.data.byteLength)
+      : Buffer.from(payload.data);
+
   const multipartBody = Buffer.concat([
     Buffer.from(
       delimiter +
@@ -344,7 +354,8 @@ ipcMain.handle("gdrive:upload", async (event, payload) => {
     Buffer.from(closeDelim),
   ]);
 
-  const uploadRes = await net.fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,size", {
+  const fetchFn = typeof fetch === "function" ? fetch : net.fetch;
+  const uploadRes = await fetchFn("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,size", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${accessToken}`,
@@ -359,7 +370,7 @@ ipcMain.handle("gdrive:upload", async (event, payload) => {
   }
 
   // Set file to anyone with the link can view
-  await net.fetch(`https://www.googleapis.com/drive/v3/files/${uploadData.id}/permissions`, {
+  await fetchFn(`https://www.googleapis.com/drive/v3/files/${uploadData.id}/permissions`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${accessToken}`,
@@ -374,6 +385,28 @@ ipcMain.handle("gdrive:upload", async (event, payload) => {
     fileId: uploadData.id,
     downloadUrl,
   };
+});
+
+ipcMain.handle("gdrive:download", async (event, payload) => {
+  if (!windowForEvent(event) || !payload || !payload.fileId) throw new Error("Richiesta non autorizzata.");
+  const fileId = String(payload.fileId);
+  const downloadUrls = [
+    payload.downloadUrl,
+    `https://drive.usercontent.google.com/download?id=${fileId}&export=download&authuser=0`,
+    `https://drive.google.com/uc?export=download&id=${fileId}`,
+  ].filter(Boolean);
+
+  const fetchFn = typeof fetch === "function" ? fetch : net.fetch;
+  for (const url of downloadUrls) {
+    try {
+      const res = await fetchFn(url);
+      if (res.ok) {
+        const arrayBuf = await res.arrayBuffer();
+        return Array.from(new Uint8Array(arrayBuf));
+      }
+    } catch {}
+  }
+  throw new Error("Impossibile scaricare l'allegato da Google Drive.");
 });
 
 function iconPath() {

@@ -19,10 +19,11 @@ interface HushWindowControls {
     length: number;
   }>>;
   isGDriveConfigured?: () => Promise<boolean>;
-  uploadGDriveMedia?: (payload: { name: string; data: number[]; mimeType?: string }) => Promise<{
+  uploadGDriveMedia?: (payload: { name: string; data: number[] | Uint8Array; mimeType?: string }) => Promise<{
     fileId: string;
     downloadUrl: string;
   }>;
+  downloadGDriveMedia?: (payload: { fileId: string; downloadUrl?: string }) => Promise<number[] | Uint8Array>;
 }
 
 interface Window {

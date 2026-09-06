@@ -159,6 +159,18 @@ async function main() {
       const outPath = path.join(process.cwd(), "gdrive-config.json");
       fs.writeFileSync(outPath, JSON.stringify(config, null, 2), "utf-8");
 
+      const appDataDir = process.platform === "win32"
+        ? path.join(process.env.APPDATA || "", "Hush")
+        : path.join(process.env.HOME || "", ".config", "Hush");
+      try {
+        if (!fs.existsSync(appDataDir)) fs.mkdirSync(appDataDir, { recursive: true });
+        const appDataConfigPath = path.join(appDataDir, "gdrive-config.json");
+        fs.writeFileSync(appDataConfigPath, JSON.stringify(config, null, 2), "utf-8");
+        console.log("File di configurazione copiato anche in: " + appDataConfigPath);
+      } catch (err) {
+        console.warn("Impossibile copiare in appData:", err.message);
+      }
+
       console.log("\n===============================================");
       console.log("   Configurazione completata con successo!     ");
       console.log("===============================================");

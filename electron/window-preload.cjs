@@ -28,4 +28,5 @@ contextBridge.exposeInMainWorld("hushWindow", {
   },
   isGDriveConfigured: () => ipcRenderer.invoke("gdrive:is-configured"),
   uploadGDriveMedia: (payload) => ipcRenderer.invoke("gdrive:upload", payload),
+  downloadGDriveMedia: (payload) => ipcRenderer.invoke("gdrive:download", payload),
 });
