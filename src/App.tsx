@@ -413,6 +413,10 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
     const isVideo = incomingCall.isVideo;
     setIncomingCall(null);
     if (conv) {
+      if (stage.open && stage.conversationId) {
+        void broadcastCallCancelled(stage.conversationId);
+        setStage(EMPTY_CALL_STAGE);
+      }
       setActiveSpaceId(conv.space_id);
       setActiveConversationId(conv.id);
       startCall(conv, isVideo);
@@ -484,11 +488,14 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
       dmIds,
       session.user.id,
       (call) => {
-        if (stage.open || getUserStatus() === "dnd") return; // already in call or DND
+        if (getUserStatus() === "dnd") return;
+        // Don't trigger incoming call prompt for the call we are already currently in
+        if (stage.open && stage.conversationId === call.conversationId) return;
 
         ringtoneStopRef.current?.();
         ringtoneStopRef.current = startIncomingCallRingtone({
           durationMs: 30000,
+          volumeMultiplier: stage.open ? 0.35 : 1.0,
           onEnd: () => {
             setIncomingCall((curr) => (curr?.conversationId === call.conversationId ? null : curr));
           },
@@ -513,7 +520,7 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
       ringtoneStopRef.current?.();
       ringtoneStopRef.current = null;
     };
-  }, [directMessages, session.user.id, stage.open]);
+  }, [directMessages, session.user.id, stage.open, stage.conversationId]);
 
   const refreshWorkspace = useCallback(async (preferredSpaceId?: string, preferredConversationId?: string) => {
     const data = await loadWorkspace(session.user.id, profileFromSession(session));

@@ -39,6 +39,35 @@ function initialsFor(value: string) {
   return value.trim().split(/\s+/).slice(0, 2).map((word) => word[0]).join("").toUpperCase() || "TU";
 }
 
+type ScreenAudioMixer = {
+  mixedTrack: MediaStreamTrack;
+  close: () => void;
+};
+
+function createScreenAudioMixer(micTrack: MediaStreamTrack, screenAudioTrack: MediaStreamTrack): ScreenAudioMixer {
+  const ctx = new AudioContext({ sampleRate: 48000 });
+  const micStream = new MediaStream([micTrack]);
+  const screenStream = new MediaStream([screenAudioTrack]);
+  const micSource = ctx.createMediaStreamSource(micStream);
+  const screenSource = ctx.createMediaStreamSource(screenStream);
+  const dest = ctx.createMediaStreamDestination();
+
+  micSource.connect(dest);
+  screenSource.connect(dest);
+
+  const mixedTrack = dest.stream.getAudioTracks()[0];
+  const close = () => {
+    try {
+      micSource.disconnect();
+      screenSource.disconnect();
+      mixedTrack.stop();
+      void ctx.close().catch(() => undefined);
+    } catch {}
+  };
+
+  return { mixedTrack, close };
+}
+
 function StreamTile({
   stream,
   audioStream,
@@ -69,7 +98,12 @@ function StreamTile({
   const isSpeaking = useSpeakingDetector(audioStream ?? stream, !isLocalMicMuted);
 
   useEffect(() => {
-    if (video.current) video.current.srcObject = stream;
+    if (video.current) {
+      video.current.srcObject = stream;
+      if (stream && !isMuted) {
+        void video.current.play().catch(() => undefined);
+      }
+    }
   }, [stream]);
 
   useEffect(() => {
@@ -192,6 +226,7 @@ export function MediaStage({
   const localStreamRef = useRef<MediaStream | null>(null);
   const microphoneRef = useRef<MicrophoneCapture | null>(null);
   const screenStreamRef = useRef<MediaStream | null>(null);
+  const screenMixerRef = useRef<ScreenAudioMixer | null>(null);
   const peersRef = useRef(new Map<string, RTCPeerConnection>());
   const channelRef = useRef<RealtimeChannel | null>(null);
 
@@ -254,7 +289,7 @@ export function MediaStage({
         setRemoteStreams((current) => {
           const stream = current[peerId] ?? new MediaStream();
           if (!stream.getTrackById(event.track.id)) stream.addTrack(event.track);
-          return { ...current, [peerId]: stream };
+          return { ...current, [peerId]: new MediaStream(stream.getTracks()) };
         });
       };
       peer.onconnectionstatechange = () => {
@@ -385,6 +420,8 @@ export function MediaStage({
         void client.removeChannel(channel);
       }
       channelRef.current = null;
+      screenMixerRef.current?.close();
+      screenMixerRef.current = null;
       localStreamRef.current?.getTracks().forEach((track) => track.stop());
       screenStreamRef.current?.getTracks().forEach((track) => track.stop());
       localStreamRef.current = null;
@@ -512,18 +549,25 @@ export function MediaStage({
 
   const toggleShare = async () => {
     if (sharing) {
+      if (screenMixerRef.current) {
+        screenMixerRef.current.close();
+        screenMixerRef.current = null;
+      }
       const screenStream = screenStreamRef.current;
-      const screenAudioTracks = screenStream?.getAudioTracks() ?? [];
       screenStream?.getTracks().forEach((track) => track.stop());
       screenStreamRef.current = null;
       const cameraTrack = localStreamRef.current?.getVideoTracks()[0] ?? null;
+      const micTrack = localStreamRef.current?.getAudioTracks()[0] ?? null;
       peersRef.current.forEach((peer) => {
-        const sender = peer.getSenders().find((candidate) => candidate.track?.kind === "video");
-        if (sender) void sender.replaceTrack(cameraTrack);
-        screenAudioTracks.forEach((track) => {
-          const audioSender = peer.getSenders().find((candidate) => candidate.track?.id === track.id);
-          if (audioSender) peer.removeTrack(audioSender);
-        });
+        const videoSender = peer.getSenders().find((candidate) => candidate.track?.kind === "video");
+        if (videoSender) void videoSender.replaceTrack(cameraTrack);
+        if (micTrack) {
+          const audioSender = peer.getSenders().find((candidate) => candidate.track?.kind === "audio");
+          if (audioSender) {
+            void audioSender.replaceTrack(micTrack);
+            void applyTrackBitrate(audioSender, "audio", settingsRef.current);
+          }
+        }
       });
       setSharing(false);
       setFocusedTile(null);
@@ -538,43 +582,73 @@ export function MediaStage({
       if (generation !== callGeneration.current) { stream.getTracks().forEach((track) => track.stop()); return; }
       screenStreamRef.current = stream;
       const screenTrack = stream.getVideoTracks()[0];
+      const screenAudioTrack = stream.getAudioTracks()[0];
+      const micTrack = localStreamRef.current?.getAudioTracks()[0];
+
+      let outgoingAudioTrack = micTrack ?? null;
+      if (screenAudioTrack && micTrack) {
+        try {
+          const mixer = createScreenAudioMixer(micTrack, screenAudioTrack);
+          screenMixerRef.current = mixer;
+          outgoingAudioTrack = mixer.mixedTrack;
+        } catch (mixErr) {
+          console.warn("Could not mix screen audio with mic:", mixErr);
+        }
+      }
+
       peersRef.current.forEach((peer) => {
-        const sender = peer.getSenders().find((candidate) => candidate.track?.kind === "video");
-        if (sender) {
-          void sender.replaceTrack(screenTrack);
-          void applyTrackBitrate(sender, "screen", settingsRef.current);
+        const videoSender = peer.getSenders().find((candidate) => candidate.track?.kind === "video");
+        if (videoSender) {
+          void videoSender.replaceTrack(screenTrack);
+          void applyTrackBitrate(videoSender, "screen", settingsRef.current);
         } else {
           const newSender = peer.addTrack(screenTrack, stream);
           void applyTrackBitrate(newSender, "screen", settingsRef.current);
         }
-        stream.getAudioTracks().forEach((track) => {
-          const audioSender = peer.addTrack(track, stream);
-          void applyTrackBitrate(audioSender, "audio", settingsRef.current);
-        });
+
+        if (outgoingAudioTrack && outgoingAudioTrack !== micTrack) {
+          const audioSender = peer.getSenders().find((candidate) => candidate.track?.kind === "audio");
+          if (audioSender) {
+            void audioSender.replaceTrack(outgoingAudioTrack);
+            void applyTrackBitrate(audioSender, "audio", settingsRef.current);
+          }
+        }
       });
+
       setLocalStream(stream);
       setSharing(true);
       setFocusedTile("local");
-      setNotice("Schermo condiviso in alta risoluzione a 60 FPS con audio stereo.");
+      setNotice(screenAudioTrack
+        ? "Schermo condiviso in alta risoluzione a 60 FPS con audio di sistema e microfono."
+        : "Schermo condiviso in alta risoluzione a 60 FPS.");
+
       screenTrack.addEventListener("ended", () => {
         if (screenStreamRef.current !== stream) return;
+        if (screenMixerRef.current) {
+          screenMixerRef.current.close();
+          screenMixerRef.current = null;
+        }
         stream.getTracks().forEach((track) => track.stop());
-        const screenAudioTracks = screenStreamRef.current?.getAudioTracks() ?? [];
         screenStreamRef.current = null;
         const cameraTrack = localStreamRef.current?.getVideoTracks()[0] ?? null;
+        const originalMicTrack = localStreamRef.current?.getAudioTracks()[0] ?? null;
         peersRef.current.forEach((peer) => {
-          const sender = peer.getSenders().find((candidate) => candidate.track?.kind === "video");
-          if (sender) void sender.replaceTrack(cameraTrack);
-          screenAudioTracks.forEach((track) => {
-            const audioSender = peer.getSenders().find((candidate) => candidate.track?.id === track.id);
-            if (audioSender) peer.removeTrack(audioSender);
-          });
+          const videoSender = peer.getSenders().find((candidate) => candidate.track?.kind === "video");
+          if (videoSender) void videoSender.replaceTrack(cameraTrack);
+          if (originalMicTrack) {
+            const audioSender = peer.getSenders().find((candidate) => candidate.track?.kind === "audio");
+            if (audioSender) {
+              void audioSender.replaceTrack(originalMicTrack);
+              void applyTrackBitrate(audioSender, "audio", settingsRef.current);
+            }
+          }
         });
         setSharing(false);
         setFocusedTile(null);
         setLocalStream(localStreamRef.current ? new MediaStream(localStreamRef.current.getTracks()) : null);
         void renegotiatePeers();
       }, { once: true });
+
       await renegotiatePeers();
       void playCallSound("share");
     } catch {

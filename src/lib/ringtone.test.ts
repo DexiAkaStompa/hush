@@ -67,5 +67,12 @@ describe("ringtone module", () => {
 
     await expect(saveCustomRingtone(file)).rejects.toThrow("non può superare 15 MB");
   });
+
+  it("supports volumeMultiplier option when user is in-call", () => {
+    const onEnd = vi.fn();
+    const stop = startIncomingCallRingtone({ durationMs: 2000, volumeMultiplier: 0.35, onEnd });
+    expect(typeof stop).toBe("function");
+    stop();
+  });
 });
 

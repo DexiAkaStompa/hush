@@ -493,7 +493,7 @@ function configurePermissions() {
     }
     callback({
       video: source,
-      audio: process.platform === "win32" && request.audioRequested ? "loopbackWithMute" : undefined,
+      audio: process.platform === "win32" && request.audioRequested ? "loopback" : undefined,
     });
   });
 }

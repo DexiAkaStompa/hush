@@ -201,9 +201,10 @@ function getAudioContext(): AudioContext | null {
   return activeRingtoneContext;
 }
 
-function playChime(ctx: AudioContext) {
+function playChime(ctx: AudioContext, volumeMultiplier = 1.0) {
   try {
     const now = ctx.currentTime;
+    const mult = Math.max(0.05, Math.min(1.0, volumeMultiplier));
 
     // First note (523.25 Hz - C5)
     const osc1 = ctx.createOscillator();
@@ -212,7 +213,7 @@ function playChime(ctx: AudioContext) {
     osc1.frequency.setValueAtTime(523.25, now);
     osc1.frequency.exponentialRampToValueAtTime(587.33, now + 0.15);
     gain1.gain.setValueAtTime(0, now);
-    gain1.gain.linearRampToValueAtTime(0.18, now + 0.04);
+    gain1.gain.linearRampToValueAtTime(0.18 * mult, now + 0.04);
     gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
     osc1.connect(gain1);
     gain1.connect(ctx.destination);
@@ -226,7 +227,7 @@ function playChime(ctx: AudioContext) {
     osc2.frequency.setValueAtTime(659.25, now + 0.18);
     osc2.frequency.exponentialRampToValueAtTime(783.99, now + 0.35);
     gain2.gain.setValueAtTime(0, now + 0.18);
-    gain2.gain.linearRampToValueAtTime(0.22, now + 0.22);
+    gain2.gain.linearRampToValueAtTime(0.22 * mult, now + 0.22);
     gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.75);
     osc2.connect(gain2);
     gain2.connect(ctx.destination);
@@ -239,7 +240,7 @@ function playChime(ctx: AudioContext) {
     osc3.type = "sine";
     osc3.frequency.setValueAtTime(1046.5, now + 0.2);
     gain3.gain.setValueAtTime(0, now + 0.2);
-    gain3.gain.linearRampToValueAtTime(0.08, now + 0.24);
+    gain3.gain.linearRampToValueAtTime(0.08 * mult, now + 0.24);
     gain3.gain.exponentialRampToValueAtTime(0.001, now + 0.7);
     osc3.connect(gain3);
     gain3.connect(ctx.destination);
@@ -250,13 +251,13 @@ function playChime(ctx: AudioContext) {
   }
 }
 
-function fallbackToSynth(interval: number) {
+function fallbackToSynth(interval: number, volumeMultiplier = 1.0) {
   const ctx = getAudioContext();
   if (ctx) {
-    playChime(ctx);
+    playChime(ctx, volumeMultiplier);
     ringtoneInterval = globalThis.setInterval(() => {
       if (activeRingtoneContext && activeRingtoneContext.state !== "closed") {
-        playChime(activeRingtoneContext);
+        playChime(activeRingtoneContext, volumeMultiplier);
       }
     }, interval) as unknown as number;
   }
@@ -265,6 +266,7 @@ function fallbackToSynth(interval: number) {
 export type RingtoneOptions = {
   durationMs?: number; // default ~30000ms (30s)
   intervalMs?: number; // default 2200ms
+  volumeMultiplier?: number; // default 1.0 (subtler when already in another call)
   onEnd?: () => void;
 };
 
@@ -279,6 +281,7 @@ export function startIncomingCallRingtone(options?: RingtoneOptions): () => void
 
   const duration = options?.durationMs ?? 30000;
   const interval = options?.intervalMs ?? 2200;
+  const volMult = options?.volumeMultiplier ?? 1.0;
 
   if (cachedCustomRingtone && typeof window !== "undefined" && typeof Audio !== "undefined") {
     try {
@@ -292,13 +295,17 @@ export function startIncomingCallRingtone(options?: RingtoneOptions): () => void
         if (mediaRaw) {
           const parsed = JSON.parse(mediaRaw);
           if (typeof parsed.outputVolume === "number") {
-            audio.volume = Math.min(1, Math.max(0, parsed.outputVolume / 100));
+            audio.volume = Math.min(1, Math.max(0, (parsed.outputVolume / 100) * volMult));
           }
           if (parsed.outputId && "setSinkId" in audio) {
             void (audio as any).setSinkId(parsed.outputId).catch(() => {});
           }
+        } else {
+          audio.volume = Math.min(1, Math.max(0, 0.75 * volMult));
         }
-      } catch {}
+      } catch {
+        audio.volume = Math.min(1, Math.max(0, 0.75 * volMult));
+      }
 
       activeAudioElement = audio;
       activeAudioUrl = url;
@@ -306,14 +313,14 @@ export function startIncomingCallRingtone(options?: RingtoneOptions): () => void
       const playPromise = audio.play();
       if (playPromise) {
         playPromise.catch(() => {
-          fallbackToSynth(interval);
+          fallbackToSynth(interval, volMult);
         });
       }
     } catch {
-      fallbackToSynth(interval);
+      fallbackToSynth(interval, volMult);
     }
   } else {
-    fallbackToSynth(interval);
+    fallbackToSynth(interval, volMult);
   }
 
   ringtoneTimeout = globalThis.setTimeout(() => {
