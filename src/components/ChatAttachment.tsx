@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Download, Eye, Image as ImageIcon, Loader2, X } from "lucide-react";
 import { downloadAndDecryptChatImage, releaseChatMediaCacheEntry, type ChatAttachmentMeta } from "../lib/chat-media";
 
@@ -90,7 +91,7 @@ export function ChatAttachment({
             </div>
           </div>}
 
-          {lightbox ? (
+          {lightbox ? createPortal(
             <div className="lightbox-backdrop" onClick={() => setLightbox(false)} role="dialog" aria-modal="true">
               <div className="lightbox-content" onClick={(e) => e.stopPropagation()}>
                 <div className="lightbox-header">
@@ -119,7 +120,7 @@ export function ChatAttachment({
                   <img src={url} alt={attachment.name} />
                 </div>
               </div>
-            </div>
+            </div>, document.body
           ) : null}
         </>
       ) : null}

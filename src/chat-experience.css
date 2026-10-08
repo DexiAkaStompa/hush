@@ -49,3 +49,7 @@
 @media(max-width:700px) {.app-shell .trust-line {margin-inline:12px}.chat-tools {padding-inline:12px}.chat-tools span {flex-basis:100%}}
 
 .message-reaction-picker .emoji-picker {position:relative;bottom:auto;left:auto;right:auto;}
+
+/* Popups escape message paint containment and keep their clickable area. */
+.chat-message:has(.message-options,.message-reaction-picker) {content-visibility:visible;contain:none;z-index:20;}
+.modal-backdrop,.modal-card { -webkit-app-region:no-drag; }

@@ -1,4 +1,4 @@
-.space-management { max-width: 720px; }
+.modal-card.space-management { width: min(760px, calc(100vw - 32px)); max-width: 760px; }
 .space-management-tabs { display: flex; gap: 6px; margin-bottom: 16px; }
 .space-management-tabs button { border: 0; border-radius: 8px; padding: 8px 12px; background: var(--panel-raised); color: inherit; cursor: pointer; }
 .space-management-tabs button.active { background: var(--blue); color: #102030; }

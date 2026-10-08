@@ -14,6 +14,8 @@ import chatMediaMigration from "../../supabase/migrations/20260905000000_chat_me
 import chatFeaturesMigration from "../../supabase/migrations/20261008090000_chat_features.sql?raw";
 import spaceManagementMigration from "../../supabase/migrations/20261008091000_space_management.sql?raw";
 
+import overlayCascadeFix from "../../supabase/migrations/20261008092000_overlay_cascade_fix.sql?raw";
+
 const database = new PGlite();
 
 const initialMigrationWithoutHostedExtension = initialMigration
@@ -78,10 +80,11 @@ describe("Supabase migrations", () => {
     await database.exec(chatMediaMigration);
     await database.exec(chatFeatures);
     await database.exec(spaceManagement);
+    await database.exec(overlayCascadeFix);
     await database.exec(`
       create function realtime.broadcast_changes(
         text, text, text, name, name, public.encrypted_messages, public.encrypted_messages
-      ) returns void language sql as $$ select $$;
+      ) returns void language plpgsql as $$ begin if $1 is null then raise exception 'null_broadcast_topic'; end if; end; $$;
     `);
 
     const result = await database.query<{ table_name: string }>(`
@@ -288,6 +291,9 @@ describe("Supabase migrations", () => {
       await database.exec(`select set_config('request.jwt.claim.sub','${admin}',true);select public.set_space_ban('${space}','${member}',false); select set_config('request.jwt.claim.sub','${member}',true);`);
       await database.query("select public.join_space_with_invite($1)",[invite.rows[0].token]);
       expect((await database.query<{active:boolean}>("select public.is_conversation_member($1) as active",[conversation])).rows[0].active).toBe(true);
+      await database.exec(`select public.toggle_message_reaction('${message}','ok'); select public.toggle_message_pin('${message}'); select public.delete_encrypted_message('${message}');`);
+      expect((await database.query("select * from public.message_reactions where message_id=$1",[message])).rows).toHaveLength(0);
+      expect((await database.query("select * from public.message_pins where message_id=$1",[message])).rows).toHaveLength(0);
     } finally {await database.exec("rollback;");}
   });
 

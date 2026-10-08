@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 
 type ModalProps = {
@@ -29,7 +30,7 @@ export function Modal({ title, description, children, onClose, className = "" }:
     document.addEventListener("keydown", keydown);
     return () => { document.removeEventListener("keydown", keydown); previous?.focus(); };
   }, []);
-  return (
+  return createPortal(
     <div className="modal-backdrop" role="presentation" onMouseDown={(event) => {
       if (event.currentTarget === event.target) onClose();
     }}>
@@ -41,6 +42,6 @@ export function Modal({ title, description, children, onClose, className = "" }:
         {description ? <p className="modal-description">{description}</p> : null}
         {children}
       </section>
-    </div>
+    </div>, document.body
   );
 }
