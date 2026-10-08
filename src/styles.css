@@ -1,3 +1,4 @@
+@import '../electron/theme-tokens.css';
 :root {
   color-scheme: dark;
   font-family: Aptos, "Segoe UI Variable", "Segoe UI", sans-serif;
@@ -1168,53 +1169,6 @@ body::before, body::after { display: none; }
 }
 
 /* Theme system: shared surface tokens keep every part of the client coherent. */
-:root, :root[data-theme="hush-void"] {
-  --ink: #080a0d;
-  --obsidian: #0d1116;
-  --panel: #14191f;
-  --panel-raised: #1b2128;
-  --line: #29313a;
-  --muted: #8c96a1;
-  --frost: #e9edf2;
-  --coral: #f0938b;
-  --mint: #70dbb0;
-  --blue: #86bffc;
-  --app-background: #080a0d;
-  --rail-background: #080a0d;
-  --sidebar-background: #101419;
-  --chat-background: #0c1014;
-  --soft-surface: #141a20;
-  --field-background: #0a0e12;
-  --dot-color: #63707d;
-}
-
-:root[data-theme="midnight"] {
-  --ink: #000000; --obsidian: #070811; --panel: #10111c; --panel-raised: #181a29; --line: #272a3e;
-  --muted: #9296ae; --frost: #f2f3ff; --coral: #a9a7ff; --mint: #9aa7ff; --blue: #7d8dff;
-  --app-background: radial-gradient(ellipse at 82% -24%, rgba(98, 91, 190, .18), transparent 42%), #000;
-  --rail-background: #000; --sidebar-background: #0a0b12; --chat-background: #08090f; --soft-surface: #131522; --field-background: #05060b; --dot-color: #596080;
-}
-
-:root[data-theme="tokyo-night"] {
-  --ink: #1a1b26; --obsidian: #16161e; --panel: #24283b; --panel-raised: #2f354d; --line: #3b4261;
-  --muted: #9aa5ce; --frost: #c0caf5; --coral: #bb9af7; --mint: #9ece6a; --blue: #7aa2f7;
-  --app-background: radial-gradient(ellipse at 88% 4%, rgba(122, 162, 247, .16), transparent 36%), radial-gradient(ellipse at 8% 104%, rgba(187, 154, 247, .12), transparent 38%), #1a1b26;
-  --rail-background: #16161e; --sidebar-background: #1f2335; --chat-background: #1a1b26; --soft-surface: #24283b; --field-background: #16161e; --dot-color: #59618a;
-}
-
-:root[data-theme="nord"] {
-  --ink: #2e3440; --obsidian: #272d38; --panel: #3b4252; --panel-raised: #434c5e; --line: #4c566a;
-  --muted: #aab5c5; --frost: #eceff4; --coral: #d08770; --mint: #a3be8c; --blue: #88c0d0;
-  --app-background: linear-gradient(135deg, #2e3440, #29303b); --rail-background: #272d38; --sidebar-background: #343c4b; --chat-background: #2e3440; --soft-surface: #3b4252; --field-background: #272d38; --dot-color: #7e8ba0;
-}
-
-:root[data-theme="frosted-glass"] {
-  --ink: #111722; --obsidian: #0d121b; --panel: #1c2837; --panel-raised: #2a3b4f; --line: #526b84;
-  --muted: #b2c2d3; --frost: #eef7ff; --coral: #d5a4ca; --mint: #9ed8cb; --blue: #a8d4ff;
-  --app-background: radial-gradient(ellipse at 7% 2%, rgba(129, 185, 231, .34), transparent 38%), radial-gradient(ellipse at 92% 96%, rgba(178, 128, 206, .24), transparent 42%), linear-gradient(145deg, #111b28, #162537 52%, #111722);
-  --rail-background: rgba(9, 15, 23, .7); --sidebar-background: rgba(25, 37, 52, .77); --chat-background: rgba(15, 23, 34, .72); --soft-surface: rgba(43, 62, 83, .66); --field-background: rgba(6, 12, 19, .42); --dot-color: #a4c8e8;
-}
-
 html, body, #root { background: var(--app-background); }
 .app-shell { background: var(--app-background) !important; }
 .app-shell .server-rail { background: var(--rail-background); border-color: var(--line); }
@@ -2704,3 +2658,131 @@ html, body, #root { background: var(--app-background); }
   opacity: 0.8;
   flex-shrink: 0;
 }
+
+/* Theme-aware floating surfaces, including elements mounted outside app-shell.
+   Keep this after component styles so settings and legacy surfaces share tokens. */
+:root :is(.modal-card, .user-context-menu, .user-status-menu, .emoji-picker-popover,
+  .music-source-form, .incoming-call-card, .lightbox-content, .toast) {
+  background: var(--overlay-sheen), var(--overlay-background);
+  color: var(--frost);
+  border-color: var(--overlay-border);
+  box-shadow: var(--overlay-shadow);
+  -webkit-backdrop-filter: var(--overlay-filter);
+  backdrop-filter: var(--overlay-filter);
+}
+/* Match the specificity of the previous Hush Void component overrides. */
+:root[data-theme] .app-shell .modal-card {
+  background: var(--overlay-sheen), var(--overlay-background);
+  border-color: var(--overlay-border);
+  box-shadow: var(--overlay-shadow);
+  -webkit-backdrop-filter: var(--overlay-filter);
+  backdrop-filter: var(--overlay-filter);
+}
+:root :is(.modal-backdrop, .incoming-call-overlay, .lightbox-backdrop) {
+  background: var(--scrim);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+:root :is(.modal-tabs, .emoji-picker-search, .emoji-picker-tabs) {
+  background: var(--field-background);
+  border-color: var(--line);
+}
+:root .modal-form input { color: var(--frost); background: var(--field-background); border-color: var(--line); }
+:root :is(.modal-form label, .theme-picker legend) { color: var(--muted); }
+:root :is(.modal-card > header button, .lightbox-btn) { background: var(--soft-surface); color: var(--frost); border-color: var(--line); }
+:root :is(.modal-tabs button.active, .user-status-menu-item.selected) { background: var(--panel-raised); color: var(--frost); }
+:root :is(.user-status-menu-item:hover, .user-context-item:hover, .lightbox-btn:hover) { background: var(--soft-surface); }
+:root :is(.lightbox-header, .user-status-menu-header, .user-context-divider, .emoji-picker-tabs) { border-color: var(--line); }
+:root :is(.modal-form input:focus, .emoji-picker-search:focus) { border-color: var(--mint); box-shadow: 0 0 0 3px color-mix(in srgb, var(--mint) 14%, transparent); }
+:root :is(button, input, select, textarea, a):focus-visible { outline: 2px solid var(--blue); outline-offset: 3px; }
+
+/* Liquid Glass: a still, aquatic backdrop under thin smoked glass. */
+:root[data-theme="liquid-glass"] .app-shell :is(.server-rail, .channel-sidebar, .member-sidebar, .user-panel) {
+  border-color: var(--line);
+  box-shadow: inset 0 1px rgba(235, 250, 255, .14);
+  -webkit-backdrop-filter: blur(24px) saturate(1.2);
+  backdrop-filter: blur(24px) saturate(1.2);
+}
+:root[data-theme="liquid-glass"] .app-shell .chat-panel { box-shadow: inset 0 1px rgba(235, 250, 255, .12); }
+:root[data-theme="liquid-glass"] .app-shell :is(.chat-header, .composer, .room-music, .call-dock) {
+  background: linear-gradient(135deg, rgba(216, 245, 255, .1), rgba(216, 245, 255, .025)), rgba(10, 29, 39, .46);
+  border-color: var(--line);
+  box-shadow: inset 0 1px rgba(235, 250, 255, .19), 0 8px 28px rgba(0, 10, 18, .13);
+  -webkit-backdrop-filter: blur(20px) saturate(1.25);
+  backdrop-filter: blur(20px) saturate(1.25);
+}
+:root[data-theme="liquid-glass"] .app-shell .media-stage {
+  background: var(--overlay-sheen), var(--overlay-background);
+  border-color: var(--overlay-border);
+  box-shadow: var(--overlay-shadow);
+  -webkit-backdrop-filter: var(--overlay-filter);
+  backdrop-filter: var(--overlay-filter);
+}
+:root[data-theme="liquid-glass"] .app-shell :is(.channel-row.active, .dm-row.active, .server-icon.selected) {
+  background: linear-gradient(125deg, rgba(208, 243, 255, .19), rgba(145, 218, 218, .08));
+  box-shadow: inset 0 1px rgba(235, 250, 255, .23), inset 0 0 0 1px rgba(198, 237, 245, .14);
+}
+:root[data-theme="liquid-glass"] .dot-pattern { opacity: .25; }
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  :root { --overlay-background: var(--panel); }
+  :root[data-theme="frosted-glass"], :root[data-theme="liquid-glass"] { --overlay-background: var(--panel); }
+}
+@media (prefers-reduced-transparency: reduce) {
+  :root[data-theme] { --overlay-background: var(--panel); --overlay-filter: none; --rail-background: var(--ink); --sidebar-background: var(--obsidian); --chat-background: var(--ink); }
+  :root[data-theme="liquid-glass"] .app-shell :is(.chat-header, .composer, .room-music, .call-dock) { background: var(--panel); backdrop-filter: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  :is(.modal-backdrop, .modal-card, .user-context-menu, .user-status-menu, .emoji-picker-popover, .incoming-call-overlay, .incoming-call-card, .lightbox-backdrop, .toast) { animation: none; }
+}
+
+/* Apple Design: material hierarchy, clear selection and immediate press feedback. */
+.appearance-settings > div > .settings-hint { margin-top: .5rem; }
+.settings-content .theme-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.settings-content .theme-option { position: relative; display: flex; flex-direction: column; align-items: stretch; gap: 12px; padding: 10px; border-radius: 17px; text-align: left; }
+.settings-content .theme-option:hover { transform: none; background: var(--soft-surface); }
+.settings-content .theme-option.selected { border-color: var(--blue); box-shadow: 0 0 0 1px var(--blue); }
+.settings-content .theme-option-copy { display: flex; flex-direction: column; gap: 4px; padding: 0 24px 3px 3px; }
+.settings-content .theme-option strong { font-size: .8125rem; line-height: 1.3; font-weight: 650; }
+.settings-content .theme-option small { font-size: .6875rem; line-height: 1.45; white-space: normal; color: var(--muted); }
+.theme-selected-mark { position: absolute; bottom: 26px; right: 12px; width: 20px; height: 20px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 50%; }
+.selected .theme-selected-mark { color: var(--ink); background: var(--blue); border-color: transparent; }
+.theme-preview { height: 90px; display: grid; grid-template-columns: 22px 49px 1fr; overflow: hidden; border-radius: 9px; background: var(--app-background); border: 1px solid var(--line); box-shadow: inset 0 1px rgba(255,255,255,.1); }
+.theme-preview-rail { display: flex; flex-direction: column; align-items: center; gap: 7px; padding-top: 10px; background: var(--rail-background); }
+.theme-preview-rail i { width: 10px; height: 10px; border-radius: 4px; background: var(--panel-raised); }
+.theme-preview-rail i:first-child { background: var(--blue); }
+.theme-preview-sidebar { display: flex; flex-direction: column; gap: 8px; padding: 14px 7px; background: var(--sidebar-background); }
+.theme-preview-sidebar i { height: 3px; border-radius: 2px; background: var(--muted); opacity: .45; }
+.theme-preview-sidebar i:nth-child(2) { width: 75%; background: var(--blue); opacity: .8; }
+.theme-preview-chat { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 10px; background: var(--chat-background); }
+.theme-preview-chat > span:first-child { width: 46%; height: 4px; border-radius: 4px; background: var(--frost); opacity: .75; }
+.theme-preview-chat i { width: 74%; height: 10px; border-radius: 3px; background: var(--soft-surface); border: 1px solid var(--line); }
+.theme-preview-chat i:nth-of-type(2) { width: 56%; align-self: flex-end; background: color-mix(in srgb, var(--blue) 25%, transparent); }
+.theme-preview-chat > span:last-child { margin-top: auto; width: 100%; height: 12px; border: 1px solid var(--line); border-radius: 5px; background: var(--field-background); }
+:root .user-context-divider { background: var(--line); }
+:root :is(.emoji-picker-tab.active, .user-context-badge, .user-context-preset-btn:hover, .user-context-preset-btn.active) { background: color-mix(in srgb, var(--mint) 16%, transparent); }
+:root :is(.modal-card, .incoming-call-card, .lightbox-content) { --overlay-filter: blur(36px) saturate(1.25); }
+:root[data-theme="hush-void"] :is(.modal-card, .incoming-call-card, .lightbox-content),
+:root[data-theme="midnight"] :is(.modal-card, .incoming-call-card, .lightbox-content),
+:root[data-theme="tokyo-night"] :is(.modal-card, .incoming-call-card, .lightbox-content),
+:root[data-theme="nord"] :is(.modal-card, .incoming-call-card, .lightbox-content) { --overlay-filter: none; }
+:root :is(.settings-hint, .modal-description, .theme-option small) { letter-spacing: .01em; }
+:root .modal-card > header h2 { font-size: clamp(1.4rem, 2.5vw, 1.75rem); line-height: 1.15; letter-spacing: -.025em; }
+:root :is(.modal-card > header button, .lightbox-btn) { min-width: 36px; min-height: 36px; }
+:root :is(.theme-option, .settings-nav button, .modal-card > header button, .user-context-item, .user-status-menu-item, .lightbox-btn, .emoji-picker-tab):active:not(:disabled) { scale: .98; transition: scale 80ms ease-out; }
+:root :is(.theme-option, .settings-nav button, .modal-card > header button, .user-context-item, .user-status-menu-item, .lightbox-btn, .emoji-picker-tab) { transition: scale 140ms ease-out, background-color 140ms ease-out, border-color 140ms ease-out; touch-action: manipulation; }
+.user-status-menu { transform-origin: bottom left; }
+.music-source-form { transform-origin: top right; }
+@media (pointer: coarse) {
+  :root :is(.modal-card > header button, .lightbox-btn, .user-context-item, .user-status-menu-item, .emoji-picker-tab) { min-height: 44px; min-width: 44px; }
+}
+@media (max-width: 520px) { .settings-content .theme-grid { grid-template-columns: 1fr; } }
+@media (prefers-reduced-motion: reduce) {
+  :root :is(.theme-option, .settings-nav button, .modal-card > header button, .user-context-item, .user-status-menu-item, .lightbox-btn, .emoji-picker-tab):active:not(:disabled) { scale: 1; }
+  :root .theme-option:hover { transform: none; }
+}
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+  :root[data-theme] { --overlay-background: var(--panel); --overlay-sheen: linear-gradient(transparent, transparent); --overlay-filter: none; --overlay-border: var(--muted); }
+  :root :is(.modal-card, .incoming-call-card, .lightbox-content) { --overlay-filter: none; }
+  :root[data-theme="liquid-glass"] .app-shell :is(.server-rail, .channel-sidebar, .member-sidebar, .user-panel, .chat-panel, .chat-header, .composer, .room-music, .call-dock, .media-stage) { background: var(--panel); backdrop-filter: none; -webkit-backdrop-filter: none; }
+}
+.user-context-menu { max-height: calc(100dvh - 24px); overflow-y: auto; overscroll-behavior: contain; }

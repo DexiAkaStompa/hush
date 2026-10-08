@@ -33,6 +33,7 @@ interface Window {
 }
 
 interface ImportMetaEnv {
+  readonly VITE_SHARED_MEDIA_URL?: string;
   readonly VITE_MUSIC_BRIDGE_URL?: string;
 }
 

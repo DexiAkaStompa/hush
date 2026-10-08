@@ -1,0 +1,2 @@
+[functions.shared-media]
+verify_jwt = false

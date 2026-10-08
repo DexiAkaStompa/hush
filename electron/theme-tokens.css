@@ -1,0 +1,86 @@
+/* Shared by the app and the desktop screen picker. */
+:root {
+  --overlay-background: var(--panel);
+  --overlay-sheen: linear-gradient(transparent, transparent);
+  --overlay-border: var(--line);
+  --overlay-shadow: 0 24px 64px rgba(0, 0, 0, .45);
+  --overlay-filter: none;
+  --scrim: color-mix(in srgb, var(--ink) 72%, transparent);
+}
+:root, :root[data-theme="hush-void"], [data-theme-preview="hush-void"] {
+  --ink: #080a0d;
+  --obsidian: #0d1116;
+  --panel: #14191f;
+  --panel-raised: #1b2128;
+  --line: #29313a;
+  --muted: #8c96a1;
+  --frost: #e9edf2;
+  --coral: #f0938b;
+  --mint: #70dbb0;
+  --blue: #86bffc;
+  --app-background: #080a0d;
+  --rail-background: #080a0d;
+  --sidebar-background: #101419;
+  --chat-background: #0c1014;
+  --soft-surface: #141a20;
+  --field-background: #0a0e12;
+  --dot-color: #63707d;
+}
+
+:root[data-theme="midnight"], [data-theme-preview="midnight"] {
+  --ink: #000000; --obsidian: #070811; --panel: #10111c; --panel-raised: #181a29; --line: #272a3e;
+  --muted: #9296ae; --frost: #f2f3ff; --coral: #a9a7ff; --mint: #9aa7ff; --blue: #7d8dff;
+  --app-background: radial-gradient(ellipse at 82% -24%, rgba(98, 91, 190, .18), transparent 42%), #000;
+  --rail-background: #000; --sidebar-background: #0a0b12; --chat-background: #08090f; --soft-surface: #131522; --field-background: #05060b; --dot-color: #596080;
+}
+
+:root[data-theme="tokyo-night"], [data-theme-preview="tokyo-night"] {
+  --ink: #1a1b26; --obsidian: #16161e; --panel: #24283b; --panel-raised: #2f354d; --line: #3b4261;
+  --muted: #9aa5ce; --frost: #c0caf5; --coral: #bb9af7; --mint: #9ece6a; --blue: #7aa2f7;
+  --app-background: radial-gradient(ellipse at 88% 4%, rgba(122, 162, 247, .16), transparent 36%), radial-gradient(ellipse at 8% 104%, rgba(187, 154, 247, .12), transparent 38%), #1a1b26;
+  --rail-background: #16161e; --sidebar-background: #1f2335; --chat-background: #1a1b26; --soft-surface: #24283b; --field-background: #16161e; --dot-color: #59618a;
+}
+
+:root[data-theme="nord"], [data-theme-preview="nord"] {
+  --ink: #2e3440; --obsidian: #272d38; --panel: #3b4252; --panel-raised: #434c5e; --line: #4c566a;
+  --muted: #aab5c5; --frost: #eceff4; --coral: #d08770; --mint: #a3be8c; --blue: #88c0d0;
+  --app-background: linear-gradient(135deg, #2e3440, #29303b); --rail-background: #272d38; --sidebar-background: #343c4b; --chat-background: #2e3440; --soft-surface: #3b4252; --field-background: #272d38; --dot-color: #7e8ba0;
+}
+
+:root[data-theme="frosted-glass"], [data-theme-preview="frosted-glass"] {
+  --overlay-background: rgba(28, 40, 55, .9);
+  --overlay-sheen: linear-gradient(145deg, rgba(255,255,255,.08), transparent);
+  --overlay-filter: blur(28px) saturate(1.2);
+  --ink: #111722; --obsidian: #0d121b; --panel: #1c2837; --panel-raised: #2a3b4f; --line: #526b84;
+  --muted: #b2c2d3; --frost: #eef7ff; --coral: #d5a4ca; --mint: #9ed8cb; --blue: #a8d4ff;
+  --app-background: radial-gradient(ellipse at 7% 2%, rgba(129, 185, 231, .34), transparent 38%), radial-gradient(ellipse at 92% 96%, rgba(178, 128, 206, .24), transparent 42%), linear-gradient(145deg, #111b28, #162537 52%, #111722);
+  --rail-background: rgba(9, 15, 23, .7); --sidebar-background: rgba(25, 37, 52, .77); --chat-background: rgba(15, 23, 34, .72); --soft-surface: rgba(43, 62, 83, .66); --field-background: rgba(6, 12, 19, .42); --dot-color: #a4c8e8;
+}
+
+:root[data-theme="liquid-glass"], [data-theme-preview="liquid-glass"] {
+  --ink: #091923; --obsidian: #0b202b; --panel: #18343f; --panel-raised: #294c57;
+  --line: rgba(198, 237, 245, .2); --muted: #abc6d0; --frost: #effaff;
+  --coral: #e7b8c4; --mint: #a5e9d6; --blue: #b4dfff;
+  --app-background: radial-gradient(ellipse at 80% 12%, rgba(98, 168, 193, .5), transparent 46%), radial-gradient(ellipse at 30% 100%, rgba(44, 147, 137, .46), transparent 52%), radial-gradient(ellipse at 4% 8%, rgba(132, 144, 196, .25), transparent 38%), #091923;
+  --rail-background: rgba(8, 21, 30, .46); --sidebar-background: rgba(20, 43, 55, .4);
+  --chat-background: rgba(8, 24, 33, .27); --soft-surface: rgba(189, 227, 242, .09);
+  --field-background: rgba(5, 19, 28, .38); --dot-color: #92c3d2;
+  --overlay-background: rgba(15, 37, 48, .82);
+  --overlay-sheen: linear-gradient(135deg, rgba(221, 247, 255, .12), transparent 42%, rgba(133, 221, 206, .045));
+  --overlay-border: rgba(210, 243, 255, .28);
+  --overlay-shadow: inset 0 1px 0 rgba(239, 250, 255, .28), inset 0 -1px 0 rgba(144, 210, 219, .08), 0 24px 64px rgba(0, 9, 18, .48);
+  --overlay-filter: blur(32px) saturate(1.35);
+  --scrim: rgba(3, 14, 22, .48);
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  :root[data-theme] { --overlay-background: var(--panel); }
+}
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+  :root[data-theme] {
+    --overlay-background: var(--panel);
+    --overlay-sheen: linear-gradient(transparent, transparent);
+    --overlay-filter: none;
+    --overlay-border: var(--muted);
+  }
+}

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Download, Eye, Image as ImageIcon, Loader2, X } from "lucide-react";
-import { downloadAndDecryptChatImage, type ChatAttachmentMeta } from "../lib/chat-media";
+import { downloadAndDecryptChatImage, releaseChatMediaCacheEntry, type ChatAttachmentMeta } from "../lib/chat-media";
 
 export function ChatAttachment({
   attachment,
@@ -19,15 +19,18 @@ export function ChatAttachment({
   useEffect(() => {
     if (!roomKey) return;
     let active = true;
+    let acquiredUrl: string | null = null;
     setLoading(true);
     setError(null);
 
     downloadAndDecryptChatImage(attachment, conversationId, roomKey)
       .then((decryptedUrl) => {
+        acquiredUrl = decryptedUrl;
         if (active) {
           setUrl(decryptedUrl);
           setLoading(false);
         }
+        if (!active) releaseChatMediaCacheEntry(attachment.path, decryptedUrl);
       })
       .catch((err) => {
         if (active) {
@@ -38,6 +41,7 @@ export function ChatAttachment({
 
     return () => {
       active = false;
+      if (acquiredUrl) releaseChatMediaCacheEntry(attachment.path, acquiredUrl);
     };
   }, [attachment, conversationId, roomKey]);
 

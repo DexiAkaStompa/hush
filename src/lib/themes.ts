@@ -1,4 +1,4 @@
-export type ThemeId = "hush-void" | "midnight" | "tokyo-night" | "nord" | "frosted-glass";
+export type ThemeId = "hush-void" | "midnight" | "tokyo-night" | "nord" | "frosted-glass" | "liquid-glass";
 
 export type Theme = {
   id: ThemeId;
@@ -13,6 +13,7 @@ export const THEMES: readonly Theme[] = [
   { id: "tokyo-night", name: "Tokyo Night", description: "Blu notte e insegne soffuse", swatches: ["#1a1b26", "#24283b", "#7aa2f7"] },
   { id: "nord", name: "Nord", description: "Ardesia nordica, gelo e pino", swatches: ["#2e3440", "#3b4252", "#88c0d0"] },
   { id: "frosted-glass", name: "Frosted Glass", description: "Vetro fumé su aurora scura", swatches: ["#101722", "#5b7897", "#c4e5ff"] },
+  { id: "liquid-glass", name: "Liquid Glass", description: "Vetro liquido, riflessi d’acqua e luce", swatches: ["#091923", "#387b86", "#c6edf5"] },
 ];
 
 const STORAGE_KEY = "hush-theme";

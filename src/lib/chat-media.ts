@@ -1,5 +1,6 @@
 import { decryptBinary, encryptBinary } from "./crypto";
 import { supabase } from "./supabase";
+import { downloadSharedMedia, isSharedMediaConfigured, uploadSharedMedia } from "./shared-media";
 
 export type ChatAttachmentMeta = {
   id: string;
@@ -8,7 +9,7 @@ export type ChatAttachmentMeta = {
   type: string;
   size: number;
   iv: string;
-  storage?: "supabase" | "gdrive";
+  storage?: "supabase" | "gdrive" | "gdrive-shared";
   gdrive_file_id?: string;
   download_url?: string;
 };
@@ -37,6 +38,11 @@ export async function uploadEncryptedChatImage(
   const { iv, ciphertext } = await encryptBinary(buffer, roomKey, context);
 
   const fileId = crypto.randomUUID();
+
+  if (isSharedMediaConfigured) {
+    const driveId = await uploadSharedMedia(conversationId, fileId, ciphertext);
+    return { id: fileId, path: `gdrive-shared:${driveId}`, name: file.name || "immagine", type: file.type, size: file.size, iv, storage: "gdrive-shared", gdrive_file_id: driveId };
+  }
 
   // If Google Drive 5TB storage is active in desktop app, upload there
   const desktop = typeof window !== "undefined" ? window.hushWindow : undefined;
@@ -98,19 +104,81 @@ export async function uploadEncryptedChatImage(
   };
 }
 
-const decryptedUrlCache = new Map<string, string>();
+type DecryptedUrlEntry = {
+  path: string;
+  conversationId: string;
+  roomKey: CryptoKey;
+  url: string;
+  // A leased URL is in use by a mounted attachment and must not be evicted.
+  consumers: number;
+  size: number;
+  lastUsed: number;
+};
+
+const decryptedUrlCache = new Map<string, DecryptedUrlEntry>();
+const pendingDecryptedUrls = new Map<string, Promise<string>>();
+const roomKeyIds = new WeakMap<object, number>();
+let nextRoomKeyId = 1;
+let cacheGeneration = 0;
+const MAX_DECRYPTED_CACHE_ENTRIES = 24;
+const MAX_DECRYPTED_CACHE_BYTES = 64 * 1024 * 1024;
+let decryptedCacheBytes = 0;
+
+function evictIdleDecryptedUrls() {
+  while (decryptedUrlCache.size > MAX_DECRYPTED_CACHE_ENTRIES || decryptedCacheBytes > MAX_DECRYPTED_CACHE_BYTES) {
+    const oldestIdle = [...decryptedUrlCache.entries()]
+      .filter(([, entry]) => entry.consumers === 0)
+      .sort(([, left], [, right]) => left.lastUsed - right.lastUsed)[0];
+    if (!oldestIdle) break;
+    const [path, entry] = oldestIdle;
+    URL.revokeObjectURL(entry.url);
+    decryptedUrlCache.delete(path);
+    decryptedCacheBytes -= entry.size;
+  }
+}
+
+function cacheKey(path: string, conversationId: string, roomKey: CryptoKey) {
+  let roomKeyId = roomKeyIds.get(roomKey);
+  if (!roomKeyId) {
+    roomKeyId = nextRoomKeyId++;
+    roomKeyIds.set(roomKey, roomKeyId);
+  }
+  return `${conversationId}\u0000${roomKeyId}\u0000${path}`;
+}
+
+function retainDecryptedUrl(key: string): string | null {
+  const entry = decryptedUrlCache.get(key);
+  if (!entry) return null;
+  entry.consumers += 1;
+  entry.lastUsed = Date.now();
+  return entry.url;
+}
 
 export async function downloadAndDecryptChatImage(
   attachment: ChatAttachmentMeta,
   conversationId: string,
   roomKey: CryptoKey,
 ): Promise<string> {
-  const cached = decryptedUrlCache.get(attachment.path);
+  const key = cacheKey(attachment.path, conversationId, roomKey);
+  const cached = retainDecryptedUrl(key);
   if (cached) return cached;
 
-  let encryptedBuffer: ArrayBuffer;
+  const pending = pendingDecryptedUrls.get(key);
+  if (pending) {
+    const url = await pending;
+    const retained = retainDecryptedUrl(key);
+    if (!retained) throw new Error("L’immagine è stata invalidata durante il caricamento.");
+    return retained;
+  }
 
-  if (attachment.storage === "gdrive" || attachment.path.startsWith("gdrive:") || attachment.gdrive_file_id) {
+  const generation = cacheGeneration;
+  const load = (async () => {
+    let encryptedBuffer: ArrayBuffer;
+
+  if (attachment.storage === "gdrive-shared" || attachment.path.startsWith("gdrive-shared:")) {
+    const fileId = attachment.gdrive_file_id || attachment.path.slice("gdrive-shared:".length);
+    encryptedBuffer = await downloadSharedMedia(conversationId, fileId);
+  } else if (attachment.storage === "gdrive" || attachment.path.startsWith("gdrive:") || attachment.gdrive_file_id) {
     const fileId = attachment.gdrive_file_id || attachment.path.replace(/^gdrive:/, "");
     const desktop = typeof window !== "undefined" ? window.hushWindow : undefined;
 
@@ -154,23 +222,58 @@ export async function downloadAndDecryptChatImage(
       buf = await response.arrayBuffer();
     }
     encryptedBuffer = buf;
-  } else {
-    if (!supabase) throw new Error("Connessione a Supabase non disponibile.");
-    const { data, error } = await supabase.storage.from("chat-media").download(attachment.path);
-    if (error || !data) throw error || new Error("Impossibile scaricare l'allegato.");
-    encryptedBuffer = await data.arrayBuffer();
+    } else {
+      if (!supabase) throw new Error("Connessione a Supabase non disponibile.");
+      const { data, error } = await supabase.storage.from("chat-media").download(attachment.path);
+      if (error || !data) throw error || new Error("Impossibile scaricare l’allegato.");
+      encryptedBuffer = await data.arrayBuffer();
+    }
+
+    const context = `hush:attachment:${conversationId}`;
+    const decryptedBuffer = await decryptBinary(encryptedBuffer, attachment.iv, roomKey, context);
+
+    const blob = new Blob([decryptedBuffer], { type: attachment.type });
+    const objectUrl = URL.createObjectURL(blob);
+    if (generation !== cacheGeneration) {
+      URL.revokeObjectURL(objectUrl);
+      throw new Error("L’immagine è stata invalidata durante il caricamento.");
+    }
+    decryptedUrlCache.set(key, {
+      path: attachment.path,
+      conversationId,
+      roomKey,
+      url: objectUrl,
+      consumers: 1,
+      size: decryptedBuffer.byteLength,
+      lastUsed: Date.now(),
+    });
+    decryptedCacheBytes += decryptedBuffer.byteLength;
+    evictIdleDecryptedUrls();
+    return objectUrl;
+  })();
+  pendingDecryptedUrls.set(key, load);
+  try {
+    const url = await load;
+    if (!decryptedUrlCache.has(key)) throw new Error("Immagine invalidata durante il caricamento.");
+    return url;
+  } finally {
+    if (pendingDecryptedUrls.get(key) === load) pendingDecryptedUrls.delete(key);
   }
+}
 
-  const context = `hush:attachment:${conversationId}`;
-  const decryptedBuffer = await decryptBinary(encryptedBuffer, attachment.iv, roomKey, context);
-
-  const blob = new Blob([decryptedBuffer], { type: attachment.type });
-  const objectUrl = URL.createObjectURL(blob);
-  decryptedUrlCache.set(attachment.path, objectUrl);
-  return objectUrl;
+/** Releases one mounted attachment's lease on its decrypted object URL. */
+export function releaseChatMediaCacheEntry(path: string, url: string) {
+  const entry = [...decryptedUrlCache.values()].find((candidate) => candidate.path === path && candidate.url === url);
+  if (!entry) return;
+  entry.consumers = Math.max(0, entry.consumers - 1);
+  entry.lastUsed = Date.now();
+  evictIdleDecryptedUrls();
 }
 
 export function clearChatMediaCache() {
-  for (const url of decryptedUrlCache.values()) URL.revokeObjectURL(url);
+  for (const entry of decryptedUrlCache.values()) URL.revokeObjectURL(entry.url);
   decryptedUrlCache.clear();
+  pendingDecryptedUrls.clear();
+  decryptedCacheBytes = 0;
+  cacheGeneration += 1;
 }

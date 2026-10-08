@@ -118,6 +118,7 @@ export function UserContextMenu({
       style={{
         left: `${position.x}px`,
         top: `${position.y}px`,
+        transformOrigin: `${Math.max(0, target.x - position.x)}px ${Math.max(0, target.y - position.y)}px`,
       }}
       role="menu"
       aria-label={`Opzioni per ${target.user.display_name}`}
@@ -424,4 +425,3 @@ export function UserContextMenu({
     </div>
   );
 }
-

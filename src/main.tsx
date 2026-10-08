@@ -4,6 +4,8 @@ import { App } from "./App";
 import { AppErrorBoundary } from "./components/AppErrorBoundary";
 import { WindowControls } from "./components/WindowControls";
 import "./styles.css";
+import "./ambient-light.css";
+import "./apple-polish.css";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

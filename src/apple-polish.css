@@ -1,0 +1,247 @@
+/*
+ * Hush workspace polish
+ *
+ * A restrained material pass for the primary workspace. It only targets
+ * classes rendered by App.tsx and consumes the existing theme tokens, so
+ * each theme keeps its own color language.
+ */
+
+:root[data-theme="liquid-glass"] .app-shell {
+  --hush-ease: cubic-bezier(.22, .8, .24, 1);
+  --hush-press: cubic-bezier(.32, .72, 0, 1);
+  --hush-hairline: color-mix(in srgb, var(--line) 78%, transparent);
+  --hush-glass: color-mix(in srgb, var(--panel) 80%, transparent);
+  --hush-glass-soft: color-mix(in srgb, var(--panel-raised) 62%, transparent);
+  --hush-focus: color-mix(in srgb, var(--blue) 46%, transparent);
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  text-rendering: optimizeLegibility;
+}
+
+/* Structural chrome: a quiet hierarchy with light caught on the top edge. */
+:root[data-theme="liquid-glass"] .app-shell :is(.server-rail, .channel-sidebar, .member-sidebar, .user-panel,
+  .chat-header, .composer, .call-dock) {
+  border-color: var(--hush-hairline);
+  box-shadow: inset 0 1px color-mix(in srgb, var(--frost) 9%, transparent);
+}
+
+:root[data-theme="liquid-glass"] .app-shell .server-rail {
+  padding-block: 14px;
+  gap: 10px;
+  background: color-mix(in srgb, var(--rail-background) 92%, transparent);
+  -webkit-backdrop-filter: blur(22px) saturate(1.18);
+  backdrop-filter: blur(22px) saturate(1.18);
+}
+
+:root[data-theme="liquid-glass"] .app-shell .server-icon,
+:root[data-theme="liquid-glass"] .app-shell .brand-mark {
+  transition: transform 180ms var(--hush-press), background-color 160ms ease,
+    color 160ms ease, box-shadow 160ms ease;
+}
+
+:root[data-theme="liquid-glass"] .app-shell :is(.server-icon, .brand-mark):hover { transform: translateY(-1px); }
+:root[data-theme="liquid-glass"] .app-shell :is(.server-icon, .brand-mark):active:not(:disabled) { transform: scale(.94); }
+:root[data-theme="liquid-glass"] .app-shell .server-icon.selected,
+:root[data-theme="liquid-glass"] .app-shell .brand-mark.selected {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 14%, transparent),
+    inset 0 1px color-mix(in srgb, var(--frost) 26%, transparent);
+}
+
+:root[data-theme="liquid-glass"] .app-shell .channel-sidebar {
+  padding-inline: 10px;
+  background: color-mix(in srgb, var(--sidebar-background) 88%, transparent);
+  -webkit-backdrop-filter: blur(26px) saturate(1.12);
+  backdrop-filter: blur(26px) saturate(1.12);
+}
+
+:root[data-theme="liquid-glass"] .app-shell .server-title {
+  min-height: 58px;
+  padding-inline: 11px;
+  border-radius: 14px;
+  transition: background-color 160ms ease, transform 180ms var(--hush-press);
+}
+:root[data-theme="liquid-glass"] .app-shell .server-title:hover { background: var(--hush-glass-soft); }
+:root[data-theme="liquid-glass"] .app-shell .server-title:active:not(:disabled) { transform: scale(.985); }
+
+:root[data-theme="liquid-glass"] .app-shell .find-conversation {
+  min-height: 38px;
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--field-background) 74%, transparent);
+  border-color: var(--hush-hairline);
+  transition: background-color 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+}
+:root[data-theme="liquid-glass"] .app-shell .find-conversation:focus-within {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px var(--hush-focus);
+}
+
+:root[data-theme="liquid-glass"] .app-shell .channel-section { margin-top: 20px; }
+:root[data-theme="liquid-glass"] .app-shell .section-label {
+  padding-inline: 10px;
+  font-size: 10px;
+  letter-spacing: .08em;
+}
+:root[data-theme="liquid-glass"] .app-shell .section-label button { transition: transform 180ms var(--hush-press), background-color 140ms ease; }
+:root[data-theme="liquid-glass"] .app-shell .section-label button:active:not(:disabled) { transform: scale(.88); }
+
+:root[data-theme="liquid-glass"] .app-shell :is(.channel-row, .dm-row) {
+  min-height: 38px;
+  border-radius: 10px;
+  padding-inline: 10px;
+  transition: color 150ms ease, background-color 150ms ease, transform 180ms var(--hush-press);
+}
+:root[data-theme="liquid-glass"] .app-shell :is(.channel-row, .dm-row):active:not(:disabled) { transform: scale(.985); }
+:root[data-theme="liquid-glass"] .app-shell :is(.channel-row.active, .dm-row.active) {
+  box-shadow: inset 2px 0 var(--blue), inset 0 1px color-mix(in srgb, var(--frost) 14%, transparent);
+}
+
+:root[data-theme="liquid-glass"] .app-shell .user-panel {
+  min-height: 72px;
+  height: auto;
+  padding: 11px 12px;
+  background: color-mix(in srgb, var(--rail-background) 88%, transparent);
+  -webkit-backdrop-filter: blur(22px) saturate(1.16);
+  backdrop-filter: blur(22px) saturate(1.16);
+}
+:root[data-theme="liquid-glass"] .app-shell .user-status-avatar-btn:active:not(:disabled) { transform: scale(.94); }
+
+/* Header and message content: type does the navigation work. */
+:root[data-theme="liquid-glass"] .app-shell .chat-panel { background: color-mix(in srgb, var(--chat-background) 94%, transparent); }
+:root[data-theme="liquid-glass"] .app-shell .chat-header {
+  height: 72px;
+  flex-basis: 72px;
+  padding-inline: clamp(16px, 3vw, 28px);
+  gap: 12px;
+  background: color-mix(in srgb, var(--chat-background) 72%, transparent);
+  -webkit-backdrop-filter: blur(24px) saturate(1.16);
+  backdrop-filter: blur(24px) saturate(1.16);
+}
+:root[data-theme="liquid-glass"] .app-shell .channel-heading { gap: 10px; }
+:root[data-theme="liquid-glass"] .app-shell .channel-heading strong {
+  font-size: 15px;
+  font-weight: 680;
+  letter-spacing: -.012em;
+}
+:root[data-theme="liquid-glass"] .app-shell .channel-heading span {
+  font-size: 11px;
+  line-height: 1.35;
+  letter-spacing: .012em;
+}
+:root[data-theme="liquid-glass"] .app-shell :is(.header-actions > button, .mobile-menu, .header-bell-btn) {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  transition: transform 180ms var(--hush-press), background-color 150ms ease, color 150ms ease;
+}
+:root[data-theme="liquid-glass"] .app-shell :is(.header-actions > button, .mobile-menu, .header-bell-btn):active:not(:disabled) { transform: scale(.91); }
+
+:root[data-theme="liquid-glass"] .app-shell .messages {
+  padding-top: clamp(28px, 4vh, 44px);
+  padding-bottom: 20px;
+  scrollbar-color: color-mix(in srgb, var(--muted) 52%, transparent) transparent;
+}
+:root[data-theme="liquid-glass"] .app-shell .channel-intro h1 {
+  margin-top: 10px;
+  letter-spacing: -.035em;
+  line-height: 1.08;
+  font-weight: 700;
+}
+:root[data-theme="liquid-glass"] .app-shell .channel-intro p { max-width: 48ch; line-height: 1.55; }
+:root[data-theme="liquid-glass"] .app-shell .message {
+  padding: 10px 12px;
+  margin-bottom: 2px;
+  border-radius: 13px;
+  transition: background-color 150ms ease, border-color 150ms ease;
+}
+:root[data-theme="liquid-glass"] .app-shell .message-copy p {
+  font-size: 13.5px;
+  line-height: 1.52;
+  letter-spacing: .002em;
+}
+:root[data-theme="liquid-glass"] .app-shell .message-meta { gap: 8px; }
+
+/* Composer: the primary action has a larger, calmer hit target. */
+:root[data-theme="liquid-glass"] .app-shell .composer {
+  min-height: 72px;
+  flex-basis: 72px;
+  margin-inline: clamp(16px, 5%, 72px);
+  padding-inline: 12px;
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--field-background) 86%, transparent);
+  -webkit-backdrop-filter: blur(22px) saturate(1.16);
+  backdrop-filter: blur(22px) saturate(1.16);
+  box-shadow: 0 14px 32px color-mix(in srgb, var(--ink) 24%, transparent),
+    inset 0 1px color-mix(in srgb, var(--frost) 14%, transparent);
+}
+:root[data-theme="liquid-glass"] .app-shell .composer textarea { min-height: 48px; font-size: 14px; }
+:root[data-theme="liquid-glass"] .app-shell :is(.composer > button, .composer .send-button) {
+  min-width: 38px;
+  min-height: 38px;
+  border-radius: 50%;
+  transition: transform 180ms var(--hush-press), background-color 150ms ease, color 150ms ease;
+}
+:root[data-theme="liquid-glass"] .app-shell :is(.composer > button, .composer .send-button):active:not(:disabled) { transform: scale(.9); }
+:root[data-theme="liquid-glass"] .app-shell .composer .send-button { box-shadow: inset 0 1px color-mix(in srgb, var(--frost) 35%, transparent); }
+
+/* Member list and active call are supporting surfaces, so they stay quieter. */
+:root[data-theme="liquid-glass"] .app-shell .member-sidebar {
+  padding: 22px 16px;
+  background: color-mix(in srgb, var(--sidebar-background) 84%, transparent);
+  -webkit-backdrop-filter: blur(25px) saturate(1.12);
+  backdrop-filter: blur(25px) saturate(1.12);
+}
+:root[data-theme="liquid-glass"] .app-shell .member-heading { margin-bottom: 17px; letter-spacing: .09em; }
+:root[data-theme="liquid-glass"] .app-shell .member-list { margin-top: 20px; }
+:root[data-theme="liquid-glass"] .app-shell .member {
+  min-height: 42px;
+  padding: 7px 8px;
+  border-radius: 11px;
+  transition: background-color 150ms ease, transform 180ms var(--hush-press);
+}
+:root[data-theme="liquid-glass"] .app-shell .member:active:not(:disabled) { transform: scale(.985); }
+:root[data-theme="liquid-glass"] .app-shell .privacy-note { margin-top: 24px; padding: 13px 10px; }
+
+:root[data-theme="liquid-glass"] .app-shell .call-dock {
+  margin: 0 10px 10px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--panel-raised) 78%, transparent);
+  -webkit-backdrop-filter: blur(20px) saturate(1.14);
+  backdrop-filter: blur(20px) saturate(1.14);
+}
+:root[data-theme="liquid-glass"] .app-shell .call-dock > button { transition: transform 180ms var(--hush-press), background-color 150ms ease; }
+:root[data-theme="liquid-glass"] .app-shell .call-dock > button:active:not(:disabled) { transform: scale(.9); }
+
+@media (prefers-reduced-transparency: reduce) {
+  :root[data-theme="liquid-glass"] .app-shell :is(.server-rail, .channel-sidebar, .member-sidebar, .user-panel,
+    .chat-header, .composer, .call-dock) {
+    background: var(--panel);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+@media (prefers-contrast: more) {
+  :root[data-theme="liquid-glass"] .app-shell :is(.server-rail, .channel-sidebar, .member-sidebar, .user-panel,
+    .chat-header, .composer, .call-dock) { border-color: var(--muted); }
+  :root[data-theme="liquid-glass"] .app-shell :is(.channel-row.active, .dm-row.active) { box-shadow: inset 2px 0 var(--blue); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root[data-theme="liquid-glass"] .app-shell :is(.server-icon, .brand-mark, .server-title, .user-status-avatar-btn,
+    .section-label button, .header-actions > button, .mobile-menu, .header-bell-btn):hover,
+  :root[data-theme="liquid-glass"] .app-shell :is(.server-icon, .brand-mark, .server-title, .user-status-avatar-btn,
+    .section-label button, .header-actions > button, .mobile-menu, .header-bell-btn):active:not(:disabled) { transform: none; }
+  :root[data-theme="liquid-glass"] .app-shell :is(.server-icon, .brand-mark, .server-title, .find-conversation,
+    .section-label button, .channel-row, .dm-row, .user-status-avatar-btn,
+    .header-actions > button, .mobile-menu, .header-bell-btn, .message, .member,
+    .composer > button, .call-dock > button) {
+    scroll-behavior: auto;
+    transition: background-color 100ms ease, border-color 100ms ease, color 100ms ease;
+  }
+  :root[data-theme="liquid-glass"] .app-shell :is(.server-icon, .brand-mark, .channel-row, .dm-row, .member,
+    .composer > button, .call-dock > button):active:not(:disabled) { transform: none; }
+}
+
+@media (pointer: coarse) {
+  :root[data-theme="liquid-glass"] .app-shell :is(.server-icon, .brand-mark, .section-label button, .header-actions > button,
+    .mobile-menu, .header-bell-btn, .composer > button, .call-dock > button) { min-width: 44px; min-height: 44px; }
+}

@@ -1,4 +1,4 @@
-import { beforeEach, test, expect, vi } from "vitest";
+import { afterEach, beforeEach, test, expect, vi } from "vitest";
 const mocks = vi.hoisted(() => ({ upload: vi.fn(), download: vi.fn() }));
 vi.mock("./supabase", () => ({ supabase: {
   storage: { from: () => ({ upload: mocks.upload, download: mocks.download }) },
@@ -9,14 +9,32 @@ import {
   validateChatImage,
   uploadEncryptedChatImage,
   downloadAndDecryptChatImage,
+  releaseChatMediaCacheEntry,
+  clearChatMediaCache,
   CHAT_IMAGE_LIMIT,
 } from "./chat-media";
 
 
 beforeEach(() => {
+  clearChatMediaCache();
   vi.resetAllMocks();
   mocks.upload.mockResolvedValue({ error: null });
 });
+
+afterEach(() => {
+  clearChatMediaCache();
+  delete (globalThis as unknown as { window?: unknown }).window;
+});
+
+async function encryptedFixture(conversationId: string, key: CryptoKey) {
+  const rawBytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
+  const { encryptBinary } = await import("./crypto");
+  return encryptBinary(rawBytes.buffer, key, `hush:attachment:${conversationId}`);
+}
+
+function fixtureAttachment(path: string, iv: string, id = path) {
+  return { id, path, name: "test.png", type: "image/png", size: 4, iv, storage: "gdrive" as const, gdrive_file_id: path };
+}
 
 
 test("validateChatImage validates format and size", () => {
@@ -146,4 +164,104 @@ test("downloadAndDecryptChatImage uses desktop IPC download when available", asy
   expect(url).toMatch(/^blob:/);
 
   delete (globalThis as unknown as { window?: unknown }).window;
+});
+
+test("deduplicates concurrent cache misses and releases the final lease", async () => {
+  const key = await createRoomKey();
+  const { iv, ciphertext } = await encryptedFixture("conv-dedupe", key);
+  let resolveDownload!: (value: Uint8Array) => void;
+  const download = vi.fn().mockReturnValue(new Promise<Uint8Array>((resolve) => { resolveDownload = resolve; }));
+  (globalThis as unknown as { window: { hushWindow: unknown } }).window = { hushWindow: { downloadGDriveMedia: download } };
+  const createUrl = vi.spyOn(URL, "createObjectURL");
+  const revokeUrl = vi.spyOn(URL, "revokeObjectURL");
+  const attachment = fixtureAttachment("same-path", iv);
+
+  const first = downloadAndDecryptChatImage(attachment, "conv-dedupe", key);
+  const second = downloadAndDecryptChatImage(attachment, "conv-dedupe", key);
+  resolveDownload(new Uint8Array(ciphertext));
+  const [firstUrl, secondUrl] = await Promise.all([first, second]);
+
+  expect(download).toHaveBeenCalledOnce();
+  expect(createUrl).toHaveBeenCalledOnce();
+  expect(firstUrl).toBe(secondUrl);
+  releaseChatMediaCacheEntry(attachment.path, firstUrl);
+  expect(revokeUrl).not.toHaveBeenCalled();
+  releaseChatMediaCacheEntry(attachment.path, secondUrl);
+  clearChatMediaCache();
+  expect(revokeUrl).toHaveBeenCalledWith(firstUrl);
+  createUrl.mockRestore();
+  revokeUrl.mockRestore();
+});
+
+test("does not reuse a path across conversations or room keys", async () => {
+  const keyA = await createRoomKey();
+  const keyB = await createRoomKey();
+  const firstFixture = await encryptedFixture("conv-a", keyA);
+  const secondFixture = await encryptedFixture("conv-b", keyB);
+  const download = vi.fn()
+    .mockResolvedValueOnce(new Uint8Array(firstFixture.ciphertext))
+    .mockResolvedValueOnce(new Uint8Array(secondFixture.ciphertext));
+  (globalThis as unknown as { window: { hushWindow: unknown } }).window = { hushWindow: { downloadGDriveMedia: download } };
+  const samePathA = fixtureAttachment("shared-path", firstFixture.iv);
+  const samePathB = fixtureAttachment("shared-path", secondFixture.iv);
+
+  const firstUrl = await downloadAndDecryptChatImage(samePathA, "conv-a", keyA);
+  const secondUrl = await downloadAndDecryptChatImage(samePathB, "conv-b", keyB);
+  expect(download).toHaveBeenCalledTimes(2);
+  expect(secondUrl).not.toBe(firstUrl);
+  releaseChatMediaCacheEntry(samePathA.path, firstUrl);
+  releaseChatMediaCacheEntry(samePathB.path, secondUrl);
+});
+
+test("evicts idle entries while retaining active leases", async () => {
+  const key = await createRoomKey();
+  const { iv, ciphertext } = await encryptedFixture("conv-evict", key);
+  const download = vi.fn().mockResolvedValue(new Uint8Array(ciphertext));
+  (globalThis as unknown as { window: { hushWindow: unknown } }).window = { hushWindow: { downloadGDriveMedia: download } };
+  const revokeUrl = vi.spyOn(URL, "revokeObjectURL");
+  const active = fixtureAttachment("path-0", iv);
+  const activeUrl = await downloadAndDecryptChatImage(active, "conv-evict", key);
+  for (let i = 1; i <= 24; i += 1) {
+    const attachment = fixtureAttachment(`path-${i}`, iv);
+    const url = await downloadAndDecryptChatImage(attachment, "conv-evict", key);
+    releaseChatMediaCacheEntry(attachment.path, url);
+  }
+  expect(revokeUrl).toHaveBeenCalled();
+  expect(revokeUrl).not.toHaveBeenCalledWith(activeUrl);
+  releaseChatMediaCacheEntry(active.path, activeUrl);
+  clearChatMediaCache();
+  expect(revokeUrl).toHaveBeenCalledWith(activeUrl);
+  revokeUrl.mockRestore();
+});
+
+test("clear invalidates an in-flight load and revokes its late URL", async () => {
+  const key = await createRoomKey();
+  const { iv, ciphertext } = await encryptedFixture("conv-clear", key);
+  let resolveDownload!: (value: Uint8Array) => void;
+  const download = vi.fn().mockReturnValue(new Promise<Uint8Array>((resolve) => { resolveDownload = resolve; }));
+  (globalThis as unknown as { window: { hushWindow: unknown } }).window = { hushWindow: { downloadGDriveMedia: download } };
+  const revokeUrl = vi.spyOn(URL, "revokeObjectURL");
+  const attachment = fixtureAttachment("clear-path", iv);
+  const pending = downloadAndDecryptChatImage(attachment, "conv-clear", key);
+  clearChatMediaCache();
+  resolveDownload(new Uint8Array(ciphertext));
+  await expect(pending).rejects.toThrow("invalidata durante il caricamento");
+  expect(revokeUrl).toHaveBeenCalledTimes(1);
+  revokeUrl.mockRestore();
+});
+
+test("keeps all 25 mounted images alive beyond idle cache capacity", async () => {
+  const key = await createRoomKey();
+  const { iv, ciphertext } = await encryptedFixture("conv-live", key);
+  const download = vi.fn().mockResolvedValue(new Uint8Array(ciphertext));
+  (globalThis as unknown as { window: { hushWindow: unknown } }).window = { hushWindow: { downloadGDriveMedia: download } };
+  const revoke = vi.spyOn(URL, "revokeObjectURL");
+  try {
+    const attachments = Array.from({ length: 25 }, (_, index) => fixtureAttachment(`live-${index}`, iv));
+    const urls = await Promise.all(attachments.map(attachment => downloadAndDecryptChatImage(attachment, "conv-live", key)));
+    expect(revoke).not.toHaveBeenCalled();
+    releaseChatMediaCacheEntry(attachments[0].path, urls[0]);
+    expect(revoke).toHaveBeenCalledWith(urls[0]);
+    expect(revoke).toHaveBeenCalledTimes(1);
+  } finally { revoke.mockRestore(); }
 });

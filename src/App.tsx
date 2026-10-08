@@ -149,6 +149,13 @@ export function App() {
   useEffect(() => { applyTheme(theme); }, [theme]);
 
   useEffect(() => {
+    const updateVisibility = () => { document.documentElement.dataset.pageHidden = String(document.hidden); };
+    updateVisibility();
+    document.addEventListener("visibilitychange", updateVisibility);
+    return () => { document.removeEventListener("visibilitychange", updateVisibility); delete document.documentElement.dataset.pageHidden; };
+  }, []);
+
+  useEffect(() => {
     if (!supabase) return;
     void supabase.auth.getSession().then(({ data }) => {
       setSession(data.session);
@@ -1283,7 +1290,7 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
               <div className="voice-room-mark"><Volume2 size={30} /></div>
               <span className="eyebrow">stanza vocale cifrata</span>
               <h1>{activeConversation.name}</h1>
-              <p>Audio, video e schermo viaggiano direttamente tra i partecipanti tramite WebRTC. Supabase coordina soltanto l’ingresso nella stanza.</p>
+              <p>Ritrovatevi in voce, accendete la videocamera o condividete lo schermo. Scegli tu come partecipare.</p>
               <div className="voice-room-actions">
                 <button className="empty-primary" onClick={() => startCall(activeConversation, false)}><Phone size={17} /> Entra in voce</button>
                 <button className="voice-video-button" onClick={() => startCall(activeConversation, true)}><Video size={17} /> Entra con video</button>
@@ -1300,7 +1307,7 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
             {showCipher ? <section className="cipher-inspector"><div><span className="eyebrow">ultimo pacchetto salvato</span><code>{latestCipher ? `${latestCipher.iv}.${latestCipher.ciphertext}` : "Nessun messaggio inviato."}</code></div><button onClick={() => setShowCipher(false)} aria-label="Chiudi"><X size={16} /></button></section> : null}
             <div className="chat-content">
               <div className="messages" aria-live="polite">
-                <section className="channel-intro"><div className="intro-icon"><Hash size={28} /></div><span className="eyebrow">conversazione reale</span><h1>{activeConversation.name}</h1><p>I messaggi vengono cifrati sul dispositivo prima di raggiungere Supabase.</p></section>
+                <section className="channel-intro"><div className="intro-icon"><Hash size={28} /></div><span className="eyebrow">il vostro spazio</span><h1>{activeConversation.name}</h1><p>Un posto per ritrovarvi. I messaggi sono protetti dalla cifratura end-to-end.</p></section>
                 {filteredMessages.length === 0 ? <div className="conversation-empty">{search ? "Nessun messaggio corrisponde alla ricerca." : keyStatus === "waiting" ? "Chiave richiesta. Chiedi a un membro di aprire questa conversazione." : "Nessun messaggio. Scrivi il primo."}</div> : null}
                 {filteredMessages.map((message) => {
                   const sender: Profile = members.find((member) => member.id === message.senderId) ?? {
@@ -1430,7 +1437,7 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
             </div>
           </>
         ) : (
-          <div className="chat-content empty-chat"><section className="workspace-empty"><div className="workspace-empty-mark"><BrandMark size={46} /></div><span className="eyebrow">spazio privato</span><h1>{loading ? "Caricamento…" : "Pronto per iniziare"}</h1><p>Crea un server, usa un invito oppure apri un gruppo DM. Ogni elemento mostrato arriva dal tuo account Supabase.</p><button className="empty-primary" onClick={() => openModal("space")}><Plus size={17} /> Crea o unisciti</button></section></div>
+          <div className="chat-content empty-chat"><section className="workspace-empty"><div className="workspace-empty-mark"><BrandMark size={46} /></div><span className="eyebrow">spazio privato</span><h1>{loading ? "Caricamento…" : "Pronto per iniziare"}</h1><p>Riunisci i tuoi amici in un server, usa un invito oppure inizia una conversazione privata.</p><button className="empty-primary" onClick={() => openModal("space")}><Plus size={17} /> Crea o unisciti</button></section></div>
         )}
       </main>
 

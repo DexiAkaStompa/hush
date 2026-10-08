@@ -73,7 +73,6 @@
       "docs/licenses/**/*",
       "build/icon.ico",
       "build/icon.png",
-      "gdrive-config.json",
       "package.json"
     ],
     "win": {

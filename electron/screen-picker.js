@@ -1,3 +1,4 @@
+document.documentElement.dataset.theme = new URLSearchParams(window.location.search).get("theme") || "hush-void";
 const sourcesRoot = document.getElementById("sources");
 const cancelButton = document.getElementById("cancel");
 
