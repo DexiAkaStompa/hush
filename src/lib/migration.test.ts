@@ -274,6 +274,7 @@ describe("Supabase migrations", () => {
       await database.exec(`select set_config('request.jwt.claim.sub','${admin}',true); select public.set_conversation_send_permission('${conversation}','admins'); select set_config('request.jwt.claim.sub','${member}',true);`);
       await denied(`select public.update_encrypted_message('${message}','newnonce','newcipher','{}')`,/message_edit_forbidden/);
       await denied(`insert into public.encrypted_messages(conversation_id,sender_id,algorithm,nonce,ciphertext) values ('${conversation}','${member}','AES-256-GCM','nonce-valid','cipher-valid')`,/row-level security/);
+      await database.exec(`select set_config('request.jwt.claim.sub','${admin}',true);`);
       const invite = await database.query<{token:string}>(`select public.create_space_invite('${space}') as token`);
       await database.exec(`select set_config('request.jwt.claim.sub','${owner}',true);`);
       await database.query("select public.join_space_with_invite($1)",[invite.rows[0].token]);
@@ -286,7 +287,7 @@ describe("Supabase migrations", () => {
       await denied(`select public.join_space_with_invite('${invite.rows[0].token}')`,/space_banned/);
       await database.exec(`select set_config('request.jwt.claim.sub','${admin}',true);select public.set_space_ban('${space}','${member}',false); select set_config('request.jwt.claim.sub','${member}',true);`);
       await database.query("select public.join_space_with_invite($1)",[invite.rows[0].token]);
-      expect((await database.query("select * from public.conversation_members where conversation_id=$1 and user_id=$2 and left_at is null",[conversation,member])).rows).toHaveLength(1);
+      expect((await database.query<{active:boolean}>("select public.is_conversation_member($1) as active",[conversation])).rows[0].active).toBe(true);
     } finally {await database.exec("rollback;");}
   });
 
