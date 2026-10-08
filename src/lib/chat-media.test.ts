@@ -1,5 +1,10 @@
 import { afterEach, beforeEach, test, expect, vi } from "vitest";
-const mocks = vi.hoisted(() => ({ upload: vi.fn(), download: vi.fn() }));
+const mocks = vi.hoisted(() => ({ upload: vi.fn(), download: vi.fn(), sharedConfigured: false, sharedUpload: vi.fn() }));
+vi.mock("./shared-media", () => ({
+  get isSharedMediaConfigured() { return mocks.sharedConfigured; },
+  uploadSharedMedia: mocks.sharedUpload,
+  downloadSharedMedia: vi.fn(),
+}));
 vi.mock("./supabase", () => ({ supabase: {
   storage: { from: () => ({ upload: mocks.upload, download: mocks.download }) },
 } }));
@@ -18,6 +23,7 @@ import {
 beforeEach(() => {
   clearChatMediaCache();
   vi.resetAllMocks();
+  mocks.sharedConfigured = false;
   mocks.upload.mockResolvedValue({ error: null });
 });
 
@@ -64,6 +70,22 @@ test("uploadEncryptedChatImage encrypts file bytes and uploads to chat-media", a
   expect(meta.type).toBe("image/png");
   expect(meta.iv).match(/^[A-Za-z0-9+/]+=*$/);
   expect(meta.storage).toBe("supabase");
+});
+
+test("shared Drive takes precedence and receives only encrypted bytes", async () => {
+  mocks.sharedConfigured = true;
+  mocks.sharedUpload.mockResolvedValue("shared-drive-file-id");
+  const key = await createRoomKey();
+  const plain = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
+  const meta = await uploadEncryptedChatImage(new File([plain], "photo.png", { type: "image/png" }), "conv123", key);
+  expect(meta.storage).toBe("gdrive-shared");
+  expect(meta.gdrive_file_id).toBe("shared-drive-file-id");
+  expect(mocks.upload).not.toHaveBeenCalled();
+  const [conversationId, attachmentId, ciphertext] = mocks.sharedUpload.mock.calls[0];
+  expect(conversationId).toBe("conv123");
+  expect(attachmentId).toBe(meta.id);
+  expect(new Uint8Array(ciphertext)).not.toEqual(plain);
+  expect(new Uint8Array(await decryptBinary(ciphertext, meta.iv, key, "hush:attachment:conv123"))).toEqual(plain);
 });
 
 test("uploadEncryptedChatImage uploads to Google Drive when configured on desktop", async () => {

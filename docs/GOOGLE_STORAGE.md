@@ -42,6 +42,14 @@ local installations; the shared endpoint takes precedence when configured.
 
 ## Client rollout
 
+The production function is deployed at
+`https://zvzyzuzlqbuvvffxyquk.supabase.co/functions/v1/shared-media`.
+The repository variable `VITE_SHARED_MEDIA_URL` enables it in desktop releases
+starting with v0.5.31. Owner OAuth credentials are stored only as server secrets.
+Deployment verification passed an authenticated AES-GCM upload/download,
+decryption, and a denied request for a conversation the caller did not belong to.
+The temporary verification account, space, and Drive file were removed afterward.
+
 Add `VITE_SHARED_MEDIA_URL` to the production client environment, pointing to
 the deployed function URL, The media client already calls this endpoint
 for both desktop and browser clients when configured. Existing attachment records remain
