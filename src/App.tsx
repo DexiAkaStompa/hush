@@ -223,6 +223,9 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
   const activeChannelRef = useRef<RealtimeChannel | null>(null);
   const activeIdRef = useRef<string | null>(null);
   const typingSentRef = useRef(0);
+  const draftByRoom = useRef(new Map<string,string>());
+  const previousDraftRoom = useRef<string|null>(null);
+  const draftValueRef = useRef("");
   const [activeSpaceId, setActiveSpaceId] = useState<string | null>(null);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [roomKey, setRoomKey] = useState<CryptoKey | null>(null);
@@ -396,6 +399,18 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
     [activeConversationId, conversations],
   );
   activeIdRef.current = activeConversationId;
+  draftValueRef.current = draft;
+  useEffect(() => {
+    const previous = previousDraftRoom.current;
+    if (previous) {
+      if(draftValueRef.current) draftByRoom.current.set(previous,draftValueRef.current);
+      else draftByRoom.current.delete(previous);
+      if(draftByRoom.current.size > 50) draftByRoom.current.delete(draftByRoom.current.keys().next().value!);
+    }
+    previousDraftRoom.current = activeConversationId;
+    setDraft(activeConversationId ? draftByRoom.current.get(activeConversationId) ?? "" : "");
+    clearPendingFile(); setSearch("");
+  }, [activeConversationId]);
   const filteredMessages = useMemo(() => (historyResults ?? messages).filter(message => matchesMessage(message, search) && (!showPins || extras.pins.some(pin => pin.message_id === message.id))), [messages, historyResults, search, showPins, extras.pins]);
   const refreshExtras = async (id: string) => {
     const next = await loadMessageExtras(id);
@@ -955,12 +970,12 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
     return () => {current = false; window.clearInterval(timer); window.removeEventListener("focus", refresh);};
   }, [allTextConversations, directMessages]);
   useEffect(() => {
-    const read = () => { if (activeConversationId && keyStatus === "ready" && !awayFromBottom && !document.hidden && document.hasFocus()) {
+    const read = () => { if (activeConversationId && keyStatus === "ready" && !awayFromBottom && !search && !showPins && !historyResults && !document.hidden && document.hasFocus()) {
       void markConversationRead(activeConversationId, messages.at(-1)?.createdAt).then(() => setUnreads(prev => ({...prev, [activeConversationId]: {conversation_id: activeConversationId, unread_count: 0, last_read_at: messages.at(-1)?.createdAt ?? null}}))).catch(() => undefined);
     }};
     read(); window.addEventListener("focus", read);
     return () => window.removeEventListener("focus", read);
-  }, [activeConversationId, keyStatus, messages, awayFromBottom]);
+  }, [activeConversationId, keyStatus, messages, awayFromBottom, search, showPins, historyResults]);
   useEffect(() => {const input = messageInputRef.current; if(input) {input.style.height = "auto"; input.style.height = `${Math.min(180, Math.max(38, input.scrollHeight))}px`; }}, [draft]);
 
   useEffect(() => {
