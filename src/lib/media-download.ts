@@ -33,7 +33,7 @@ export async function saveChatAttachment(attachment: ChatAttachmentMeta, convers
   }
   if (writer) {
     try {
-      await downloadChunkedMedia(attachment, conversationId, key, writer.write, options);
+      await downloadChunkedMedia(attachment, conversationId, key, bytes => writer!.write(bytes), options);
       await writer.close();
     } catch (error) { await writer.abort().catch(() => undefined); throw error; }
     return;

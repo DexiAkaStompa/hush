@@ -70,7 +70,7 @@ accounting and resuming interrupted uploads across app restarts remain deploymen
 
 ## Large attachments and annual retention
 
-Release v0.5.32 removes the application's 16 MiB attachment cap when shared
+Release v0.5.33 removes the application's 16 MiB attachment cap when shared
 Drive is configured. Encryption and uploads run sequentially in 8 MiB blocks;
 the encrypted manifest is published last. Progress, cancellation, and transient
 network retries are supported. A cancelled upload's partial blocks are covered
@@ -81,7 +81,7 @@ write authenticated plaintext blocks to a temporary disk file, then rename it
 after completion; cancelling removes the temporary file. Browsers with the File
 System Access API also write incrementally to disk. Other browsers use Blob
 parts and may need memory proportional to file size. Users must update to
-v0.5.32 to read chunked attachments. Drive capacity, API quotas and device free
+v0.5.33 to read chunked attachments. Drive capacity, API quotas and device free
 disk space still apply.
 
 `hush-annual-drive-cleanup` runs in Supabase pg_cron on **January 1**, with hourly
