@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Download, Eye, Image as ImageIcon, Loader2, X } from "lucide-react";
 import { downloadAndDecryptChatImage, releaseChatMediaCacheEntry, type ChatAttachmentMeta } from "../lib/chat-media";
 
@@ -11,13 +11,21 @@ export function ChatAttachment({
   conversationId: string;
   roomKey: CryptoKey | null;
 }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [nearViewport, setNearViewport] = useState(false);
+  useEffect(() => {
+    const element = containerRef.current;
+    if (!element) return;
+    const observer = new IntersectionObserver(entries => setNearViewport(entries[0].isIntersecting), {rootMargin: "300px"});
+    observer.observe(element); return () => observer.disconnect();
+  }, []);
   const [url, setUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lightbox, setLightbox] = useState(false);
 
   useEffect(() => {
-    if (!roomKey) return;
+    if (!roomKey || !nearViewport) {setUrl(null); setLoading(true); return;}
     let active = true;
     let acquiredUrl: string | null = null;
     setLoading(true);
@@ -43,7 +51,7 @@ export function ChatAttachment({
       active = false;
       if (acquiredUrl) releaseChatMediaCacheEntry(attachment.path, acquiredUrl);
     };
-  }, [attachment, conversationId, roomKey]);
+  }, [attachment, conversationId, roomKey, nearViewport]);
 
   const formatSize = (bytes: number) => {
     if (bytes < 1024) return `${bytes} B`;
@@ -52,11 +60,11 @@ export function ChatAttachment({
   };
 
   return (
-    <div className="chat-attachment-container">
+    <div className="chat-attachment-container" ref={containerRef}>
       {loading ? (
         <div className="chat-attachment-loading">
           <Loader2 size={18} className="attachment-spinner" />
-          <span>Decifratura immagine…</span>
+          <span>Decifratura allegato…</span>
         </div>
       ) : error ? (
         <div className="chat-attachment-error">
@@ -65,7 +73,7 @@ export function ChatAttachment({
         </div>
       ) : url ? (
         <>
-          <div
+          {!attachment.type.startsWith("image/") ? <div className="chat-file-card"><ImageIcon size={20}/><span>{attachment.name} · {formatSize(attachment.size)}</span><a href={url} download={attachment.name} aria-label={`Scarica ${attachment.name}`}><Download size={18}/></a></div> : <div
             className="chat-attachment-preview"
             onClick={() => setLightbox(true)}
             role="button"
@@ -80,7 +88,7 @@ export function ChatAttachment({
               <span>{attachment.name} · {formatSize(attachment.size)}</span>
               <Eye size={16} />
             </div>
-          </div>
+          </div>}
 
           {lightbox ? (
             <div className="lightbox-backdrop" onClick={() => setLightbox(false)} role="dialog" aria-modal="true">

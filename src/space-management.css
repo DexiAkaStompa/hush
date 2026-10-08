@@ -1,0 +1,11 @@
+.space-management { max-width: 720px; }
+.space-management-tabs { display: flex; gap: 6px; margin-bottom: 16px; }
+.space-management-tabs button { border: 0; border-radius: 8px; padding: 8px 12px; background: var(--panel-raised); color: inherit; cursor: pointer; }
+.space-management-tabs button.active { background: var(--blue); color: #102030; }
+.space-management-list { display: grid; gap: 8px; max-height: 52vh; overflow: auto; }
+.space-management-row { display: flex; align-items: center; gap: 10px; padding: 10px; border: 1px solid var(--line, #dce3eb); border-radius: 10px; }
+.space-management-row span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.space-management-row button, .space-management-row select { border: 1px solid var(--line, #dce3eb); border-radius: 7px; background: var(--panel, white); padding: 6px 9px; color: inherit; }
+.space-management-error { color: #b3261e; }
+
+.space-management-row {flex-wrap:wrap;font-size:12px}.space-management-row input {min-width:90px;width:140px;background:var(--panel);color:var(--frost);border:1px solid var(--line);border-radius:7px;padding:7px;}.space-management-row span {flex-basis:100%}.space-management button:disabled {opacity:.45;cursor:default}

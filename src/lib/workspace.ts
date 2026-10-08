@@ -25,6 +25,9 @@ export type Conversation = {
   kind: "channel" | "voice_channel" | "group_dm";
   name: string;
   created_by: string | null;
+  category_id?: string | null;
+  position?: number;
+  send_permission?: "members" | "admins";
 };
 
 export type DecryptedMessage = {
@@ -35,6 +38,8 @@ export type DecryptedMessage = {
   body: string;
   attachment?: ChatAttachmentMeta | null;
   createdAt: string;
+  editedAt?: string | null;
+  replyId?: string | null;
   encrypted: EncryptedPayload;
 };
 
@@ -81,8 +86,9 @@ export async function loadWorkspace(userId: string, fallbackProfile?: Profile) {
 export async function loadChannels(spaceId: string) {
   const { data, error } = await requireClient()
     .from("conversations")
-    .select("id, space_id, kind, name, created_by")
+    .select("id, space_id, kind, name, created_by, category_id, position, send_permission")
     .eq("space_id", spaceId)
+    .order("position", {ascending: true})
     .order("created_at", { ascending: true });
   if (error) throw error;
   return (data ?? []) as Conversation[];
@@ -156,11 +162,7 @@ export async function loadDmRecipients(
 export async function loadLatestEncryptedMessages(conversationIds: string[]) {
   if (conversationIds.length === 0) return {};
   const client = requireClient();
-  const { data, error } = await client
-    .from("encrypted_messages")
-    .select("id, conversation_id, sender_id, algorithm, key_epoch, nonce, ciphertext, aad_json, created_at")
-    .in("conversation_id", conversationIds)
-    .order("created_at", { ascending: false });
+  const { data, error } = await client.rpc("get_latest_encrypted_messages", {p_conversation_ids: conversationIds.slice(0,500)});
   if (error || !data) return {};
 
   const latestByConv: Record<string, EncryptedMessageRow> = {};
@@ -190,26 +192,39 @@ export async function loadAndDecryptMessages(
   conversationId: string,
   key: CryptoKey,
   profiles: Profile[],
+  options: { before?: { createdAt: string; id: string }; limit?: number; ids?: string[] } = {},
 ) {
-  const { data, error } = await requireClient()
+  const limit = Math.max(1, Math.min(options.limit ?? 200, 200));
+  let query = requireClient()
     .from("encrypted_messages")
-    .select("id, conversation_id, sender_id, algorithm, key_epoch, nonce, ciphertext, aad_json, created_at")
+    .select("id, conversation_id, sender_id, algorithm, key_epoch, nonce, ciphertext, aad_json, created_at, updated_at")
     .eq("conversation_id", conversationId)
-    .order("created_at", { ascending: true })
-    .limit(200);
+    .order("created_at", { ascending: false })
+    .order("id", { ascending: false })
+    .limit(limit);
+  if (options.before) {
+    const createdAt = options.before.createdAt.replace(/,/g, "");
+    query = query.or(`created_at.lt.${createdAt},and(created_at.eq.${createdAt},id.lt.${options.before.id})`);
+  }
+  if (options.ids?.length) query = query.in("id", options.ids.slice(0, 200));
+  const { data, error } = await query;
   if (error) throw error;
   const profileById = new Map(profiles.map((profile) => [profile.id, profile]));
   const context = `hush:conversation:${conversationId}:epoch:0`;
-  return Promise.all(((data ?? []) as EncryptedMessageRow[]).map(async (row) => {
+  const rows = [...(data ?? []) as EncryptedMessageRow[]].sort((a, b) =>
+    a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id));
+  return Promise.all(rows.map(async (row) => {
     const profile = row.sender_id ? profileById.get(row.sender_id) : undefined;
     const encrypted = { v: 1 as const, iv: row.nonce, ciphertext: row.ciphertext };
     let body = "Messaggio non decifrabile con la chiave corrente.";
     let attachment: ChatAttachmentMeta | null = null;
+    let replyId: string | null = null;
     try {
       const decrypted = await decryptText(encrypted, key, context);
       const unpacked = unpackMessageContent(decrypted);
       body = unpacked.text;
       attachment = unpacked.attachment;
+      replyId = unpacked.replyId;
     } catch { /* keep explicit failure */ }
     return {
       id: row.id,
@@ -219,31 +234,34 @@ export async function loadAndDecryptMessages(
       body,
       attachment,
       createdAt: row.created_at,
+      editedAt: row.updated_at ?? null,
+      replyId,
       encrypted,
     } satisfies DecryptedMessage;
   }));
 }
 
-export function unpackMessageContent(decrypted: string): { text: string; attachment: ChatAttachmentMeta | null } {
-  if (decrypted.startsWith("{") && decrypted.includes('"attachment"')) {
+export function unpackMessageContent(decrypted: string): { text: string; attachment: ChatAttachmentMeta | null; replyId: string | null } {
+  if (decrypted.startsWith("{") && (decrypted.includes('"attachment"') || decrypted.includes('"replyId"') || decrypted.includes('"v":2'))) {
     try {
       const parsed = JSON.parse(decrypted);
       if (parsed && typeof parsed === "object") {
         return {
           text: typeof parsed.text === "string" ? parsed.text : "",
           attachment: (parsed.attachment && typeof parsed.attachment === "object") ? parsed.attachment as ChatAttachmentMeta : null,
+          replyId: typeof parsed.replyId === "string" ? parsed.replyId : null,
         };
       }
     } catch {
       // Fall back to plain text
     }
   }
-  return { text: decrypted, attachment: null };
+  return { text: decrypted, attachment: null, replyId: null };
 }
 
-export function packMessageContent(text: string, attachment?: ChatAttachmentMeta | null): string {
-  if (attachment) {
-    return JSON.stringify({ text, attachment });
+export function packMessageContent(text: string, attachment?: ChatAttachmentMeta | null, replyId?: string | null): string {
+  if (attachment || replyId) {
+    return JSON.stringify({ v: 2, text, attachment: attachment ?? null, replyId: replyId ?? null });
   }
   return text;
 }

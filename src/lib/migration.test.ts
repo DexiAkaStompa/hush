@@ -11,6 +11,8 @@ import keyEnvelopeRpcMigrationSource from "../../supabase/migrations/20260821223
 import userDeletionMigrationSource from "../../supabase/migrations/20260903083330_user_deletion_integrity.sql?raw";
 import profileMediaMigration from "../../supabase/migrations/20260904230343_profile_media.sql?raw";
 import chatMediaMigration from "../../supabase/migrations/20260905000000_chat_media.sql?raw";
+import chatFeaturesMigration from "../../supabase/migrations/20261008090000_chat_features.sql?raw";
+import spaceManagementMigration from "../../supabase/migrations/20261008091000_space_management.sql?raw";
 
 const database = new PGlite();
 
@@ -26,6 +28,8 @@ const inviteCryptoFixMigration = inviteCryptoFixMigrationSource.replace(/notify 
 const clientMusicMigration = clientMusicMigrationSource.replace(/notify pgrst, 'reload schema';/i, "");
 const keyEnvelopeRpcMigration = keyEnvelopeRpcMigrationSource.replace(/notify pgrst, 'reload schema';/i, "");
 const userDeletionMigration = userDeletionMigrationSource.replace(/notify pgrst, 'reload schema';/i, "");
+const chatFeatures = chatFeaturesMigration.replace(/notify pgrst, 'reload schema';/gi, "");
+const spaceManagement = spaceManagementMigration.replace(/notify pgrst, 'reload schema';/gi, "");
 
 describe("Supabase migrations", () => {
   beforeAll(async () => {
@@ -72,6 +76,8 @@ describe("Supabase migrations", () => {
     await database.exec(userDeletionMigration);
     await database.exec(profileMediaMigration);
     await database.exec(chatMediaMigration);
+    await database.exec(chatFeatures);
+    await database.exec(spaceManagement);
     await database.exec(`
       create function realtime.broadcast_changes(
         text, text, text, name, name, public.encrypted_messages, public.encrypted_messages
@@ -82,13 +88,16 @@ describe("Supabase migrations", () => {
       select table_name
       from information_schema.tables
       where table_schema = 'public'
-        and table_name in ('space_invites', 'conversation_key_envelopes', 'conversation_key_requests', 'conversation_music_state')
+        and table_name in ('space_invites', 'conversation_key_envelopes', 'conversation_key_requests', 'conversation_music_state', 'message_reactions', 'message_pins', 'conversation_reads')
       order by table_name
     `);
     expect(result.rows.map((row) => row.table_name)).toEqual([
       "conversation_key_envelopes",
       "conversation_key_requests",
       "conversation_music_state",
+      "conversation_reads",
+      "message_pins",
+      "message_reactions",
       "space_invites",
     ]);
 
@@ -142,6 +151,31 @@ describe("Supabase migrations", () => {
     await database.exec(`begin; set local role authenticated; select set_config('request.jwt.claim.sub', '${other}', true);`);
     try {
       await expect(database.query("insert into storage.objects(bucket_id, name) values ('profile-media', $1)", [name])).rejects.toThrow(/row-level security/i);
+    } finally { await database.exec("rollback;"); }
+  });
+
+  it("blocks unauthorized message mutation and reaction writes", async () => {
+    const owner = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+    const other = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
+    const conversation = "cccccccc-cccc-cccc-cccc-cccccccccccc";
+    const message = "dddddddd-dddd-dddd-dddd-dddddddddddd";
+    await database.exec(`
+      insert into auth.users (id, email) values ('${owner}', 'ownersec@example.test'), ('${other}', 'othersec@example.test');
+      insert into public.conversations (id, space_id, kind, name, created_by) values ('${conversation}', null, 'group_dm', 'secure', '${owner}');
+      insert into public.conversation_members (conversation_id, user_id) values ('${conversation}', '${other}');
+      insert into public.encrypted_messages (id, conversation_id, sender_id, algorithm, nonce, ciphertext)
+      values ('${message}', '${conversation}', '${owner}', 'AES-256-GCM', 'nonce-sec', 'cipher-sec');
+    `);
+    await database.exec(`begin; set local role authenticated; select set_config('request.jwt.claim.sub', '${other}', true);`);
+    try {
+      await database.exec("savepoint mutation_attempt");
+      await expect(database.query("update public.encrypted_messages set ciphertext = 'hijack' where id = $1", [message])).rejects.toThrow(/row-level security|permission denied/i);
+      await database.exec("rollback to savepoint mutation_attempt");
+      await database.exec("savepoint mutation_attempt");
+      await expect(database.query("delete from public.encrypted_messages where id = $1", [message])).rejects.toThrow(/row-level security|permission denied/i);
+      await database.exec("rollback to savepoint mutation_attempt");
+      await database.exec("savepoint mutation_attempt");
+      await expect(database.query("insert into public.message_reactions(conversation_id, message_id, user_id, emoji) values ($1, $2, $3, $4)", [conversation, message, owner, "👍"])).rejects.toThrow(/row-level security|permission denied/i);
     } finally { await database.exec("rollback;"); }
   });
 
@@ -207,4 +241,45 @@ describe("Supabase migrations", () => {
     `);
     expect(result.rows[0]).toEqual({ created_by: null, sender_id: null, owned_space_exists: false });
   });
+  it("enforces moderation, shared pins, monotonic reads and channel permissions", async () => {
+    const owner = "11110000-0000-0000-0000-000000000001";
+    const admin = "11110000-0000-0000-0000-000000000002";
+    const member = "11110000-0000-0000-0000-000000000003";
+    const space = "11110000-0000-0000-0000-000000000004";
+    const conversation = "11110000-0000-0000-0000-000000000005";
+    const message = "11110000-0000-0000-0000-000000000006";
+    await database.exec(`begin;
+      insert into auth.users(id,email) values ('${owner}','modowner@example.test'),('${admin}','modadmin@example.test'),('${member}','modmember@example.test');
+      insert into public.spaces(id,name,owner_id) values ('${space}','moderation','${owner}');
+      insert into public.space_members(space_id,user_id,role) values ('${space}','${owner}','owner'),('${space}','${admin}','admin'),('${space}','${member}','member') on conflict do nothing;
+      insert into public.conversations(id,space_id,kind,name,created_by) values ('${conversation}','${space}','channel','general','${owner}');
+      insert into public.conversation_members(conversation_id,user_id) values ('${conversation}','${owner}'),('${conversation}','${admin}'),('${conversation}','${member}') on conflict do nothing;
+      insert into public.encrypted_messages(id,conversation_id,sender_id,algorithm,nonce,ciphertext) values ('${message}','${conversation}','${member}','AES-256-GCM','nonce-valid','cipher-valid');
+      set local role authenticated;
+      select set_config('request.jwt.claim.sub','${admin}',true);
+    `);
+    const denied = async (sql: string, pattern: RegExp) => {
+      await database.exec("savepoint denied_operation");
+      await expect(database.exec(sql)).rejects.toThrow(pattern);
+      await database.exec("rollback to savepoint denied_operation");
+    };
+    try {
+      await denied(`select public.manage_space_member('${space}','${owner}','member')`,/cannot_manage_admin/);
+      await denied(`select public.manage_space_member('${space}','${member}','admin')`,/invalid_member_role/);
+      await database.exec(`select public.toggle_message_pin('${message}'); select set_config('request.jwt.claim.sub','${member}',true); select public.toggle_message_pin('${message}');`);
+      expect((await database.query("select * from public.message_pins where message_id=$1",[message])).rows).toHaveLength(0);
+      await database.exec(`select public.mark_conversation_read('${conversation}','2026-10-01'); select public.mark_conversation_read('${conversation}','2026-09-01');`);
+      const read = await database.query<{read:string}>("select last_read_at::date::text as read from public.conversation_reads where conversation_id=$1",[conversation]);
+      expect(read.rows[0].read).toBe("2026-10-01");
+      await database.exec(`select set_config('request.jwt.claim.sub','${admin}',true); select public.set_conversation_send_permission('${conversation}','admins'); select set_config('request.jwt.claim.sub','${member}',true);`);
+      await denied(`select public.update_encrypted_message('${message}','newnonce','newcipher','{}')`,/message_edit_forbidden/);
+      await denied(`insert into public.encrypted_messages(conversation_id,sender_id,algorithm,nonce,ciphertext) values ('${conversation}','${member}','AES-256-GCM','nonce-valid','cipher-valid')`,/row-level security/);
+      await database.exec(`select set_config('request.jwt.claim.sub','${admin}',true); select public.set_space_ban('${space}','${member}',true);`);
+      expect((await database.query("select * from public.space_members where space_id=$1 and user_id=$2",[space,member])).rows).toHaveLength(0);
+      await database.exec(`select set_config('request.jwt.claim.sub','${member}',true);`);
+      expect((await database.query("select * from public.encrypted_messages where id=$1",[message])).rows).toHaveLength(0);
+      await denied(`select public.toggle_message_reaction('${message}','ok')`,/reaction_forbidden/);
+    } finally {await database.exec("rollback;");}
+  });
+
 });

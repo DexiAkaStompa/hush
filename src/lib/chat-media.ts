@@ -26,12 +26,20 @@ export function validateChatImage(file: Pick<File, "type" | "size">) {
   }
 }
 
-export async function uploadEncryptedChatImage(
+export function validateChatFile(file: Pick<File, "type" | "size">) {
+  if (file.size < 1 || file.size > CHAT_IMAGE_LIMIT - 16) throw new Error("Il file deve essere compreso tra 1 byte e 16 MB.");
+}
+export async function uploadEncryptedChatImage(file: File, conversationId: string, roomKey: CryptoKey): Promise<ChatAttachmentMeta> {
+  validateChatImage(file);
+  return uploadEncryptedChatFile(file, conversationId, roomKey);
+}
+
+export async function uploadEncryptedChatFile(
   file: File,
   conversationId: string,
   roomKey: CryptoKey,
 ): Promise<ChatAttachmentMeta> {
-  validateChatImage(file);
+  validateChatFile(file);
 
   const buffer = await file.arrayBuffer();
   const context = `hush:attachment:${conversationId}`;
@@ -41,7 +49,7 @@ export async function uploadEncryptedChatImage(
 
   if (isSharedMediaConfigured) {
     const driveId = await uploadSharedMedia(conversationId, fileId, ciphertext);
-    return { id: fileId, path: `gdrive-shared:${driveId}`, name: file.name || "immagine", type: file.type, size: file.size, iv, storage: "gdrive-shared", gdrive_file_id: driveId };
+    return { id: fileId, path: `gdrive-shared:${driveId}`, name: file.name || "immagine", type: file.type || "application/octet-stream", size: file.size, iv, storage: "gdrive-shared", gdrive_file_id: driveId };
   }
 
   // If Google Drive 5TB storage is active in desktop app, upload there
@@ -60,7 +68,7 @@ export async function uploadEncryptedChatImage(
         id: fileId,
         path: `gdrive:${gdriveResult.fileId}`,
         name: file.name || "immagine",
-        type: file.type,
+        type: file.type || "application/octet-stream",
         size: file.size,
         iv,
         storage: "gdrive",
@@ -97,7 +105,7 @@ export async function uploadEncryptedChatImage(
     id: fileId,
     path,
     name: file.name || "immagine",
-    type: file.type,
+    type: file.type || "application/octet-stream",
     size: file.size,
     iv,
     storage: "supabase",
