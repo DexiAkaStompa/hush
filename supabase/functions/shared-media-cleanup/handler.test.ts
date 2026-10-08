@@ -28,6 +28,20 @@ test("unauthorized requests cannot contact Google or delete files", async () => 
   expect(r.status).toBe(401); expect(fetchMock).not.toHaveBeenCalled();
 });
 
+test("scheduled HMAC requests bind the body and reject expired signatures",async()=>{
+  const body='{"dryRun":true}';const timestamp=String(Math.floor(now().getTime()/1000));
+  const key=await crypto.subtle.importKey("raw",new TextEncoder().encode(secret),{name:"HMAC",hash:"SHA-256"},false,["sign"]);
+  const sign=async(time:string,text:string)=>[...new Uint8Array(await crypto.subtle.sign("HMAC",key,new TextEncoder().encode(`hush-drive-cleanup:${time}:${text}`)))].map(byte=>byte.toString(16).padStart(2,"0")).join("");
+  const signed=async(time:string,signedBody:string,actualBody=signedBody)=>new Request("https://cleanup.example",{method:"POST",headers:{"x-hush-cleanup-timestamp":time,"x-hush-cleanup-signature":await sign(time,signedBody)},body:actualBody});
+  const fetchMock=vi.fn(async(input:RequestInfo|URL)=>String(input).includes("oauth2")?Response.json({access_token:"token"}):Response.json({files:[]}));
+  const handler=createCleanupHandler(config,secret,fetchMock,now);
+  expect((await handler(await signed(timestamp,body))).status).toBe(200);
+  fetchMock.mockClear();
+  expect((await handler(await signed(timestamp,body,'{"dryRun":false}'))).status).toBe(401);
+  expect((await handler(await signed(String(Number(timestamp)-121),body))).status).toBe(401);
+  expect(fetchMock).not.toHaveBeenCalled();
+});
+
 test("dry run is the default and never deletes anything", async () => {
   const fetchMock = vi.fn(async (input:RequestInfo|URL) => String(input).includes("oauth2") ? Response.json({access_token:"token"}) : Response.json({files:[oldFile]}));
   const r = await createCleanupHandler(config,secret,fetchMock,now)(request({}));

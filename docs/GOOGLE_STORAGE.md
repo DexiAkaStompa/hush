@@ -101,7 +101,12 @@ remain in chat; their deleted attachments show an unavailable/expired error.
 
 The maintenance key is held in Edge secrets (`SHARED_MEDIA_CLEANUP_SECRET`) and
 Vault (`hush_drive_cleanup_secret`). Ordinary app users cannot read the Vault or
-invoke cleanup. The manual GitHub workflow `Hush Drive cleanup maintenance`
+invoke cleanup. Scheduled calls use a two-minute HMAC signature bound to the
+exact request body, so pg_net's platform-managed queue never stores the persistent
+key. Hosted Supabase does not let project roles revoke the queue's PUBLIC grants;
+the attempted queue-permissions migration is superseded by signed requests.
+The `net` schema must remain outside the Data API's exposed schemas.
+The manual GitHub workflow `Hush Drive cleanup maintenance`
 defaults to a dry run and uses only a separate maintenance key; Google owner
 credentials are never provided to GitHub. It is available for previews or recovery.
 Check Edge Function logs and `cron.job_run_details` after annual runs; if an

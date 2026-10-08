@@ -27,14 +27,38 @@ async function authorized(value: string | null, secret: string): Promise<boolean
   return difference === 0;
 }
 
+async function boundedBody(request: Request): Promise<string> {
+  const reader = request.body?.getReader(); if (!reader) return "";
+  const parts: Uint8Array[] = []; let size = 0;
+  try {
+    while (true) { const next = await reader.read(); if (next.done) break; size += next.value.byteLength; if (size > 4096) {await reader.cancel(); throw new Error("body_too_large");} parts.push(next.value); }
+  } finally {reader.releaseLock();}
+  const bytes = new Uint8Array(size); let offset = 0; for (const part of parts) {bytes.set(part,offset);offset+=part.byteLength;}
+  return new TextDecoder().decode(bytes);
+}
+
+async function validSignature(request: Request, body: string, secret: string, now: Date): Promise<boolean> {
+  const timestamp = request.headers.get("x-hush-cleanup-timestamp") || "";
+  const signature = request.headers.get("x-hush-cleanup-signature") || "";
+  if (!/^\d{10}$/.test(timestamp) || !/^[0-9a-f]{64}$/.test(signature) || secret.length < 32 || Math.abs(now.getTime()/1000-Number(timestamp)) > 120) return false;
+  const key = await crypto.subtle.importKey("raw",new TextEncoder().encode(secret),{name:"HMAC",hash:"SHA-256"},false,["verify"]);
+  const bytes = Uint8Array.from(signature.match(/../g)!,part=>parseInt(part,16));
+  return crypto.subtle.verify("HMAC",key,bytes,new TextEncoder().encode(`hush-drive-cleanup:${timestamp}:${body}`));
+}
+
 export function createCleanupHandler(config: SharedMediaConfig, secret: string, fetchFn: typeof fetch = fetch, now: () => Date = () => new Date()) {
   return async (request: Request) => {
     const reply = (body: unknown, status = 200) => Response.json(body, {status, headers: {"Cache-Control": "no-store"}});
     if (request.method !== "POST") return reply({error: "method_not_allowed"}, 405);
-    if (!(await authorized(request.headers.get("x-hush-cleanup-key"), secret))) return reply({error: "unauthorized"}, 401);
-    if (!/^[\w-]{10,256}$/.test(config.googleFolderId)) return reply({error: "storage_unconfigured"}, 503);
     try {
-      const input = await request.json() as {dryRun?: boolean; cursor?: string};
+      const direct = await authorized(request.headers.get("x-hush-cleanup-key"), secret);
+      const timestamp = request.headers.get("x-hush-cleanup-timestamp") || "";
+      const signature = request.headers.get("x-hush-cleanup-signature") || "";
+      if (!direct && (!/^\d{10}$/.test(timestamp) || !/^[0-9a-f]{64}$/.test(signature) || Math.abs(now().getTime()/1000-Number(timestamp)) > 120)) return reply({error:"unauthorized"},401);
+      const body = await boundedBody(request);
+      if (!direct && !(await validSignature(request,body,secret,now()))) return reply({error:"unauthorized"},401);
+      if (!/^[\w-]{10,256}$/.test(config.googleFolderId)) return reply({error: "storage_unconfigured"}, 503);
+      const input = JSON.parse(body) as {dryRun?: boolean; cursor?: string};
       if (input.dryRun !== undefined && typeof input.dryRun !== "boolean") return reply({error: "invalid_request"}, 400);
       if (input.cursor !== undefined && (typeof input.cursor !== "string" || input.cursor.length > 2048 || !/^[\w+=/-]*$/.test(input.cursor))) return reply({error: "invalid_cursor"}, 400);
       const dryRun = input.dryRun !== false;
