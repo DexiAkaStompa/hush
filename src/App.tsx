@@ -308,6 +308,9 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [pendingPreview, setPendingPreview] = useState<string | null>(null);
   const [uploadingMedia, setUploadingMedia] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const uploadController = useRef<AbortController | null>(null);
+  useEffect(() => () => uploadController.current?.abort(), []);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const messageEnd = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -1124,11 +1127,14 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
     if ((!cleanDraft && !pendingFile) || !canWrite || !roomKey || !activeConversation || uploadingMedia) return;
     try {
       setUploadingMedia(true);
+      setUploadProgress(0);
+      const controller = new AbortController(); uploadController.current = controller;
       let attachment: ChatAttachmentMeta | null = null;
       if (pendingFile) {
-        attachment = await uploadEncryptedChatFile(pendingFile, activeConversation.id, roomKey);
+        attachment = await uploadEncryptedChatFile(pendingFile, activeConversation.id, roomKey, {signal: controller.signal, onProgress: setUploadProgress});
       }
       const id = crypto.randomUUID();
+      controller.signal.throwIfAborted();
       const context = `hush:conversation:${activeConversation.id}:epoch:0`;
       const packed = packMessageContent(cleanDraft, attachment, replyingTo?.id);
       const encrypted = await encryptText(packed, roomKey, context);
@@ -1169,9 +1175,10 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
       }
       void playChatSound("send");
     } catch (error) {
-      setToast(readableError(error));
+      setToast(error instanceof DOMException && error.name === "AbortError" ? "Caricamento annullato" : readableError(error));
     } finally {
       setUploadingMedia(false);
+      uploadController.current = null;
     }
   };
 
@@ -1480,18 +1487,19 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
               {pendingPreview && pendingFile ? (
                 <div className="composer-attachment-preview">
                   <div className="composer-attachment-thumb">
-                    {pendingFile.type.startsWith("image/") ? <img src={pendingPreview} alt="Anteprima" /> : <ImagePlus size={22}/>}
+                    {pendingFile.type.startsWith("image/") && pendingFile.size <= 16 * 1024 * 1024 ? <img src={pendingPreview} alt="Anteprima" /> : <ImagePlus size={22}/>}
                   </div>
                   <div className="composer-attachment-info">
                     <span className="composer-attachment-name">{pendingFile.name}</span>
                     <span className="composer-attachment-size">{(pendingFile.size / 1024).toFixed(1)} KB</span>
+                    <span className="composer-attachment-size" role="status">{uploadingMedia ? `Caricamento ${Math.round(uploadProgress * 100)}%` : "Pulizia annuale dopo 12 mesi"}</span>
                   </div>
                   <button
                     type="button"
                     className="composer-attachment-remove"
-                    onClick={clearPendingFile}
-                    disabled={uploadingMedia}
-                    aria-label="Rimuovi allegato"
+                    onClick={() => uploadingMedia ? uploadController.current?.abort() : clearPendingFile()}
+                    disabled={uploadingMedia && uploadProgress === 1}
+                    aria-label={uploadingMedia ? "Annulla caricamento" : "Rimuovi allegato"}
                   >
                     <X size={14} />
                   </button>
@@ -1521,7 +1529,7 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
                   onClick={() => fileInputRef.current?.click()}
                   disabled={!canWrite || keyStatus !== "ready" || uploadingMedia}
                   aria-label="Allega file"
-                  title="Allega un file fino a 16 MB"
+                  title="Allega un file · pulizia annuale dopo 12 mesi"
                 >
                   <ImagePlus size={19} />
                 </button>

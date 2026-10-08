@@ -136,6 +136,8 @@ function windowForEvent(event) {
   return candidate && candidate === mainWindow && event.senderFrame === event.sender.mainFrame && isTrustedUrl(event.senderFrame.url) ? candidate : null;
 }
 
+require("./attachment-downloads.cjs").registerAttachmentDownloads({ ipcMain, dialog, windowForEvent });
+
 ipcMain.handle("clipboard:write", (event, text) => {
   if (!windowForEvent(event) || typeof text !== "string" || text.length > 16384) throw new Error("Richiesta appunti non valida.");
   clipboard.writeText(text);

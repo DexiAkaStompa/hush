@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Download, Eye, Image as ImageIcon, Loader2, X } from "lucide-react";
 import { downloadAndDecryptChatImage, releaseChatMediaCacheEntry, type ChatAttachmentMeta } from "../lib/chat-media";
+import { saveChatAttachment } from "../lib/media-download";
 
 export function ChatAttachment({
   attachment,
@@ -24,9 +25,21 @@ export function ChatAttachment({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lightbox, setLightbox] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState<number | null>(null);
+  const downloadController = useRef<AbortController | null>(null);
+  const previewable = attachment.type.startsWith("image/") && attachment.encryption !== "chunked-v1";
+  useEffect(() => () => downloadController.current?.abort(), []);
+  const download = async () => {
+    if (!roomKey || downloadController.current) return;
+    const controller = new AbortController(); downloadController.current = controller;
+    setError(null); setDownloadProgress(0);
+    try { await saveChatAttachment(attachment, conversationId, roomKey, {signal: controller.signal, onProgress: setDownloadProgress}); }
+    catch (err) { if (!(err instanceof DOMException && err.name === "AbortError")) setError(err instanceof Error ? err.message : "Download non riuscito."); }
+    finally { downloadController.current = null; setDownloadProgress(null); }
+  };
 
   useEffect(() => {
-    if (!roomKey || !nearViewport) {setUrl(null); setLoading(true); return;}
+    if (!previewable || !roomKey || !nearViewport) {setUrl(null); setLoading(previewable); return;}
     let active = true;
     let acquiredUrl: string | null = null;
     setLoading(true);
@@ -52,7 +65,7 @@ export function ChatAttachment({
       active = false;
       if (acquiredUrl) releaseChatMediaCacheEntry(attachment.path, acquiredUrl);
     };
-  }, [attachment, conversationId, roomKey, nearViewport]);
+  }, [attachment, conversationId, roomKey, nearViewport, previewable]);
 
   const formatSize = (bytes: number) => {
     if (bytes < 1024) return `${bytes} B`;
@@ -62,7 +75,7 @@ export function ChatAttachment({
 
   return (
     <div className="chat-attachment-container" ref={containerRef}>
-      {loading ? (
+      {!previewable ? <div className="chat-file-card"><ImageIcon size={20}/><span>{attachment.name} · {formatSize(attachment.size)}<small className="attachment-retention">Pulizia annuale dopo 12 mesi</small>{error ? <small role="alert">{error}</small> : null}</span>{downloadProgress !== null ? <><span role="status">{Math.round(downloadProgress * 100)}%</span><button type="button" className="lightbox-btn" onClick={() => downloadController.current?.abort()} aria-label="Annulla download"><X size={18}/></button></> : <button type="button" className="lightbox-btn" disabled={!roomKey} onClick={() => void download()} aria-label={`Scarica ${attachment.name}`}><Download size={18}/></button>}</div> : loading ? (
         <div className="chat-attachment-loading">
           <Loader2 size={18} className="attachment-spinner" />
           <span>Decifratura allegato…</span>

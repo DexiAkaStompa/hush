@@ -39,6 +39,7 @@
 @media(prefers-reduced-transparency:reduce) {.message-options,.message-toolbar {backdrop-filter:none!important;background:var(--panel)!important;}}
 
 .chat-file-card {display:flex;align-items:center;gap:12px;padding:14px;border:1px solid var(--line);background:var(--panel);border-radius:12px;width:fit-content;max-width:100%;font-size:12px;}.chat-file-card span {overflow-wrap:anywhere;}.chat-file-card a {color:var(--blue);padding:8px;}
+.attachment-retention {display:block;margin-top:4px;color:var(--muted);font-size:11px;}
 
 .server-icon {position:relative}.server-unread-dot {position:absolute;right:3px;top:3px;width:8px;height:8px;background:var(--blue);border-radius:50%;}.mention-suggestions {display:flex;gap:6px;flex-wrap:wrap;margin:0 22px 5px;padding:6px;border:1px solid var(--line);background:var(--panel);border-radius:12px}.mention-suggestions button {display:flex;gap:6px;background:transparent;color:var(--frost);border:0;padding:8px;border-radius:7px;cursor:pointer}.mention-suggestions span {color:var(--muted)}
 

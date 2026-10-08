@@ -15,7 +15,7 @@ function mockFetch(options: { member?: boolean; metadata?: Record<string, unknow
     if (url.includes("/rest/v1/conversation_members")) return new Response(JSON.stringify(options.member === false ? [] : [{ user_id: userId }]), { status: 200 });
     if (url === "https://oauth2.googleapis.com/token") return new Response(JSON.stringify({ access_token: "access", expires_in: 3600 }), { status: 200 });
     if (url.includes("/upload/drive/v3/files")) return new Response(JSON.stringify({ id: fileId }), { status: 200 });
-    if (url.includes("/drive/v3/files/") && url.includes("fields=")) return new Response(JSON.stringify(options.metadata === undefined ? { id: fileId, size: "17", parents: [folderId], appProperties: { conversationId, attachmentId } } : options.metadata), { status: options.metadata === null ? 404 : 200 });
+    if (url.includes("/drive/v3/files/") && url.includes("fields=")) return new Response(JSON.stringify(options.metadata === undefined ? { id: fileId, size: "17", parents: [folderId], appProperties: { conversationId, attachmentId, uploaderId:userId } } : options.metadata), { status: options.metadata === null ? 404 : 200 });
     if (url.includes("alt=media")) return new Response(options.media || new Uint8Array(17).fill(1), { status: 200 });
     throw new Error(`unexpected URL ${url}`);
   }) as typeof fetch;
@@ -24,6 +24,34 @@ function mockFetch(options: { member?: boolean; metadata?: Record<string, unknow
 function request(method: "GET" | "POST", path: string, body?: BodyInit) { return new Request(`https://functions.example/shared-media${path}`, { method, body, headers: { authorization: "Bearer user-token", apikey: "public", origin: "hush://app", ...(body ? { "content-type": "application/octet-stream" } : {}) } }); }
 
 afterEach(() => resetTokenCacheForTests());
+
+it("repeated encrypted chunk uploads reuse the existing file and reject conflicting data", async () => {
+  const bytes=new Uint8Array(29).fill(7);
+  const checksum=[...new Uint8Array(await crypto.subtle.digest("SHA-256",bytes))].map(byte=>byte.toString(16).padStart(2,"0")).join("");
+  const base=mockFetch();
+  const fetchMock=vi.fn(async(input:RequestInfo|URL,init?:RequestInit)=>String(input).includes("/files?")?Response.json({files:[{id:fileId,sha256Checksum:checksum}]}):base(input,init)) as typeof fetch;
+  const handler=createHandler(config,fetchMock);
+  const response=await handler(request("POST",`?conversationId=${conversationId}&attachmentId=${attachmentId}&chunkIndex=0`,bytes));
+  expect(await response.json()).toEqual({fileId});
+  expect(fetchMock).not.toHaveBeenCalledWith(expect.stringContaining("upload/drive"),expect.anything());
+  expect((await handler(request("POST",`?conversationId=${conversationId}&attachmentId=${attachmentId}&chunkIndex=0`,new Uint8Array(29).fill(8)))).status).toBe(409);
+});
+
+it("chunk downloads validate the manifest and the selected chunk's conversation and folder", async () => {
+  const base = mockFetch();
+  const chunkId = "chunk_123456789";
+  const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.includes("/files?")) return Response.json({files:[{id:chunkId}]});
+    if (url.includes(chunkId) && url.includes("fields=")) return Response.json({id:chunkId,size:"17",parents:[folderId],appProperties:{conversationId,attachmentId,uploaderId:userId,chunkIndex:"0"}});
+    return base(input,init);
+  }) as typeof fetch;
+  expect((await createHandler(config,fetchMock)(request("GET",`?conversationId=${conversationId}&fileId=${fileId}&chunkIndex=0`))).status).toBe(200);
+  expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining(`/files/${chunkId}?alt=media`),expect.anything());
+  expect((await createHandler(config,fetchMock)(request("GET",`?conversationId=${conversationId}&fileId=${fileId}&chunkIndex=-1`))).status).toBe(400);
+  const crossed = vi.fn(async(input:RequestInfo|URL,init?:RequestInit) => String(input).includes(chunkId)&&String(input).includes("fields=") ? Response.json({id:chunkId,size:"17",parents:[folderId],appProperties:{conversationId:"other",attachmentId,chunkIndex:"0"}}) : fetchMock(input,init)) as typeof fetch;
+  expect((await createHandler(config,crossed)(request("GET",`?conversationId=${conversationId}&fileId=${fileId}&chunkIndex=0`))).status).toBe(404);
+});
 
 describe("shared media handler", () => {
   it("rejects unauthenticated requests before membership or Google calls", async () => {
@@ -46,7 +74,7 @@ describe("shared media handler", () => {
   });
 
   it("rejects a Drive file from another folder or conversation", async () => {
-    const fetchMock = mockFetch({ metadata: { id: fileId, size: "17", parents: ["other_folder"], appProperties: { conversationId, attachmentId } } });
+    const fetchMock = mockFetch({ metadata: { id: fileId, size: "17", parents: ["other_folder"], appProperties: { conversationId, attachmentId, uploaderId:userId } } });
     const response = await createHandler(config, fetchMock)(request("GET", `?conversationId=${conversationId}&fileId=${fileId}`));
     expect(response.status).toBe(404); expect(fetchMock).not.toHaveBeenCalledWith(expect.stringContaining("alt=media"), expect.anything());
   });

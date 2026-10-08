@@ -20,7 +20,7 @@ function desktopHarness() {
     Notification: class { constructor() {} show() {} on() {} static isSupported() { return true; } },
   };
   const context: Record<string, any> = {
-    require: (name: string) => name === "electron" ? electron : name === "electron-updater" ? { autoUpdater: updater } : {},
+    require: (name: string) => name === "electron" ? electron : name === "electron-updater" ? { autoUpdater: updater } : name === "./attachment-downloads.cjs" ? {registerAttachmentDownloads() {}} : {},
     process: { env: {}, platform: "win32" }, setInterval: () => ({ unref() {} }), setImmediate: (fn: () => void) => fn(),
     URL, Response, console,
   };

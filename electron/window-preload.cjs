@@ -29,6 +29,10 @@ contextBridge.exposeInMainWorld("hushWindow", {
   isGDriveConfigured: () => ipcRenderer.invoke("gdrive:is-configured"),
   uploadGDriveMedia: (payload) => ipcRenderer.invoke("gdrive:upload", payload),
   downloadGDriveMedia: (payload) => ipcRenderer.invoke("gdrive:download", payload),
+  beginAttachmentSave: (name) => ipcRenderer.invoke("attachment:save-begin", name),
+  writeAttachmentSave: (token, index, bytes) => ipcRenderer.invoke("attachment:save-write", token, index, bytes),
+  finishAttachmentSave: (token) => ipcRenderer.invoke("attachment:save-finish", token),
+  abortAttachmentSave: (token) => ipcRenderer.invoke("attachment:save-abort", token),
   getGDriveSetupCode: () => ipcRenderer.invoke("gdrive:get-setup-code"),
   importGDriveSetupCode: (code) => ipcRenderer.invoke("gdrive:import-setup-code", code),
 });

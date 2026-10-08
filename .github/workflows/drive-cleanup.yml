@@ -1,0 +1,33 @@
+name: Hush Drive cleanup maintenance
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Preview only; do not delete files"
+        type: boolean
+        required: true
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: annual-drive-cleanup
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Remove Hush attachments older than twelve months
+        env:
+          SHARED_MEDIA_CLEANUP_URL: ${{ vars.SHARED_MEDIA_CLEANUP_URL }}
+          SHARED_MEDIA_CLEANUP_SECRET: ${{ secrets.SHARED_MEDIA_CLEANUP_SECRET }}
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run && 'true' || 'false' }}
+        run: node scripts/cleanup-drive.mjs

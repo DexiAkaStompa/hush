@@ -8,7 +8,7 @@ beforeEach(() => {
   vi.stubEnv("VITE_SHARED_MEDIA_URL", "https://example.supabase.co/functions/v1/shared-media");
   mocks.session.mockResolvedValue({ data: { session: { access_token: "test-user-jwt" } }, error: null });
 });
-afterEach(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals(); });
+afterEach(() => { vi.useRealTimers(); vi.unstubAllEnvs(); vi.unstubAllGlobals(); });
 
 test("shared upload sends ciphertext with user auth and accepts a private file ID", async () => {
   const fetchMock = vi.fn().mockResolvedValue(Response.json({ fileId: "private-file-id" }));
@@ -64,4 +64,16 @@ test("invalid upload IDs are rejected", async () => {
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ fileId: "https://public.example/file" })));
   const { uploadSharedMedia } = await import("./shared-media");
   await expect(uploadSharedMedia("conversation", "attachment", new ArrayBuffer(1))).rejects.toThrow("non valida");
+});
+
+test("temporary failures retry the same encrypted chunk", async () => {
+  vi.useFakeTimers();
+  const fetchMock = vi.fn().mockResolvedValueOnce(new Response("busy", {status:429})).mockResolvedValueOnce(Response.json({fileId:"private-file-id"}));
+  vi.stubGlobal("fetch",fetchMock);
+  const {uploadSharedMedia} = await import("./shared-media");
+  const result = uploadSharedMedia("conversation","attachment",new Uint8Array([1,2,3]).buffer,0);
+  await vi.advanceTimersByTimeAsync(1100);
+  expect(await result).toBe("private-file-id");
+  expect(fetchMock).toHaveBeenCalledTimes(2);
+  expect(fetchMock.mock.calls[0][1].body).toBe(fetchMock.mock.calls[1][1].body);
 });

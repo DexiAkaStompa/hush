@@ -1,6 +1,7 @@
 import { decryptBinary, encryptBinary } from "./crypto";
 import { supabase } from "./supabase";
 import { downloadSharedMedia, isSharedMediaConfigured, uploadSharedMedia } from "./shared-media";
+import { uploadChunkedMedia, type TransferOptions } from "./chunked-media";
 
 export type ChatAttachmentMeta = {
   id: string;
@@ -12,6 +13,7 @@ export type ChatAttachmentMeta = {
   storage?: "supabase" | "gdrive" | "gdrive-shared";
   gdrive_file_id?: string;
   download_url?: string;
+  encryption?: "chunked-v1";
 };
 
 export const CHAT_IMAGE_LIMIT = 16 * 1024 * 1024;
@@ -21,13 +23,12 @@ export function validateChatImage(file: Pick<File, "type" | "size">) {
   if (!ALLOWED_MIME_TYPES.has(file.type)) {
     throw new Error("Scegli un'immagine PNG, JPG, GIF o WebP.");
   }
-  if (file.size === 0 || file.size > CHAT_IMAGE_LIMIT) {
-    throw new Error("L'immagine deve essere compresa tra 1 byte e 16 MB.");
-  }
+  validateChatFile(file);
 }
 
 export function validateChatFile(file: Pick<File, "type" | "size">) {
-  if (file.size < 1 || file.size > CHAT_IMAGE_LIMIT - 16) throw new Error("Il file deve essere compreso tra 1 byte e 16 MB.");
+  if (!Number.isSafeInteger(file.size) || file.size < 1) throw new Error("Scegli un file non vuoto.");
+  if (!isSharedMediaConfigured && file.size > CHAT_IMAGE_LIMIT - 16) throw new Error("Aggiorna Hush per caricare file oltre 16 MB sul Drive condiviso.");
 }
 export async function uploadEncryptedChatImage(file: File, conversationId: string, roomKey: CryptoKey): Promise<ChatAttachmentMeta> {
   validateChatImage(file);
@@ -38,17 +39,24 @@ export async function uploadEncryptedChatFile(
   file: File,
   conversationId: string,
   roomKey: CryptoKey,
+  options: TransferOptions = {},
 ): Promise<ChatAttachmentMeta> {
   validateChatFile(file);
+
+  const fileId = crypto.randomUUID();
+  if (isSharedMediaConfigured && file.size > CHAT_IMAGE_LIMIT - 16) {
+    const result = await uploadChunkedMedia(file, conversationId, fileId, roomKey, options);
+    return { id: fileId, path: `gdrive-shared:${result.fileId}`, name: file.name || "file", type: file.type || "application/octet-stream", size: file.size, iv: result.iv, storage: "gdrive-shared", gdrive_file_id: result.fileId, encryption: "chunked-v1" };
+  }
+  options.signal?.throwIfAborted();
 
   const buffer = await file.arrayBuffer();
   const context = `hush:attachment:${conversationId}`;
   const { iv, ciphertext } = await encryptBinary(buffer, roomKey, context);
 
-  const fileId = crypto.randomUUID();
-
   if (isSharedMediaConfigured) {
-    const driveId = await uploadSharedMedia(conversationId, fileId, ciphertext);
+    const driveId = await uploadSharedMedia(conversationId, fileId, ciphertext, undefined, options.signal);
+    options.onProgress?.(1);
     return { id: fileId, path: `gdrive-shared:${driveId}`, name: file.name || "immagine", type: file.type || "application/octet-stream", size: file.size, iv, storage: "gdrive-shared", gdrive_file_id: driveId };
   }
 

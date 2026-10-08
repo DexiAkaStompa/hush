@@ -103,7 +103,7 @@ async function isMember(userId: string, conversationId: string, authorization: s
   return Array.isArray(rows) && rows.length > 0;
 }
 
-async function googleToken(config: SharedMediaConfig, fetchFn: FetchLike): Promise<string> {
+export async function googleToken(config: SharedMediaConfig, fetchFn: FetchLike): Promise<string> {
   if (tokenState && tokenState.expiresAt > Date.now() + 30_000) return tokenState.value;
   if (tokenFlight) return tokenFlight;
   tokenFlight = (async () => {
@@ -139,6 +139,8 @@ export function createHandler(config: SharedMediaConfig, fetchFn: FetchLike = fe
       const conversationId = url.searchParams.get("conversationId");
       if (!validUuid(conversationId)) return bad(400, "invalid_conversation", headers);
       if (!(await isMember(userId, conversationId, request.headers.get("authorization") || "", config, fetchFn))) return bad(403, "forbidden", headers);
+      const rawChunkIndex = url.searchParams.get("chunkIndex");
+      if (rawChunkIndex !== null && (!/^\d{1,10}$/.test(rawChunkIndex) || Number(rawChunkIndex) > 0xffffffff)) return bad(400, "invalid_chunk", headers);
       if (request.method === "POST") {
         const attachmentId = url.searchParams.get("attachmentId");
         if (!validUuid(attachmentId)) return bad(400, "invalid_attachment", headers);
@@ -147,8 +149,20 @@ export function createHandler(config: SharedMediaConfig, fetchFn: FetchLike = fe
         if (!bytes || bytes.byteLength < 17) return bad(413, "media_too_large", headers);
         if (!config.googleFolderId) return bad(503, "storage_unconfigured", headers);
         const token = await googleToken(config, fetchFn);
+        if (rawChunkIndex !== null) {
+          const folder = config.googleFolderId.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+          const query = new URLSearchParams({q: `'${folder}' in parents and trashed = false and appProperties has { key='conversationId' and value='${conversationId}' } and appProperties has { key='attachmentId' and value='${attachmentId}' } and appProperties has { key='uploaderId' and value='${userId}' } and appProperties has { key='chunkIndex' and value='${Number(rawChunkIndex)}' }`,fields:"files(id,sha256Checksum)",orderBy:"createdTime",pageSize:"1"});
+          const listed = await fetchFn(`https://www.googleapis.com/drive/v3/files?${query}`, {headers:{Authorization:`Bearer ${token}`}});
+          if (!listed.ok) return bad(502, "storage_upload_failed", headers);
+          const previous = await listed.json() as {files?: {id?:string;sha256Checksum?:string}[]};
+          if (previous.files?.length) {
+            const hash = [...new Uint8Array(await crypto.subtle.digest("SHA-256", bytes))].map(byte=>byte.toString(16).padStart(2,"0")).join("");
+            if (previous.files[0].sha256Checksum !== hash || !requireFileId(previous.files[0].id || null)) return bad(409,"chunk_conflict",headers);
+            return json({fileId:previous.files[0].id},200,headers);
+          }
+        }
         const boundary = `hush-${crypto.randomUUID()}`;
-        const metadata = JSON.stringify({ name: `${conversationId}-${attachmentId}.bin`, parents: [config.googleFolderId], mimeType: "application/octet-stream", appProperties: { conversationId, attachmentId } });
+        const metadata = JSON.stringify({ name: `${conversationId}-${attachmentId}${rawChunkIndex === null ? "" : `-part-${rawChunkIndex}`}.bin`, parents: [config.googleFolderId], mimeType: "application/octet-stream", appProperties: { conversationId, attachmentId, uploaderId:userId, ...(rawChunkIndex === null ? {} : { chunkIndex: String(Number(rawChunkIndex)) }) } });
         const body = new Uint8Array(new TextEncoder().encode(`--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadata}\r\n--${boundary}\r\nContent-Type: application/octet-stream\r\n\r\n`).byteLength + bytes.byteLength + (`\r\n--${boundary}--`).length);
         let offset = 0; const put = (part: Uint8Array) => { body.set(part, offset); offset += part.byteLength; };
         put(new TextEncoder().encode(`--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadata}\r\n--${boundary}\r\nContent-Type: application/octet-stream\r\n\r\n`)); put(bytes); put(new TextEncoder().encode(`\r\n--${boundary}--`));
@@ -160,11 +174,26 @@ export function createHandler(config: SharedMediaConfig, fetchFn: FetchLike = fe
       const fileId = url.searchParams.get("fileId");
       if (!requireFileId(fileId)) return bad(400, "invalid_file", headers);
       const token = await googleToken(config, fetchFn);
-      const metadata = await driveMetadata(fileId, token, fetchFn);
+      let metadata = await driveMetadata(fileId, token, fetchFn);
       if (!metadata || metadata.trashed || !metadata.parents?.includes(config.googleFolderId) || metadata.appProperties?.conversationId !== conversationId) return bad(404, "file_not_found", headers);
+      let downloadId = fileId;
+      if (rawChunkIndex !== null) {
+        const attachmentId = metadata.appProperties?.attachmentId;
+        const uploaderId = metadata.appProperties?.uploaderId;
+        if (!validUuid(attachmentId || null) || !validUuid(uploaderId || null) || metadata.appProperties?.chunkIndex !== undefined) return bad(404, "file_not_found", headers);
+        const folder = config.googleFolderId.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+        const query = new URLSearchParams({q: `'${folder}' in parents and trashed = false and appProperties has { key='conversationId' and value='${conversationId}' } and appProperties has { key='attachmentId' and value='${attachmentId}' } and appProperties has { key='uploaderId' and value='${uploaderId}' } and appProperties has { key='chunkIndex' and value='${Number(rawChunkIndex)}' }`, fields: "files(id)", orderBy:"createdTime", pageSize: "1"});
+        const listed = await fetchFn(`https://www.googleapis.com/drive/v3/files?${query}`, {headers: {Authorization: `Bearer ${token}`}});
+        if (!listed.ok) return bad(502, "storage_download_failed", headers);
+        const result = await listed.json() as {files?: {id?: string}[]};
+        if (result.files?.length !== 1 || !requireFileId(result.files[0].id || null)) return bad(404, "file_not_found", headers);
+        downloadId = result.files[0].id!;
+        metadata = await driveMetadata(downloadId, token, fetchFn);
+        if (!metadata || metadata.trashed || !metadata.parents?.includes(config.googleFolderId) || metadata.appProperties?.conversationId !== conversationId || metadata.appProperties?.attachmentId !== attachmentId || metadata.appProperties?.uploaderId !== uploaderId || metadata.appProperties?.chunkIndex !== String(Number(rawChunkIndex))) return bad(404, "file_not_found", headers);
+      }
       const size = Number(metadata.size);
       if (!Number.isSafeInteger(size) || size < 17 || size > MAX_MEDIA_BYTES) return bad(413, "media_too_large", headers);
-      const response = await fetchFn(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media`, { headers: { Authorization: `Bearer ${token}` } });
+      const response = await fetchFn(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(downloadId)}?alt=media`, { headers: { Authorization: `Bearer ${token}` } });
       if (!response.ok || !response.body) return bad(502, "storage_download_failed", headers);
       const bytes = await readBoundedStream(response.body);
       if (!bytes) return bad(413, "media_too_large", headers);

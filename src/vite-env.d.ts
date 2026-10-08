@@ -24,6 +24,10 @@ interface HushWindowControls {
     downloadUrl: string;
   }>;
   downloadGDriveMedia?: (payload: { fileId: string; downloadUrl?: string }) => Promise<number[] | Uint8Array>;
+  beginAttachmentSave?: (name: string) => Promise<string | null>;
+  writeAttachmentSave?: (token: string, index: number, bytes: Uint8Array) => Promise<void>;
+  finishAttachmentSave?: (token: string) => Promise<void>;
+  abortAttachmentSave?: (token: string) => Promise<void>;
   getGDriveSetupCode?: () => Promise<string>;
   importGDriveSetupCode?: (code: string) => Promise<boolean>;
 }
