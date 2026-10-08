@@ -282,6 +282,15 @@ export function readableError(error: unknown) {
   const details = typeof candidate?.details === "string" ? candidate.details : "";
   const hint = typeof candidate?.hint === "string" ? candidate.hint : "";
   const translations: Record<string, string> = {
+    space_banned: "Non puoi usare questo invito: sei stato escluso dal server.",
+    cannot_manage_admin: "Non puoi modificare il proprietario o un amministratore dello stesso livello.",
+    cannot_manage_self: "Non puoi modificare il tuo ruolo da qui.",
+    invalid_member_role: "Solo il proprietario può nominare un amministratore.",
+    invalid_channel_category: "La categoria deve appartenere a questo server.",
+    message_edit_forbidden: "Non puoi modificare questo messaggio con i permessi attuali.",
+    message_delete_forbidden: "Puoi eliminare soltanto i tuoi messaggi.",
+    reaction_forbidden: "Non hai più accesso a questo messaggio.",
+    pin_forbidden: "Non hai più accesso a questo messaggio.",
     invalid_space_name: "Il nome del server deve contenere da 1 a 80 caratteri.",
     invalid_channel_name: "Il nome del canale non è valido.",
     channel_already_exists: "Esiste già un canale con questo nome.",

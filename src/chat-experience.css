@@ -53,3 +53,6 @@
 /* Popups escape message paint containment and keep their clickable area. */
 .chat-message:has(.message-options,.message-reaction-picker) {content-visibility:visible;contain:none;z-index:20;}
 .modal-backdrop,.modal-card { -webkit-app-region:no-drag; }
+
+.message-options,.message-reaction-picker {position:fixed;right:auto;z-index:100;}
+.message-reaction-picker .emoji-picker-popover {position:relative;inset:auto;transform:none;width:min(320px,calc(100vw - 16px));}
