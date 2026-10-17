@@ -29,6 +29,8 @@ import {
   X,
 } from "lucide-react";
 import { AuthScreen } from "./components/AuthScreen";
+import {CommunityIdentityEditor} from "./components/CommunityIdentityEditor";
+import {identityColor,safeCommunityImage,saveCommunityIdentity,type CommunityIdentity} from "./lib/community-identity";
 import { BrandMark } from "./components/BrandMark";
 import { DotPattern } from "./components/DotPattern";
 import { EncryptedLabel } from "./components/EncryptedLabel";
@@ -213,6 +215,9 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
   const [allTextConversations, setAllTextConversations] = useState<Conversation[]>([]);
   const [categories, setCategories] = useState<Array<{id:string;name:string;position:number}>>([]);
   const [mySpaceRole, setMySpaceRole] = useState("member");
+  const [collapsedCategories,setCollapsedCategories]=useState<Set<string>>(new Set());
+  const [confirmAction,setConfirmAction]=useState<{title:string;description:string;label:string;action:()=>Promise<void>}|null>(null);
+  const [identityTarget,setIdentityTarget]=useState<{kind:"space"|"conversation";id:string;value:CommunityIdentity;readOnly:boolean}|null>(null);
   const [showPins, setShowPins] = useState(false);
   const [remoteStatuses, setRemoteStatuses] = useState<Record<string, string>>({});
   const [typingUsers, setTypingUsers] = useState<Record<string, number>>({});
@@ -454,7 +459,8 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
   };
   useEffect(() => {searchGenerationRef.current++; setSearchingHistory(false); setHistoryResults(null); setHistoryNotice("");}, [search, activeConversationId]);
   useEffect(() => {
-    if (!activeSpaceId || !supabase) {setCategories([]); return;}
+    if (!activeSpaceId || !supabase) {setCategories([]); setMySpaceRole("member"); return;}
+    setMySpaceRole("member");
     let current=true;
     void Promise.all([
       supabase.from("space_categories").select("id,name,position").eq("space_id",activeSpaceId).order("position"),
@@ -468,7 +474,18 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
     void supabase.from("conversations").select("id,space_id,kind,name,created_by").eq("kind","channel").limit(500).then(({data})=>{if(current) setAllTextConversations((data??[]) as Conversation[]);});
     return ()=>{current=false;};
   }, [spaces, channels]);
+  const canManageSpace = activeSpace?.owner_id===session.user.id || ["owner","admin"].includes(mySpaceRole);
   const canWrite = activeConversation?.send_permission !== "admins" || mySpaceRole === "owner" || mySpaceRole === "admin";
+  useEffect(()=>{
+    if(!supabase)return;
+    const channel=supabase.channel(`community-identity:${session.user.id}`)
+      .on("postgres_changes",{event:"UPDATE",schema:"public",table:"spaces"},payload=>setSpaces(current=>current.map(space=>space.id===payload.new.id?{...space,...payload.new}:space)))
+      .on("postgres_changes",{event:"UPDATE",schema:"public",table:"conversations"},payload=>{
+        setChannels(current=>current.map(room=>room.id===payload.new.id?{...room,...payload.new}:room));
+        setDirectMessages(current=>current.map(room=>room.id===payload.new.id?{...room,...payload.new}:room));
+      }).subscribe();
+    return ()=>{void supabase?.removeChannel(channel);};
+  },[session.user.id]);
   const editMessage = async (message: DecryptedMessage, text: string) => {
     if (!roomKey || !activeConversationId) return;
     const id = activeConversationId;
@@ -561,7 +578,7 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
         const dm = directMessages.find((d) => d.id === row.conversation_id);
         const chan = allTextConversations.find((c) => c.id === row.conversation_id);
         const convName = dm
-          ? (dmDetailsRef.current[dm.id]?.recipient?.display_name || dm.name)
+          ? (dm.identity_customized?dm.name:(dmDetailsRef.current[dm.id]?.recipient?.display_name || dm.name))
           : (chan ? `#${chan.name}` : "Hush");
 
         playMessageNotificationSound();
@@ -1096,29 +1113,30 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
   const leaveOrDeleteSpace = (remove: boolean) => {
     const client = supabase;
     if (!activeSpace || !client) return;
-    if (remove && !window.confirm(`Eliminare definitivamente “${activeSpace.name}” e tutti i suoi messaggi?`)) return;
-    void runAction(async () => {
-      const functionName = remove ? "delete_owned_space" : "leave_space";
-      const { error } = await client.rpc(functionName, { p_space_id: activeSpace.id });
-      if (error) throw error;
-      setActiveConversationId(null);
-      setActiveSpaceId(null);
-      await refreshWorkspace();
-      setModal(null);
-      setToast(remove ? "Server eliminato" : "Hai lasciato il server");
-    });
+    const target=activeSpace;
+    setFormError(null);
+    setConfirmAction({title:remove?`Eliminare “${target.name}”?`:`Lasciare “${target.name}”?`,description:remove?"I canali e i messaggi di questo server verranno eliminati per tutti. L’operazione non può essere annullata.":"Perderai accesso ai canali del server. Per rientrare servirà un nuovo invito.",label:remove?"Elimina server":"Lascia server",action:async()=>{
+      const {error}=await client.rpc(remove?"delete_owned_space":"leave_space",{p_space_id:target.id});
+      if(error)throw error;
+      setSpaces(current=>current.filter(space=>space.id!==target.id));
+      setActiveConversationId(null);setActiveSpaceId(null);setModal(null);
+      setToast(remove?"Server eliminato":"Hai lasciato il server");
+      void refreshWorkspace().catch(error=>setToast(readableError(error)));
+    }});
   };
 
   const deleteChannel = () => {
     const client = supabase;
     if (!activeConversation || !["channel", "voice_channel"].includes(activeConversation.kind) || !client || !activeSpace) return;
-    if (!window.confirm(`Eliminare definitivamente il canale “${activeConversation.name}”?`)) return;
-    void runAction(async () => {
-      const { error } = await client.rpc("delete_space_channel", { p_conversation_id: activeConversation.id });
-      if (error) throw error;
-      await refreshChannels(activeSpace.id);
+    const target=activeConversation,spaceId=activeSpace.id;
+    setFormError(null);
+    setConfirmAction({title:`Eliminare #${target.name}?`,description:"Il canale e i suoi messaggi verranno eliminati per tutti. L’operazione non può essere annullata.",label:"Elimina canale",action:async()=>{
+      const {error}=await client.rpc("delete_space_channel",{p_conversation_id:target.id});
+      if(error)throw error;
+      setChannels(current=>current.filter(room=>room.id!==target.id));setActiveConversationId(null);
       setToast("Canale eliminato");
-    });
+      void refreshChannels(spaceId).catch(error=>setToast(readableError(error)));
+    }});
   };
 
   const sendMessage = async (event: FormEvent) => {
@@ -1195,14 +1213,15 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
         <button className={`brand-mark ${activeSpaceId === null ? "selected" : ""}`} onClick={() => { setActiveSpaceId(null); setActiveConversationId(null); setStage((current) => current.open ? { ...current, expanded: false } : current); }} aria-label="Messaggi diretti" title="Messaggi diretti"><BrandMark size={28} /></button>
         <div className="rail-rule" />
         {spaces.map((space) => (
-          <button className={`server-icon ${activeSpaceId === space.id ? "selected" : ""}`} key={space.id} onClick={() => selectSpace(space.id)} aria-label={space.name} title={space.name}>{initialsFor(space.name)}{allTextConversations.some(conv=>conv.space_id===space.id && (unreads[conv.id]?.unread_count??0)>0) && <i className="server-unread-dot"/>}</button>
+          <button className={`server-icon ${activeSpaceId === space.id ? "selected" : ""}`} key={space.id} onClick={() => selectSpace(space.id)} aria-label={space.name} title={space.name} style={{borderColor:identityColor(space.accent_color)}}>{safeCommunityImage(space.icon_data)?<img className="community-icon-img" src={space.icon_data!} alt=""/>:initialsFor(space.name)}{allTextConversations.some(conv=>conv.space_id===space.id && (unreads[conv.id]?.unread_count??0)>0) && <i className="server-unread-dot"/>}</button>
         ))}
         <button className="server-icon add-server" onClick={() => openModal("space")} aria-label="Crea o unisciti a un server"><Plus size={20} /></button>
       </aside>
 
       <aside className={`channel-sidebar ${sidebarOpen ? "sidebar-open" : ""}`}>
-        <button className="server-title" onClick={() => activeSpace && openModal("server")} disabled={!activeSpace}>
-          <span><span className="eyebrow">spazio privato</span><strong>{activeSpace?.name ?? "Messaggi diretti"}</strong></span>
+        <button style={{"--identity-accent":identityColor(activeSpace?.accent_color)} as import("react").CSSProperties} className={`server-title ${activeSpace?"community-server-title":""}`} onClick={() => activeSpace && openModal("server")} disabled={!activeSpace}>
+          {safeCommunityImage(activeSpace?.banner_data)&&<img className="server-cover-image" src={activeSpace!.banner_data!} alt=""/>}
+          <span><span className="eyebrow">spazio privato</span><strong>{activeSpace?.name ?? "Messaggi diretti"}</strong>{activeSpace?.description&&<small title={activeSpace.description}>{activeSpace.description}</small>}</span>
           {activeSpace ? <ChevronDown size={17} /> : null}
         </button>
         <button className="sidebar-close" onClick={() => setSidebarOpen(false)} aria-label="Chiudi menu"><X size={18} /></button>
@@ -1211,13 +1230,14 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
           {activeSpace ? (
             <>
               <div className="channel-section">
-                <div className="section-label"><span>canali di testo</span><button onClick={() => openModal("channel")} aria-label="Crea canale"><Plus size={14} /></button></div>
+                <div className="section-label"><span>canali di testo</span>{(activeSpace.owner_id===session.user.id||mySpaceRole==="admin")&&<button onClick={() => openModal("channel")} aria-label="Crea canale"><Plus size={14} /></button>}</div>
                 {textChannels.map((channel, index) => {
                   const muted = isChatMuted(channel.id);
                   return (
                     <div key={channel.id}>
-                    {channel.category_id && (index === 0 || textChannels[index-1].category_id !== channel.category_id) && <div className="section-label category-label">{categories.find(category=>category.id===channel.category_id)?.name}</div>}
+                    {channel.category_id && (index === 0 || textChannels[index-1].category_id !== channel.category_id) && <button className="category-toggle" aria-expanded={!collapsedCategories.has(channel.category_id)} onClick={()=>setCollapsedCategories(current=>{const next=new Set(current);next.has(channel.category_id!)?next.delete(channel.category_id!):next.add(channel.category_id!);return next;})}><ChevronDown size={12}/><span>{categories.find(category=>category.id===channel.category_id)?.name}</span><small>{textChannels.filter(item=>item.category_id===channel.category_id).length}</small></button>}
                     <button
+                      hidden={!!channel.category_id&&collapsedCategories.has(channel.category_id)}
                       className={`channel-row ${activeConversationId === channel.id ? "active" : ""}`}
                       onClick={() => { setActiveConversationId(channel.id); setSidebarOpen(false); setStage((current) => current.open ? { ...current, expanded: false } : current); }}
                       onContextMenu={(e) => {
@@ -1226,7 +1246,7 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
                         setToast(next ? `Notifiche silenziate per #${channel.name}` : `Notifiche riattivate per #${channel.name}`);
                       }}
                     >
-                      <Hash size={17} />
+                      <Hash size={17} style={channel.identity_customized?{color:identityColor(channel.accent_color)}:undefined}/>
                       <span>{channel.name}</span>{!!unreads[channel.id]?.unread_count && <span className="unread-badge">{unreads[channel.id].unread_count}</span>}
                       {muted ? <BellOff size={13} className="sidebar-mute-icon" /> : null}
                     </button></div>
@@ -1235,7 +1255,7 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
                 {!loading && textChannels.length === 0 ? <p className="sidebar-empty">Nessun canale di testo</p> : null}
               </div>
               <div className="channel-section voice-section">
-                <div className="section-label"><span>canali vocali</span><button onClick={() => openModal("voice")} aria-label="Crea canale vocale"><Plus size={14} /></button></div>
+                <div className="section-label"><span>canali vocali</span>{(activeSpace.owner_id===session.user.id||mySpaceRole==="admin")&&<button onClick={() => openModal("voice")} aria-label="Crea canale vocale"><Plus size={14} /></button>}</div>
                 {voiceChannels.map((channel) => (
                   <button
                     key={channel.id}
@@ -1258,9 +1278,10 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
               {directMessages.map((conversation) => {
                 const details = dmDetails[conversation.id];
                 const partner = details?.recipient;
-                const displayName = partner?.display_name || conversation.name;
+                const isGroup=!!conversation.identity_customized||!!conversation.icon_data||!!conversation.description;
+                const displayName = isGroup ? conversation.name : (partner?.display_name || conversation.name);
                 const snippet = details?.lastMessage || "Nessun messaggio";
-                const avatarColor = partner?.avatar_color || "#73b7ff";
+                const avatarColor = conversation.identity_customized?identityColor(conversation.accent_color):(partner?.avatar_color || "#73b7ff");
 
                 return (
                   <button
@@ -1286,9 +1307,9 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
                     }}
                   >
                     <span className="dm-avatar" style={{ backgroundColor: avatarColor }}>
-                      {partner?.avatar_path ? (
+                      {safeCommunityImage(conversation.icon_data) ? <img className="community-icon-img" src={conversation.icon_data!} alt=""/> : partner?.avatar_path ? (
                         <ProfileImage path={partner.avatar_path} alt="" className="dm-avatar-img" />
-                      ) : partner ? (
+                      ) : conversation.identity_customized ? <span className="dm-avatar-initials">{initialsFor(conversation.name)}</span> : partner ? (
                         <span className="dm-avatar-initials">{initialsFor(partner.display_name)}</span>
                       ) : (
                         <UserRound size={16} />
@@ -1393,8 +1414,8 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
       <main className="chat-panel">
         <header className="chat-header">
           <button className="mobile-menu" onClick={() => setSidebarOpen(true)} aria-label="Apri menu"><Menu size={20} /></button>
-          {activeConversation?.kind === "voice_channel" ? <Volume2 size={21} className="hash-icon voice-icon" /> : activeConversation ? <Hash size={21} className="hash-icon" /> : <ShieldCheck size={21} className="hash-icon" />}
-          <div className="channel-heading"><strong>{(activeConversation && !activeSpaceId && dmDetails[activeConversation.id]?.recipient?.display_name) ? dmDetails[activeConversation.id].recipient!.display_name : (activeConversation?.name ?? "Il tuo spazio Hush")}</strong><span>{activeConversation ? activeConversation.kind === "voice_channel" ? `${members.length} membri · canale vocale` : `${members.length} membri` : `Benvenuto, ${profile.display_name}`}</span></div>
+          {safeCommunityImage(activeConversation?.icon_data)?<img className="conversation-header-icon" src={activeConversation!.icon_data!} alt=""/>:activeConversation?.kind === "voice_channel" ? <Volume2 size={21} className="hash-icon voice-icon" /> : activeConversation ? <Hash size={21} className="hash-icon" /> : <ShieldCheck size={21} className="hash-icon" />}
+          <div className="channel-heading"><button className="conversation-identity-trigger" title="Nome, descrizione e aspetto" disabled={!activeConversation} onClick={()=>activeConversation&&setIdentityTarget({kind:"conversation",id:activeConversation.id,value:activeConversation,readOnly:!!activeConversation.space_id&&!canManageSpace})}><strong>{(activeConversation && !activeConversation.identity_customized && !activeConversation.description && !activeConversation.icon_data && !activeSpaceId && dmDetails[activeConversation.id]?.recipient?.display_name) ? dmDetails[activeConversation.id].recipient!.display_name : (activeConversation?.name ?? "Il tuo spazio Hush")}</strong>{activeConversation?.description&&<small title={activeConversation.description}>{activeConversation.description}</small>}</button><span>{activeConversation ? activeConversation.kind === "voice_channel" ? `${members.length} membri · canale vocale` : `${members.length} membri` : `Benvenuto, ${profile.display_name}`}</span></div>
           {activeConversation ? (
             <div className="header-actions">
               <button
@@ -1411,6 +1432,7 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
               </button>
               <button onClick={() => startCall(activeConversation, false)} aria-label="Avvia chiamata"><Phone size={18} /></button>
               <button onClick={() => startCall(activeConversation, true)} aria-label="Avvia videochiamata"><Video size={19} /></button>
+              <button onClick={()=>setIdentityTarget({kind:"conversation",id:activeConversation.id,value:activeConversation,readOnly:!!activeConversation.space_id&&!canManageSpace})} aria-label={activeConversation.kind==="group_dm"?"Personalizza gruppo":"Informazioni e aspetto del canale"} title="Nome, descrizione e aspetto"><Settings size={17}/></button>
               {activeSpace ? <button onClick={createInvite} aria-label="Copia invito"><UserPlus size={19} /></button> : null}
               {["channel", "voice_channel"].includes(activeConversation.kind) && activeSpace?.owner_id === session.user.id ? <button onClick={deleteChannel} aria-label="Elimina canale"><Trash2 size={17} /></button> : null}
               {activeConversation.kind !== "voice_channel" ? <button onClick={() => setShowSearch((current) => !current)} aria-label="Cerca"><Search size={17} /></button> : null}
@@ -1418,6 +1440,7 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
             </div>
           ) : null}
         </header>
+        {safeCommunityImage(activeConversation?.banner_data)&&<div className="conversation-cover"><img src={activeConversation!.banner_data!} alt="Copertina della conversazione"/><button onClick={()=>activeConversation&&setIdentityTarget({kind:"conversation",id:activeConversation.id,value:activeConversation,readOnly:!!activeConversation.space_id&&!canManageSpace})}>Informazioni sullo spazio</button></div>}
 
         <MediaStage
           open={stage.open}
@@ -1602,6 +1625,8 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
         <div className="privacy-note"><ShieldCheck size={16} /><p><strong>{keyStatus === "ready" ? "Chiave verificata" : "Supabase connesso"}</strong><span>{identity ? `Dispositivo ${identity.id.slice(0, 8)}` : "Registrazione dispositivo…"}</span></p><i className={`backend-light backend-${keyStatus === "error" ? "degraded" : "ready"}`} /></div>
       </aside>
 
+      {confirmAction&&<Modal title={confirmAction.title} description={confirmAction.description} onClose={()=>{if(!busy)setConfirmAction(null);}}><div className="modal-form">{formError&&<p className="auth-error" role="alert">{formError}</p>}<button type="button" className="modal-primary" disabled={busy} onClick={()=>setConfirmAction(null)}>Annulla</button><button type="button" className="danger-action" disabled={busy} onClick={()=>void runAction(async()=>{await confirmAction.action();setConfirmAction(null);})}>{busy?"Attendi…":confirmAction.label}</button></div></Modal>}
+      {identityTarget&&<CommunityIdentityEditor key={`${identityTarget.kind}:${identityTarget.id}`} value={identityTarget.value} label={identityTarget.kind==="space"?"server":activeConversation?.kind==="group_dm"?"gruppo":"canale"} readOnly={identityTarget.readOnly} onClose={()=>setIdentityTarget(null)} onSave={async value=>{await saveCommunityIdentity(identityTarget.kind,identityTarget.id,value);if(identityTarget.kind==="space")setSpaces(current=>current.map(space=>space.id===identityTarget.id?{...space,...value,identity_customized:true}:space));else {setChannels(current=>current.map(room=>room.id===identityTarget.id?{...room,...value,identity_customized:true}:room));setDirectMessages(current=>current.map(room=>room.id===identityTarget.id?{...room,...value,identity_customized:true}:room));}setToast("Personalizzazione salvata");}}/>}
       {inviteLink ? <Modal title="Invita nel server" description="Condividi questo link con gli amici. Scade tra 7 giorni; incollalo in Server → Usa invito." onClose={() => setInviteLink(null)}><div className="modal-form"><label>Link di invito<input readOnly value={inviteLink} onFocus={(event) => event.target.select()} /></label><button className="modal-primary" onClick={() => { void copyText(inviteLink).then(() => setInviteNotice("Invito copiato")).catch(() => setInviteNotice("Seleziona il link e premi Ctrl+C per copiarlo.")); }}>Copia invito</button><p role="status">{inviteNotice}</p></div></Modal> : null}
       {viewedProfile ? (
         <Modal title="Profilo" onClose={() => setViewedProfile(null)}>
@@ -1636,8 +1661,8 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
       {modal === "channel" ? <Modal title="Nuovo canale" description={`Verrà aggiunto a ${activeSpace?.name ?? "questo server"} e riceverà una chiave E2EE separata.`} onClose={() => setModal(null)}><form className="modal-form" onSubmit={submitChannel}><label>Nome del canale<input autoFocus required maxLength={80} value={formPrimary} onChange={(event) => setFormPrimary(event.target.value)} placeholder="gaming" /></label>{formError ? <div className="auth-error">{formError}</div> : null}<button className="modal-primary" disabled={busy || !formPrimary.trim()}>{busy ? "Creazione…" : "Crea canale"}</button></form></Modal> : null}
       {modal === "dm" ? <Modal title="Nuovo gruppo DM" description="Inserisci gli username esatti, separati da virgole. Hush distribuirà la chiave ai loro dispositivi registrati." onClose={() => setModal(null)}><form className="modal-form" onSubmit={submitDm}><label>Nome del gruppo<input autoFocus required maxLength={80} value={formPrimary} onChange={(event) => setFormPrimary(event.target.value)} placeholder="Nome del gruppo" /></label><label>Username<input required value={formSecondary} onChange={(event) => setFormSecondary(event.target.value)} placeholder="@amico1, @amico2" /></label>{formError ? <div className="auth-error">{formError}</div> : null}<button className="modal-primary" disabled={busy || !formPrimary.trim() || !formSecondary.trim()}>{busy ? "Creazione…" : "Crea gruppo"}</button></form></Modal> : null}
       {modal === "settings" ? <SettingsPanel profile={profile} theme={theme} onThemeChange={onThemeChange} inCall={stage.open} onClose={() => setModal(null)} onSaved={(next) => { setProfile(next); setMembers((current) => current.map((member) => member.id === next.id ? next : member)); }} /> : null}
-      {manageSpace && activeSpace && <SpaceManagement spaceId={activeSpace.id} currentUserId={session.user.id} onChanged={() => {void refreshChannels(activeSpace.id); setKeyRetry(value => value+1);}} onClose={() => setManageSpace(false)} />}
-      {modal === "server" && activeSpace ? <Modal title={activeSpace.name} description="Gestisci accesso e permanenza nel server." onClose={() => setModal(null)}><div className="server-actions"><button onClick={() => {setModal(null);setManageSpace(true);}}><Settings size={17}/><span><strong>Gestisci server</strong><small>Canali, ruoli, membri e inviti</small></span></button><button onClick={createInvite}><Copy size={17} /><span><strong>Copia invito</strong><small>Valido 7 giorni, massimo 25 utilizzi</small></span></button>{activeSpace.owner_id === session.user.id ? <button className="danger-action" onClick={() => leaveOrDeleteSpace(true)}><Trash2 size={17} /><span><strong>Elimina server</strong><small>Rimuove canali e messaggi in modo permanente</small></span></button> : <button className="danger-action" onClick={() => leaveOrDeleteSpace(false)}><LogOut size={17} /><span><strong>Lascia server</strong><small>Perderai accesso alle conversazioni</small></span></button>}{formError ? <div className="auth-error">{formError}</div> : null}</div></Modal> : null}
+      {manageSpace && activeSpace && <SpaceManagement onCustomize={()=>setIdentityTarget({kind:"space",id:activeSpace.id,value:activeSpace,readOnly:!canManageSpace})} spaceId={activeSpace.id} currentUserId={session.user.id} onChanged={() => {void refreshChannels(activeSpace.id); setKeyRetry(value => value+1);}} onClose={() => setManageSpace(false)} />}
+      {modal === "server" && activeSpace ? <Modal title={activeSpace.name} description="Gestisci accesso e permanenza nel server." onClose={() => setModal(null)}><div className="server-actions"><button onClick={()=>setIdentityTarget({kind:"space",id:activeSpace.id,value:activeSpace,readOnly:!canManageSpace})}><ImagePlus size={17}/><span><strong>Personalizza server</strong><small>Identità, icona, copertina e colore</small></span></button><button onClick={() => {setModal(null);setManageSpace(true);}}><Settings size={17}/><span><strong>Gestisci server</strong><small>Canali, ruoli, membri e inviti</small></span></button><button onClick={createInvite}><Copy size={17} /><span><strong>Copia invito</strong><small>Valido 7 giorni, massimo 25 utilizzi</small></span></button>{activeSpace.owner_id === session.user.id ? <button className="danger-action" onClick={() => leaveOrDeleteSpace(true)}><Trash2 size={17} /><span><strong>Elimina server</strong><small>Rimuove canali e messaggi in modo permanente</small></span></button> : <button className="danger-action" onClick={() => leaveOrDeleteSpace(false)}><LogOut size={17} /><span><strong>Lascia server</strong><small>Perderai accesso alle conversazioni</small></span></button>}{formError ? <div className="auth-error">{formError}</div> : null}</div></Modal> : null}
 
       {modal === "voice" ? <Modal title="Nuovo canale vocale" description={`Crea una stanza vocale persistente in ${activeSpace?.name ?? "questo server"}.`} onClose={() => setModal(null)}><form className="modal-form" onSubmit={submitVoiceChannel}><label>Nome del canale<input autoFocus required maxLength={80} value={formPrimary} onChange={(event) => setFormPrimary(event.target.value)} placeholder="Lounge" /></label>{formError ? <div className="auth-error">{formError}</div> : null}<button className="modal-primary" disabled={busy || !formPrimary.trim()}>{busy ? "Creazione…" : "Crea canale vocale"}</button></form></Modal> : null}
 

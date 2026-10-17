@@ -2,6 +2,7 @@ import { decryptText, type EncryptedPayload } from "./crypto";
 import { supabase } from "./supabase";
 import type { EncryptedMessageRow } from "./realtime";
 import type { ChatAttachmentMeta } from "./chat-media";
+import type {CommunityIdentity} from "./community-identity";
 
 export type Profile = {
   id: string;
@@ -13,13 +14,13 @@ export type Profile = {
   bio?: string;
 };
 
-export type Space = {
+export type Space = CommunityIdentity & {
   id: string;
   name: string;
   owner_id: string;
 };
 
-export type Conversation = {
+export type Conversation = CommunityIdentity & {
   id: string;
   space_id: string | null;
   kind: "channel" | "voice_channel" | "group_dm";
@@ -57,8 +58,8 @@ export async function loadWorkspace(userId: string, fallbackProfile?: Profile) {
   const client = requireClient();
   const [profileResult, spacesResult, dmResult] = await Promise.all([
     client.from("profiles").select("*").eq("id", userId).maybeSingle(),
-    client.from("spaces").select("id, name, owner_id").order("created_at", { ascending: true }),
-    client.from("conversations").select("id, space_id, kind, name, created_by").eq("kind", "group_dm").order("created_at", { ascending: true }),
+    client.from("spaces").select("id,name,owner_id,description,accent_color,icon_data,banner_data,identity_customized").order("created_at", { ascending: true }),
+    client.from("conversations").select("id,space_id,kind,name,created_by,description,accent_color,icon_data,banner_data,identity_customized").eq("kind", "group_dm").order("created_at", { ascending: true }),
   ]);
   const error = profileResult.error ?? spacesResult.error ?? dmResult.error;
   if (error) throw error;
@@ -86,7 +87,7 @@ export async function loadWorkspace(userId: string, fallbackProfile?: Profile) {
 export async function loadChannels(spaceId: string) {
   const { data, error } = await requireClient()
     .from("conversations")
-    .select("id, space_id, kind, name, created_by, category_id, position, send_permission")
+    .select("id,space_id,kind,name,created_by,category_id,position,send_permission,description,accent_color,icon_data,banner_data,identity_customized")
     .eq("space_id", spaceId)
     .order("position", {ascending: true})
     .order("created_at", { ascending: true });

@@ -15,6 +15,7 @@ import chatFeaturesMigration from "../../supabase/migrations/20261008090000_chat
 import spaceManagementMigration from "../../supabase/migrations/20261008091000_space_management.sql?raw";
 
 import overlayCascadeFix from "../../supabase/migrations/20261008092000_overlay_cascade_fix.sql?raw";
+import communityIdentitySource from "../../supabase/migrations/20261017232100_community_identity.sql?raw";
 
 const database = new PGlite();
 
@@ -81,6 +82,7 @@ describe("Supabase migrations", () => {
     await database.exec(chatFeatures);
     await database.exec(spaceManagement);
     await database.exec(overlayCascadeFix);
+    await database.exec(communityIdentitySource.replace(/do \$\$ begin[\s\S]*?end \$\$;/i, "").replace(/notify pgrst, 'reload schema';/i,""));
     await database.exec(`
       create function realtime.broadcast_changes(
         text, text, text, name, name, public.encrypted_messages, public.encrypted_messages
@@ -294,6 +296,32 @@ describe("Supabase migrations", () => {
       await database.exec(`select public.toggle_message_reaction('${message}','ok'); select public.toggle_message_pin('${message}'); select public.delete_encrypted_message('${message}');`);
       expect((await database.query("select * from public.message_reactions where message_id=$1",[message])).rows).toHaveLength(0);
       expect((await database.query("select * from public.message_pins where message_id=$1",[message])).rows).toHaveLength(0);
+    } finally {await database.exec("rollback;");}
+  });
+
+  it("persists community identity and enforces server and group permissions", async () => {
+    const owner="a5000000-0000-4000-8000-000000000001", member="a5000000-0000-4000-8000-000000000002", outsider="a5000000-0000-4000-8000-000000000003";
+    await database.exec("begin;");
+    try {
+      await database.query("insert into auth.users(id,email) values ($1,'style_owner@test.local'),($2,'style_member@test.local'),($3,'style_outside@test.local')",[owner,member,outsider]);
+      await database.query("select set_config('request.jwt.claim.sub',$1,true)",[owner]);
+      const space=(await database.query<{id:string}>("select public.create_space_with_general('Original') as id")).rows[0].id;
+      await database.query("insert into public.space_members(space_id,user_id,role) values ($1,$2,'member')",[space,member]);
+      const group=(await database.query<{id:string}>("insert into public.conversations(kind,name,created_by) values ('group_dm','Original group',$1) returning id",[owner])).rows[0].id;
+      await database.query("insert into public.conversation_members(conversation_id,user_id) values ($1,$2)",[group,member]);
+      const update="select public.update_community_identity($1,$2,$3,'Description','#9b8afb',null,null)";
+      await database.exec("grant select on public.spaces,public.conversations to authenticated;");
+      await database.exec("set local role authenticated;");
+      await database.query(update,["space",space,"Custom server"]);
+      expect((await database.query<{name:string}>("select name from public.spaces where id=$1",[space])).rows[0].name).toBe("Custom server");
+      async function denied(kind:string,id:string) {await database.exec("savepoint denied_identity;");await expect(database.query(update,[kind,id,"Unauthorized"])).rejects.toThrow(/forbidden/);await database.exec("rollback to savepoint denied_identity;");}
+      await database.query("select set_config('request.jwt.claim.sub',$1,true)",[member]);
+      await denied("space",space);
+      await database.query(update,["conversation",group,"Our custom group"]);
+      expect((await database.query<{name:string}>("select name from public.conversations where id=$1",[group])).rows[0].name).toBe("Our custom group");
+      await database.query("select set_config('request.jwt.claim.sub',$1,true)",[outsider]);
+      await denied("conversation",group);
+      await denied("space",space);
     } finally {await database.exec("rollback;");}
   });
 

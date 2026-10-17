@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import {createPortal} from "react-dom";
 import {
   AtSign,
   Bell,
@@ -111,7 +112,7 @@ export function UserContextMenu({
     }
   };
 
-  return (
+  return createPortal(
     <div
       ref={menuRef}
       className="user-context-menu"
@@ -422,6 +423,6 @@ export function UserContextMenu({
         <Copy size={15} />
         <span>{copiedLabel === "ID Utente" ? "ID copiato!" : "Copia ID utente"}</span>
       </button>
-    </div>
+    </div>, document.body
   );
 }
