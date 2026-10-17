@@ -1,5 +1,10 @@
 /* Shared by the app and the desktop screen picker. */
 :root {
+  /* Shape is shared by all themes: controls, contained surfaces, and windows.
+     Hover and selection change color, never geometry. */
+  --radius-control: 6px;
+  --radius-surface: 10px;
+  --radius-window: 12px;
   --overlay-background: var(--panel);
   --overlay-sheen: linear-gradient(transparent, transparent);
   --overlay-border: var(--line);
