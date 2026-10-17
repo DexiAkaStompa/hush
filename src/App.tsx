@@ -1087,6 +1087,8 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
       const { data, error } = await supabase.rpc("create_group_dm", { p_name: formPrimary.trim(), p_usernames: usernames });
       if (error) throw error;
       const conversationId = data as string;
+      // Explicitly named groups keep their shared name even with only two members.
+      await saveCommunityIdentity("conversation", conversationId, {name: formPrimary.trim()});
       await initializeConversationKey(conversationId, identity);
       await refreshWorkspace(undefined, conversationId);
       setActiveSpaceId(null);
