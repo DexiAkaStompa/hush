@@ -1,11 +1,310 @@
-.modal-card.space-management { width: min(760px, calc(100vw - 32px)); max-width: 760px; }
-.space-management-tabs { display: flex; gap: 6px; margin-bottom: 16px; }
-.space-management-tabs button { border: 0; border-radius: var(--radius-control); padding: 8px 12px; background: var(--panel-raised); color: inherit; cursor: pointer; }
-.space-management-tabs button.active { background: var(--blue); color: #102030; }
-.space-management-list { display: grid; gap: 8px; max-height: 52vh; overflow: auto; }
-.space-management-row { display: flex; align-items: center; gap: 10px; padding: 10px; border: 1px solid var(--line, #dce3eb); border-radius: var(--radius-surface); }
-.space-management-row span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.space-management-row button, .space-management-row select { border: 1px solid var(--line, #dce3eb); border-radius: var(--radius-control); background: var(--panel, white); padding: 6px 9px; color: inherit; }
-.space-management-error { color: #b3261e; }
-
-.space-management-row {flex-wrap:wrap;font-size:12px}.space-management-row input {min-width:90px;width:140px;background:var(--panel);color:var(--frost);border:1px solid var(--line);border-radius: var(--radius-control);padding:7px;}.space-management-row span {flex-basis:100%}.space-management button:disabled {opacity:.45;cursor:default}
+.space-management {
+  width: min(940px, calc(100vw - 32px));
+}
+.space-management-tabs {
+  display: flex;
+  gap: 6px;
+  margin: 16px 0;
+  flex-wrap: wrap;
+}
+.space-management-tabs button.active,
+.management-role-list button.active {
+  background: var(--surface-active, rgba(255, 255, 255, 0.12));
+  color: var(--frost, #eee);
+}
+.space-management button,
+.space-management input,
+.space-management select {
+  border-radius: 6px;
+}
+.space-management button {
+  min-height: 32px;
+  padding: 6px 10px;
+}
+.space-management button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.space-management input:not([type="checkbox"]):not([type="color"]),
+.space-management select {
+  min-width: 0;
+  min-height: 34px;
+  padding: 7px 9px;
+  background: var(--input-bg, rgba(0, 0, 0, 0.16));
+  color: inherit;
+  border: 1px solid var(--line, rgba(255, 255, 255, 0.12));
+}
+.space-management select option {
+  background: var(--panel, #242528);
+  color: var(--frost, #eee);
+}
+.space-management-error {
+  color: var(--danger, #ef8e91);
+}
+.space-management-list,
+.management-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.space-management-row,
+.management-create,
+.management-inline,
+.management-category,
+.management-member-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.space-management-row {
+  justify-content: space-between;
+}
+.management-create input,
+.management-inline input {
+  flex: 1;
+  min-width: 120px;
+}
+.management-inline {
+  flex: 1;
+}
+.management-hint,
+.management-channel-name small,
+.management-member-heading small,
+.management-permission-check small {
+  color: var(--muted, #999da6);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.management-hint {
+  margin: 4px 0;
+}
+.management-categories,
+.management-detail,
+.management-member {
+  border: 1px solid var(--line, rgba(255, 255, 255, 0.1));
+  border-radius: 10px;
+  padding: 14px;
+}
+.management-categories summary {
+  cursor: pointer;
+  margin-bottom: 10px;
+}
+.management-category {
+  margin-top: 8px;
+}
+.management-channel-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.management-channel {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  border: 1px solid var(--line, rgba(255, 255, 255, 0.09));
+  border-radius: 6px;
+  padding: 8px;
+}
+.management-channel.is-dragging {
+  opacity: 0.4;
+}
+.management-grip {
+  cursor: grab;
+  color: var(--muted, #999da6);
+  flex-shrink: 0;
+}
+.management-channel-name {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+  overflow-wrap: anywhere;
+}
+.management-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.management-detail h3,
+.management-role-editor h3 {
+  margin: 0;
+}
+.management-detail h4 {
+  margin: 6px 0 0;
+}
+.management-detail > label,
+.management-role-editor > label:not(.management-permission-check) {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  font-size: 13px;
+}
+.management-permission-row {
+  flex-direction: row !important;
+  align-items: center;
+  justify-content: space-between;
+}
+.management-permission-row select {
+  width: 140px;
+}
+.management-roles {
+  display: grid;
+  grid-template-columns: 190px minmax(0, 1fr);
+  gap: 20px;
+}
+.management-role-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.management-role-list button {
+  text-align: left;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow-wrap: anywhere;
+}
+.management-role-color {
+  width: 10px;
+  height: 10px;
+  flex-shrink: 0;
+  border-radius: 50%;
+}
+.management-role-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+.management-color-field {
+  flex-direction: row !important;
+  align-items: center;
+}
+.management-color-field input {
+  width: 42px;
+  height: 32px;
+  border: 1px solid var(--line, rgba(255, 255, 255, 0.1));
+  padding: 3px;
+  background: transparent;
+}
+.management-role-permissions {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.management-permission-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 13px;
+}
+.management-permission-check input,
+.management-member-role-choice input {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  accent-color: #afb4bf;
+}
+.management-permission-check small {
+  display: block;
+  margin-top: 3px;
+}
+.management-role-delete {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  border-top: 1px solid var(--line, rgba(255, 255, 255, 0.1));
+  padding-top: 14px;
+  font-size: 12px;
+}
+.management-member-heading strong {
+  overflow-wrap: anywhere;
+}
+.management-member-heading small {
+  flex: 1;
+}
+.management-member-roles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+.management-member-role-choice,
+.member-role-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid currentColor;
+  border-radius: 5px;
+  padding: 3px 7px;
+  font-size: 11px;
+}
+.management-member-role-choice {
+  cursor: pointer;
+}
+.management-member-role-choice input {
+  margin: 0;
+}
+@media (max-width: 640px) {
+  .management-roles {
+    grid-template-columns: 1fr;
+  }
+  .management-role-list {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+  .management-channel {
+    gap: 5px;
+    padding: 6px;
+  }
+  .management-channel button {
+    padding: 5px 7px;
+  }
+  .management-category > .management-inline {
+    flex-basis: 100%;
+  }
+}
+.modal-card.space-management {
+  width: min(940px, calc(100vw - 32px));
+  max-width: 940px;
+}
+.space-management button {
+  border: 1px solid var(--line);
+  background: var(--soft-surface);
+  color: var(--frost);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  transition:
+    background 0.12s ease,
+    border-color 0.12s ease;
+}
+.space-management button:hover:not(:disabled) {
+  background: var(--panel-raised);
+}
+.space-management button:focus-visible {
+  outline: 1px solid var(--muted);
+  outline-offset: 2px;
+}
+.space-management-tabs button {
+  color: var(--muted);
+  background: transparent;
+}
+.space-management-tabs button.active,
+.management-role-list button.active {
+  border-color: var(--muted);
+  color: var(--frost);
+  background: var(--panel-raised);
+}
+.management-role-list button {
+  background: transparent;
+}
+.management-detail > button,
+.management-role-editor > button {
+  align-self: flex-start;
+}
+.management-role-delete > button:first-of-type {
+  color: var(--coral);
+}

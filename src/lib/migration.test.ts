@@ -17,6 +17,8 @@ import spaceManagementMigration from "../../supabase/migrations/20261008091000_s
 import overlayCascadeFix from "../../supabase/migrations/20261008092000_overlay_cascade_fix.sql?raw";
 import communityIdentitySource from "../../supabase/migrations/20261017232100_community_identity.sql?raw";
 
+import serverRolesMigration from "../../supabase/migrations/20261018140413_roles_mentions_reactions.sql?raw";
+
 const database = new PGlite();
 
 const initialMigrationWithoutHostedExtension = initialMigration
@@ -83,10 +85,11 @@ describe("Supabase migrations", () => {
     await database.exec(spaceManagement);
     await database.exec(overlayCascadeFix);
     await database.exec(communityIdentitySource.replace(/do \$\$ begin[\s\S]*?end \$\$;/i, "").replace(/notify pgrst, 'reload schema';/i,""));
+    await database.exec(serverRolesMigration.replace(/notify pgrst,\s*'reload schema';/gi, ""));
     await database.exec(`
       create function realtime.broadcast_changes(
         text, text, text, name, name, public.encrypted_messages, public.encrypted_messages
-      ) returns void language plpgsql as $$ begin if $1 is null then raise exception 'null_broadcast_topic'; end if; end; $$;
+      ) returns void language plpgsql as $$ begin if $1 is null then raise exception 'null_broadcast_topic'; end if; if $3 not in ('INSERT','UPDATE','DELETE') then raise exception 'unexpected operation type: %', $3; end if; end; $$;
     `);
 
     const result = await database.query<{ table_name: string }>(`
@@ -323,6 +326,64 @@ describe("Supabase migrations", () => {
       await denied("conversation",group);
       await denied("space",space);
     } finally {await database.exec("rollback;");}
+  });
+
+  it("enforces custom roles, overrides, voice access and reaction trigger operations", async () => {
+    const owner="b6000000-0000-4000-8000-000000000001",member="b6000000-0000-4000-8000-000000000002",outsider="b6000000-0000-4000-8000-000000000003";
+    const denied=async(sql:string,args:unknown[]=[],pattern=/forbidden|not_space_admin|row-level security|permission denied|invalid_|default_role_required|check constraint/)=>{await database.exec("savepoint role_denied");await expect(database.query(sql,args)).rejects.toThrow(pattern);await database.exec("rollback to savepoint role_denied");};
+    await database.exec("begin;");
+    try {
+      await database.query("insert into auth.users(id,email) values ($1,'rolesowner@test.local'),($2,'rolesmember@test.local'),($3,'rolesoutsider@test.local')",[owner,member,outsider]);
+      await database.query("select set_config('request.jwt.claim.sub',$1,true)",[owner]);
+      const space=(await database.query<{id:string}>("select public.create_space_with_general('Role verification') as id")).rows[0].id;
+      await database.query("insert into public.space_members(space_id,user_id,role) values ($1,$2,'member')",[space,member]);
+      await database.query("delete from public.conversations where space_id=$1 and kind='voice_channel'",[space]);
+      const text=(await database.query<{id:string}>("select id from public.conversations where space_id=$1 and kind='channel'",[space])).rows[0].id;
+      const voice=(await database.query<{id:string}>("select public.create_space_voice_channel($1,'Role test lounge') as id",[space])).rows[0].id;
+      await database.query("insert into public.conversation_members(conversation_id,user_id) select id,$2 from public.conversations where space_id=$1 on conflict do nothing",[space,member]);
+      const everyone=(await database.query<{id:string}>("select id from public.space_roles where space_id=$1 and is_default",[space])).rows[0].id;
+      await database.exec("set local role authenticated");
+      const role=(await database.query<{id:string}>("select public.save_space_role($1,null,'Moderator','#86cbaa',array['manage_messages','mention_everyone'],true) as id",[space])).rows[0].id;
+      await database.query("select public.set_member_space_roles($1,$2,array[$3::uuid])",[space,member,role]);
+      await database.query("select public.save_channel_role_override($1,$2,'{}',array['send_messages','connect','add_reactions','pin_messages'])",[text,everyone]);
+      await database.query("select public.save_channel_role_override($1,$2,'{}',array['connect'])",[voice,everyone]);
+      await database.query("select public.reorder_space_channels($1,array[$2::uuid,$3::uuid])",[space,voice,text]);
+      await database.query("select public.rename_space_channel($1,'Cozy Lounge')",[voice]);
+      const ordered=await database.query<{id:string;name:string}>("select id,name from public.conversations where space_id=$1 order by position",[space]);
+      expect(ordered.rows.map(r=>r.id)).toEqual([voice,text]);expect(ordered.rows[0].name).toBe("Cozy Lounge");
+      await denied("select public.reorder_space_channels($1,array[$2::uuid,$2::uuid])",[space,text]);
+      await denied("select public.delete_space_role($1)",[everyone]);
+      await denied("select public.save_space_role($1,null,'Invalid','#zzzzzz',array['connect'],true)",[space]);
+      const message=(await database.query<{id:string}>("insert into public.encrypted_messages(id,conversation_id,sender_id,algorithm,nonce,ciphertext) values (gen_random_uuid(),$1,$2,'AES-256-GCM','nonce-valid','cipher-valid') returning id",[text,owner])).rows[0].id;
+      await database.query("select public.toggle_message_reaction($1,'👨‍👩‍👧‍👦')",[message]);
+      await database.query("select set_config('request.jwt.claim.sub',$1,true)",[member]);
+      const permissions=(await database.query<{permissions:string[]}>("select permissions from public.get_conversation_permissions(array[$1::uuid])",[text])).rows[0].permissions;
+      expect(permissions).toContain("manage_messages");expect(permissions).toContain("mention_everyone");expect(permissions).not.toContain("send_messages");
+      expect((await database.query<{allowed:boolean}>("select public.can_access_realtime_topic('call:'||$1) as allowed",[voice])).rows[0].allowed).toBe(false);
+      await denied("select public.toggle_message_reaction($1,'👍')",[message]);await denied("select public.toggle_message_pin($1)",[message]);
+      await denied("insert into public.encrypted_messages(id,conversation_id,sender_id,algorithm,nonce,ciphertext) values (gen_random_uuid(),$1,$2,'AES-256-GCM','nonce-valid','cipher-valid')",[text,member]);
+      await denied("select public.save_space_role($1,null,'Escalate','#ffffff',array['connect'],true)",[space]);
+      await denied("insert into public.space_member_roles values ($1,$2,$3)",[space,outsider,role]);
+      await database.query("select set_config('request.jwt.claim.sub',$1,true)",[owner]);
+      await database.query("select public.save_channel_role_override($1,$2,array['add_reactions','send_messages','pin_messages'],'{}')",[text,role]);
+      await database.query("select set_config('request.jwt.claim.sub',$1,true)",[member]);
+      expect((await database.query<{added:boolean}>("select public.toggle_message_reaction($1,'👍') as added",[message])).rows[0].added).toBe(true);
+      await database.query("select public.toggle_message_pin($1)",[message]);
+      const ownMessage=(await database.query<{id:string}>("insert into public.encrypted_messages(id,conversation_id,sender_id,algorithm,nonce,ciphertext) values (gen_random_uuid(),$1,$2,'AES-256-GCM','nonce-valid','cipher-valid') returning id",[text,member])).rows[0].id;
+      await database.query("select set_config('request.jwt.claim.sub',$1,true)",[owner]);
+      await database.query("select public.save_channel_role_override($1,$2,'{}','{}')",[text,role]);
+      await database.query("select set_config('request.jwt.claim.sub',$1,true)",[member]);
+      expect((await database.query<{added:boolean}>("select public.toggle_message_reaction($1,'👍') as added",[message])).rows[0].added).toBe(false);
+      await denied("select public.update_encrypted_message($1,'n2','c2','{}')",[ownMessage]);
+      await database.query("select public.delete_encrypted_message($1)",[message]);
+      await database.query("select set_config('request.jwt.claim.sub',$1,true)",[outsider]);
+      expect((await database.query("select * from public.space_roles where space_id=$1",[space])).rows).toHaveLength(0);
+      expect((await database.query("select * from public.get_conversation_permissions(array[$1::uuid])",[text])).rows).toHaveLength(0);
+      await denied("select public.set_member_space_roles($1,$2,'{}')",[space,member]);
+      await database.query("select set_config('request.jwt.claim.sub',$1,true)",[owner]);
+      await database.query("select public.delete_space_role($1)",[role]);
+      expect((await database.query("select * from public.space_member_roles where role_id=$1",[role])).rows).toHaveLength(0);
+    } finally {await database.exec("rollback");}
   });
 
 });

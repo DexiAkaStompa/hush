@@ -1,3 +1,4 @@
+import { parseMentions, type MessageMention } from "./mentions";
 import { decryptText, type EncryptedPayload } from "./crypto";
 import { supabase } from "./supabase";
 import type { EncryptedMessageRow } from "./realtime";
@@ -41,6 +42,7 @@ export type DecryptedMessage = {
   createdAt: string;
   editedAt?: string | null;
   replyId?: string | null;
+  mentions?: MessageMention[];
   encrypted: EncryptedPayload;
 };
 
@@ -220,12 +222,14 @@ export async function loadAndDecryptMessages(
     let body = "Messaggio non decifrabile con la chiave corrente.";
     let attachment: ChatAttachmentMeta | null = null;
     let replyId: string | null = null;
+    let mentions: MessageMention[] | undefined;
     try {
       const decrypted = await decryptText(encrypted, key, context);
       const unpacked = unpackMessageContent(decrypted);
       body = unpacked.text;
       attachment = unpacked.attachment;
       replyId = unpacked.replyId;
+      mentions = unpacked.mentions;
     } catch { /* keep explicit failure */ }
     return {
       id: row.id,
@@ -237,12 +241,13 @@ export async function loadAndDecryptMessages(
       createdAt: row.created_at,
       editedAt: row.updated_at ?? null,
       replyId,
+      mentions,
       encrypted,
     } satisfies DecryptedMessage;
   }));
 }
 
-export function unpackMessageContent(decrypted: string): { text: string; attachment: ChatAttachmentMeta | null; replyId: string | null } {
+export function unpackMessageContent(decrypted: string): { text: string; attachment: ChatAttachmentMeta | null; replyId: string | null; mentions?: MessageMention[] } {
   if (decrypted.startsWith("{") && (decrypted.includes('"attachment"') || decrypted.includes('"replyId"') || decrypted.includes('"v":2'))) {
     try {
       const parsed = JSON.parse(decrypted);
@@ -251,6 +256,7 @@ export function unpackMessageContent(decrypted: string): { text: string; attachm
           text: typeof parsed.text === "string" ? parsed.text : "",
           attachment: (parsed.attachment && typeof parsed.attachment === "object") ? parsed.attachment as ChatAttachmentMeta : null,
           replyId: typeof parsed.replyId === "string" ? parsed.replyId : null,
+          mentions: parseMentions(parsed.mentions, typeof parsed.text === "string" ? parsed.text : ""),
         };
       }
     } catch {
@@ -260,9 +266,9 @@ export function unpackMessageContent(decrypted: string): { text: string; attachm
   return { text: decrypted, attachment: null, replyId: null };
 }
 
-export function packMessageContent(text: string, attachment?: ChatAttachmentMeta | null, replyId?: string | null): string {
-  if (attachment || replyId) {
-    return JSON.stringify({ v: 2, text, attachment: attachment ?? null, replyId: replyId ?? null });
+export function packMessageContent(text: string, attachment?: ChatAttachmentMeta | null, replyId?: string | null, mentions?: MessageMention[]): string {
+  if (attachment || replyId || mentions !== undefined) {
+    return JSON.stringify({ v: 2, text, attachment: attachment ?? null, replyId: replyId ?? null, ...(mentions ? { mentions } : {}) });
   }
   return text;
 }
@@ -283,15 +289,20 @@ export function readableError(error: unknown) {
   const details = typeof candidate?.details === "string" ? candidate.details : "";
   const hint = typeof candidate?.hint === "string" ? candidate.hint : "";
   const translations: Record<string, string> = {
+    invalid_role_assignment: "Puoi assegnare soltanto ruoli di questo server.",
+    invalid_channel_order: "L’elenco dei canali è cambiato. Riapri la gestione e riprova.",
+    default_role_required: "Il ruolo @everyone non può essere eliminato.",
+    role_limit: "Hai raggiunto il limite di 100 ruoli per server.",
+    role_not_found: "Questo ruolo è stato eliminato. Riapri la gestione del server.",
     space_banned: "Non puoi usare questo invito: sei stato escluso dal server.",
     cannot_manage_admin: "Non puoi modificare il proprietario o un amministratore dello stesso livello.",
     cannot_manage_self: "Non puoi modificare il tuo ruolo da qui.",
     invalid_member_role: "Solo il proprietario può nominare un amministratore.",
     invalid_channel_category: "La categoria deve appartenere a questo server.",
     message_edit_forbidden: "Non puoi modificare questo messaggio con i permessi attuali.",
-    message_delete_forbidden: "Puoi eliminare soltanto i tuoi messaggi.",
-    reaction_forbidden: "Non hai più accesso a questo messaggio.",
-    pin_forbidden: "Non hai più accesso a questo messaggio.",
+    message_delete_forbidden: "Non hai il permesso di eliminare questo messaggio.",
+    reaction_forbidden: "Non hai il permesso di aggiungere reazioni qui.",
+    pin_forbidden: "Non hai il permesso di fissare messaggi qui.",
     invalid_space_name: "Il nome del server deve contenere da 1 a 80 caratteri.",
     invalid_channel_name: "Il nome del canale non è valido.",
     channel_already_exists: "Esiste già un canale con questo nome.",

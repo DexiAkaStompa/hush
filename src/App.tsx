@@ -1,3 +1,5 @@
+import { EMPTY_ROLE_CONTEXT, loadServerRoles, loadChannelPermissions, rolesForUser, canMassMention, reorderChannels, type ServerRoleContext, type ServerPermission } from "./lib/server-roles";
+import { extractMentions, resolveMentions, mentionsRecipient, mentionQuery, type MentionTarget, type MessageMention } from "./lib/mentions";
 import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Session, RealtimeChannel } from "@supabase/supabase-js";
 import {
@@ -214,6 +216,13 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
   const searchGenerationRef = useRef(0);
   const [allTextConversations, setAllTextConversations] = useState<Conversation[]>([]);
   const [categories, setCategories] = useState<Array<{id:string;name:string;position:number}>>([]);
+  const [roleContext,setRoleContext]=useState<ServerRoleContext>(EMPTY_ROLE_CONTEXT);
+  const [channelPermissions,setChannelPermissions]=useState<Record<string,ServerPermission[]>>({});
+  const [dragChannelId,setDragChannelId]=useState<string|null>(null);
+  const [mentionCursor,setMentionCursor]=useState<number|null>(null);
+  const [mentionIndex,setMentionIndex]=useState(0);
+  const [mentionDismissed,setMentionDismissed]=useState(false);
+  const mentionContextRef=useRef({roles:EMPTY_ROLE_CONTEXT,members:[] as Profile[],online:[] as string[],conversationId:"",spaceId:""});
   const [mySpaceRole, setMySpaceRole] = useState("member");
   const [collapsedCategories,setCollapsedCategories]=useState<Set<string>>(new Set());
   const [confirmAction,setConfirmAction]=useState<{title:string;description:string;label:string;action:()=>Promise<void>}|null>(null);
@@ -401,7 +410,7 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
   const activeSpace = useMemo(() => spaces.find((space) => space.id === activeSpaceId) ?? null, [activeSpaceId, spaces]);
   const conversations = useMemo(() => [...channels, ...directMessages], [channels, directMessages]);
   const textChannels = useMemo(() => channels.filter((channel) => channel.kind === "channel").sort((a,b) => (categories.findIndex(c=>c.id===a.category_id)-categories.findIndex(c=>c.id===b.category_id)) || ((a.position??0)-(b.position??0))), [channels, categories]);
-  const voiceChannels = useMemo(() => channels.filter((channel) => channel.kind === "voice_channel"), [channels]);
+  const voiceChannels = useMemo(() => channels.filter((channel) => channel.kind === "voice_channel").sort((a,b)=>(categories.findIndex(c=>c.id===a.category_id)-categories.findIndex(c=>c.id===b.category_id))||((a.position??0)-(b.position??0))), [channels,categories]);
   const activeConversation = useMemo(
     () => conversations.find((conversation) => conversation.id === activeConversationId) ?? null,
     [activeConversationId, conversations],
@@ -475,7 +484,36 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
     return ()=>{current=false;};
   }, [spaces, channels]);
   const canManageSpace = activeSpace?.owner_id===session.user.id || ["owner","admin"].includes(mySpaceRole);
-  const canWrite = activeConversation?.send_permission !== "admins" || mySpaceRole === "owner" || mySpaceRole === "admin";
+  const activePermissions=channelPermissions[activeConversationId??""]??[];
+  const canWrite=activePermissions.includes("send_messages");
+  mentionContextRef.current={roles:roleContext,members,online:onlineUserIds,conversationId:activeConversationId??"",spaceId:activeConversation?.space_id??""};
+  function targetsForSender(senderId:string):MentionTarget[] {
+    const context=mentionContextRef.current, mass=!context.spaceId||canMassMention(context.roles,senderId,context.conversationId);
+    return [...context.members.map(m=>({kind:"user" as const,id:m.id,label:m.username,name:m.display_name})),...context.roles.roles.filter(r=>!r.is_default).map(r=>({kind:"role" as const,id:r.id,label:r.name,name:"Ruolo",color:r.color,allowed:r.mentionable||mass})),{kind:"everyone",id:context.spaceId||context.conversationId,label:"everyone",name:"Tutti i membri",allowed:mass},{kind:"here",id:context.spaceId||context.conversationId,label:"here",name:"Membri online",allowed:mass}];
+  }
+  const myRoleIds=rolesForUser(roleContext,session.user.id).map(r=>r.id);
+  const mentionSearch=mentionDismissed?null:mentionQuery(draft,mentionCursor??draft.length);
+  const mentionOptions=mentionSearch?targetsForSender(session.user.id).filter(t=>t.allowed!==false&&(t.label.toLocaleLowerCase("it").startsWith(mentionSearch.query)||t.name.toLocaleLowerCase("it").includes(mentionSearch.query))).slice(0,8):[];
+  const insertMention=(target:MentionTarget)=>{
+    if(!mentionSearch)return;
+    const next=draft.slice(0,mentionSearch.start)+"@"+target.label+" "+draft.slice(mentionSearch.end),cursor=mentionSearch.start+target.label.length+2;
+    setDraft(next);setMentionCursor(cursor);setMentionIndex(0);setMentionDismissed(true);
+    requestAnimationFrame(()=>{messageInputRef.current?.focus();messageInputRef.current?.setSelectionRange(cursor,cursor);});
+  };
+  useEffect(()=>{setMentionCursor(null);setMentionIndex(0);setMentionDismissed(false);},[activeConversationId]);
+  useEffect(()=>{
+    let current=true,loading=false;
+    setRoleContext(EMPTY_ROLE_CONTEXT);setChannelPermissions({});
+    const refresh=async()=>{
+      if(loading||document.hidden)return;loading=true;
+      try {
+        const [roles,permissions]=await Promise.all([activeSpaceId?loadServerRoles(activeSpaceId):Promise.resolve(EMPTY_ROLE_CONTEXT),loadChannelPermissions([...new Set([...channels.map(c=>c.id),...(activeConversationId?[activeConversationId]:[]),...(stage.conversationId?[stage.conversationId]:[])])])]);
+        if(current){setRoleContext(roles);setChannelPermissions(permissions);}
+      }catch(error){if(current)setToast(readableError(error));}finally{loading=false;}
+    };
+    void refresh();const timer=window.setInterval(()=>void refresh(),20000);const focus=()=>void refresh();window.addEventListener("focus",focus);
+    return ()=>{current=false;clearInterval(timer);window.removeEventListener("focus",focus);};
+  },[activeSpaceId,activeConversationId,channels,stage.conversationId]);
   useEffect(()=>{
     if(!supabase)return;
     const channel=supabase.channel(`community-identity:${session.user.id}`)
@@ -490,14 +528,22 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
     if (!roomKey || !activeConversationId) return;
     const id = activeConversationId;
     const context = `hush:conversation:${id}:epoch:0`;
-    const encrypted = await encryptText(packMessageContent(text.trim(), message.attachment, message.replyId), roomKey, context);
+    const mentions=extractMentions(text.trim(),targetsForSender(session.user.id));
+    const encrypted = await encryptText(packMessageContent(text.trim(), message.attachment, message.replyId,mentions), roomKey, context);
     await updateEncryptedMessage(message.id, { nonce: encrypted.iv, ciphertext: encrypted.ciphertext, aad_json: {version: 1, context} });
-    if (activeIdRef.current === id) setMessages(current => current.map(item => item.id === message.id ? {...item, body: text.trim(), encrypted, editedAt: new Date().toISOString()} : item));
+    if (activeIdRef.current === id) setMessages(current => current.map(item => item.id === message.id ? {...item, body: text.trim(), mentions, encrypted, editedAt: new Date().toISOString()} : item));
+  };
+  const dropChannel=async(targetId:string)=>{
+    if(!canManageSpace||!activeSpaceId||!dragChannelId||targetId===dragChannelId)return;
+    const ids=[...channels].sort((a,b)=>(a.position??0)-(b.position??0)||a.id.localeCompare(b.id)).map(c=>c.id),from=ids.indexOf(dragChannelId),to=ids.indexOf(targetId);
+    setDragChannelId(null);if(from<0||to<0)return;ids.splice(from,1);ids.splice(to,0,dragChannelId);
+    try {await reorderChannels(activeSpaceId,ids);await refreshChannels(activeSpaceId);}catch(error){setToast(readableError(error));}
   };
   const latestCipher = messages.at(-1)?.encrypted;
 
-  const startCall = (conversation: Conversation | null, video: boolean) => {
+  const startCall = async (conversation: Conversation | null, video: boolean) => {
     if (!conversation) return;
+    try {const permissions=await loadChannelPermissions([conversation.id]);if(!permissions[conversation.id]?.includes("connect")){setToast("Non hai il permesso di entrare in voce in questo canale.");return;}}catch(error){setToast(readableError(error));return;}
     void playCallSound("join");
     setStage({
       open: true,
@@ -531,6 +577,12 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
     }
     setStage(EMPTY_CALL_STAGE);
   };
+
+  useEffect(()=>{
+    if(stage.open&&stage.conversationId&&channelPermissions[stage.conversationId]&&!channelPermissions[stage.conversationId].includes("connect")){
+      leaveCall();setToast("Il permesso di accesso alla voce è stato rimosso.");
+    }
+  },[channelPermissions,stage.open,stage.conversationId]);
 
   const handleAcceptCall = () => {
     if (!incomingCall) return;
@@ -866,7 +918,7 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
           try {
             const encrypted = {v: 1 as const, iv: row.nonce, ciphertext: row.ciphertext};
             const content = unpackMessageContent(await decryptText(encrypted, key, `hush:conversation:${activeConversation.id}:epoch:0`));
-            if (current) setMessages(prev => prev.map(message => message.id === row.id ? {...message, body: content.text, attachment: content.attachment, replyId: content.replyId, editedAt: row.updated_at, encrypted} : message));
+            if (current) setMessages(prev => prev.map(message => message.id === row.id ? {...message, body: content.text, attachment: content.attachment, replyId: content.replyId, mentions:content.mentions, editedAt: row.updated_at, encrypted} : message));
           } catch { /* Keep the last decryptable version. */ }
         },
         onMessage: async (row) => {
@@ -876,16 +928,19 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
           const encrypted = { v: 1 as const, iv: row.nonce, ciphertext: row.ciphertext };
           let body = "Messaggio non decifrabile con la chiave corrente.";
           let replyId: string | null = null;
+          let mentions:MessageMention[]|undefined;
           let attachment: ChatAttachmentMeta | null = null;
           try {
             const rawDecrypted = await decryptText(encrypted, key, `hush:conversation:${activeConversation.id}:epoch:0`);
             const unpacked = unpackMessageContent(rawDecrypted);
             body = unpacked.text;
+            mentions=unpacked.mentions;
             attachment = unpacked.attachment ?? null;
             replyId = unpacked.replyId ?? null;
           } catch { /* explicit fallback above */ }
           if (!current) return;
-          const mentioned = body.toLocaleLowerCase("it").includes(`@${profile.username.toLocaleLowerCase("it")}`);
+          const context=mentionContextRef.current;
+          const mentioned = mentionsRecipient(resolveMentions(body,mentions,targetsForSender(row.sender_id??"")),session.user.id,rolesForUser(context.roles,session.user.id).map(r=>r.id),getUserStatus()!=="invisible");
           const isDnd = getUserStatus() === "dnd";
           const isMuted = isChatMuted(activeConversation.id);
 
@@ -913,7 +968,7 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
             initials: initialsFor(sender?.display_name ?? "Membro"),
             body,
             createdAt: row.created_at,
-            replyId, editedAt: row.updated_at,
+            replyId, mentions, editedAt: row.updated_at,
             encrypted,
             attachment,
           }]);
@@ -1156,7 +1211,8 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
       const id = crypto.randomUUID();
       controller.signal.throwIfAborted();
       const context = `hush:conversation:${activeConversation.id}:epoch:0`;
-      const packed = packMessageContent(cleanDraft, attachment, replyingTo?.id);
+      const mentions=extractMentions(cleanDraft,targetsForSender(session.user.id));
+      const packed = packMessageContent(cleanDraft, attachment, replyingTo?.id,mentions);
       const encrypted = await encryptText(packed, roomKey, context);
       const saved = await persistEncryptedMessage({
         id,
@@ -1175,6 +1231,7 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
         author: profile.display_name,
         initials: initialsFor(profile.display_name),
         body: cleanDraft,
+        mentions,
         replyId: replyingTo?.id,
         createdAt: saved.created_at,
         encrypted,
@@ -1239,6 +1296,11 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
                     <div key={channel.id}>
                     {channel.category_id && (index === 0 || textChannels[index-1].category_id !== channel.category_id) && <button className="category-toggle" aria-expanded={!collapsedCategories.has(channel.category_id)} onClick={()=>setCollapsedCategories(current=>{const next=new Set(current);next.has(channel.category_id!)?next.delete(channel.category_id!):next.add(channel.category_id!);return next;})}><ChevronDown size={12}/><span>{categories.find(category=>category.id===channel.category_id)?.name}</span><small>{textChannels.filter(item=>item.category_id===channel.category_id).length}</small></button>}
                     <button
+                      draggable={canManageSpace}
+                      onDragStart={e=>{setDragChannelId(channel.id);e.dataTransfer.effectAllowed="move";e.dataTransfer.setData("text/plain",channel.id);}}
+                      onDragEnd={()=>setDragChannelId(null)}
+                      onDragOver={e=>{if(dragChannelId)e.preventDefault();}}
+                      onDrop={e=>{e.preventDefault();void dropChannel(channel.id);}}
                       hidden={!!channel.category_id&&collapsedCategories.has(channel.category_id)}
                       className={`channel-row ${activeConversationId === channel.id ? "active" : ""}`}
                       onClick={() => { setActiveConversationId(channel.id); setSidebarOpen(false); setStage((current) => current.open ? { ...current, expanded: false } : current); }}
@@ -1258,8 +1320,16 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
               </div>
               <div className="channel-section voice-section">
                 <div className="section-label"><span>canali vocali</span>{(activeSpace.owner_id===session.user.id||mySpaceRole==="admin")&&<button onClick={() => openModal("voice")} aria-label="Crea canale vocale"><Plus size={14} /></button>}</div>
-                {voiceChannels.map((channel) => (
+                {voiceChannels.map((channel,index) => (
+                  <div key={channel.id}>
+                  {channel.category_id&&(index===0||voiceChannels[index-1].category_id!==channel.category_id)&&<button className="category-toggle" aria-expanded={!collapsedCategories.has(channel.category_id)} onClick={()=>setCollapsedCategories(current=>{const next=new Set(current);next.has(channel.category_id!)?next.delete(channel.category_id!):next.add(channel.category_id!);return next;})}><ChevronDown size={12}/><span>{categories.find(c=>c.id===channel.category_id)?.name}</span></button>}
                   <button
+                    hidden={!!channel.category_id&&collapsedCategories.has(channel.category_id)}
+                    draggable={canManageSpace}
+                    onDragStart={e=>{setDragChannelId(channel.id);e.dataTransfer.effectAllowed="move";e.dataTransfer.setData("text/plain",channel.id);}}
+                    onDragEnd={()=>setDragChannelId(null)}
+                    onDragOver={e=>{if(dragChannelId)e.preventDefault();}}
+                    onDrop={e=>{e.preventDefault();void dropChannel(channel.id);}}
                     key={channel.id}
                     className={`channel-row voice-row ${activeConversationId === channel.id ? "active" : ""}`}
                     onClick={() => {
@@ -1269,7 +1339,7 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
                     }}
                   >
                     <Volume2 size={17} /><span>{channel.name}</span>{!!unreads[channel.id]?.unread_count && <span className="unread-badge">{unreads[channel.id].unread_count}</span>}<small>Entra</small>
-                  </button>
+                  </button></div>
                 ))}
                 {!loading && voiceChannels.length === 0 ? <p className="sidebar-empty">Nessun canale vocale</p> : null}
               </div>
@@ -1501,7 +1571,7 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
                   const date = new Date(message.createdAt).toLocaleDateString("it");
                   return <div key={message.id}>
                     {(index === 0 || new Date(filteredMessages[index-1].createdAt).toLocaleDateString("it") !== date) && <div className="message-date">{date}</div>}
-                    <ChatMessage message={message} sender={sender} selfId={session.user.id} roomKey={roomKey} conversationId={activeConversation.id} reply={messages.find(item => item.id === message.replyId)} reactions={extras.reactions.filter(item => item.message_id === message.id)} pinned={extras.pins.some(item => item.message_id === message.id)} onReply={() => {setReplyingTo(message); messageInputRef.current?.focus();}} onEdit={text => editMessage(message, text)} onDelete={async () => {await deleteEncryptedMessage(message.id); if(activeIdRef.current === activeConversation.id) setMessages(prev => prev.filter(item => item.id !== message.id));}} onReact={async emoji => {await toggleMessageReaction(message.id, emoji); await refreshExtras(activeConversation.id);}} onPin={async () => {await toggleMessagePin(message.id); await refreshExtras(activeConversation.id);}} onProfile={() => setViewedProfile(sender)} onToast={setToast} />
+                    <ChatMessage canEdit={canWrite} mentions={resolveMentions(message.body,message.mentions,targetsForSender(message.senderId??""))} mentionTargets={targetsForSender(message.senderId??"")} highlighted={mentionsRecipient(resolveMentions(message.body,message.mentions,targetsForSender(message.senderId??"")),session.user.id,myRoleIds,userStatus!=="invisible")} senderRole={rolesForUser(roleContext,message.senderId??"")[0]} canReact={activePermissions.includes("add_reactions")} canPin={activePermissions.includes("pin_messages")} canManageMessages={activePermissions.includes("manage_messages")} message={message} sender={sender} selfId={session.user.id} roomKey={roomKey} conversationId={activeConversation.id} reply={messages.find(item => item.id === message.replyId)} reactions={extras.reactions.filter(item => item.message_id === message.id)} pinned={extras.pins.some(item => item.message_id === message.id)} onReply={() => {setReplyingTo(message); messageInputRef.current?.focus();}} onEdit={text => editMessage(message, text)} onDelete={async () => {await deleteEncryptedMessage(message.id); if(activeIdRef.current === activeConversation.id) setMessages(prev => prev.filter(item => item.id !== message.id));}} onReact={async emoji => {await toggleMessageReaction(message.id, emoji); await refreshExtras(activeConversation.id);}} onPin={async () => {await toggleMessagePin(message.id); await refreshExtras(activeConversation.id);}} onProfile={() => setViewedProfile(sender)} onToast={setToast} />
                   </div>;
                 })}
                 <div ref={messageEnd} />
@@ -1530,7 +1600,7 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
                   </button>
                 </div>
               ) : null}
-              {/@[\w-]*$/.test(draft) && <div className="mention-suggestions" role="group" aria-label="Menziona un membro">{members.filter(member=>member.id!==session.user.id && member.username.toLowerCase().startsWith(draft.match(/@([\w-]*)$/)?.[1].toLowerCase()??"")).slice(0,6).map(member=><button key={member.id} type="button" onClick={()=>{setDraft(draft.replace(/@[\w-]*$/,`@${member.username} `));messageInputRef.current?.focus();}}><strong>{member.display_name}</strong><span>@{member.username}</span></button>)}</div>}
+              {mentionOptions.length>0 && <div id="mention-options" className="mention-suggestions" role="listbox" aria-label="Menzioni">{mentionOptions.map((target,index)=><button key={`${target.kind}:${target.id}`} id={`mention-option-${index}`} role="option" aria-selected={index===Math.min(mentionIndex,mentionOptions.length-1)} type="button" onMouseDown={e=>e.preventDefault()} onClick={()=>insertMention(target)}><strong style={{color:target.color}}>@{target.label}</strong><span>{target.name}</span></button>)}</div>}
               <form
                 className="composer"
                 onSubmit={sendMessage}
@@ -1561,10 +1631,13 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
                 <textarea rows={1} maxLength={8000}
                   ref={messageInputRef}
                   value={draft}
-                  onChange={event => {setDraft(event.target.value); if(activeChannelRef.current && Date.now()-typingSentRef.current > 2000) {typingSentRef.current=Date.now(); void broadcastTyping(activeChannelRef.current, session.user.id, !!event.target.value).catch(() => undefined);}}}
-                  onKeyDown={event => {if(event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {event.preventDefault();event.currentTarget.form?.requestSubmit();}}}
+                  onSelect={event=>setMentionCursor(event.currentTarget.selectionStart)}
+                  aria-controls={mentionOptions.length?"mention-options":undefined}
+                  aria-activedescendant={mentionOptions.length?`mention-option-${Math.min(mentionIndex,mentionOptions.length-1)}`:undefined}
+                  onChange={event => {setDraft(event.target.value);setMentionCursor(event.target.selectionStart);setMentionIndex(0);setMentionDismissed(false); if(activeChannelRef.current && Date.now()-typingSentRef.current > 2000) {typingSentRef.current=Date.now(); void broadcastTyping(activeChannelRef.current, session.user.id, !!event.target.value).catch(() => undefined);}}}
+                  onKeyDown={event => {if(!event.nativeEvent.isComposing&&mentionOptions.length){if(event.key==="ArrowDown"||event.key==="ArrowUp"){event.preventDefault();setMentionIndex(index=>(index+(event.key==="ArrowDown"?1:-1)+mentionOptions.length)%mentionOptions.length);return;}if((event.key==="Enter"&&!event.shiftKey)||event.key==="Tab"){event.preventDefault();insertMention(mentionOptions[Math.min(mentionIndex,mentionOptions.length-1)]);return;}if(event.key==="Escape"){event.preventDefault();event.stopPropagation();setMentionDismissed(true);return;}}if(event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {event.preventDefault();event.currentTarget.form?.requestSubmit();}}}
                   disabled={!canWrite || keyStatus !== "ready" || uploadingMedia}
-                  placeholder={!canWrite ? "Solo gli amministratori possono scrivere qui" : keyStatus === "ready" ? (uploadingMedia ? "Cifratura e caricamento file…" : `Scrivi in ${activeConversation.name}`) : "In attesa della chiave…"}
+                  placeholder={!canWrite ? "Non hai il permesso di scrivere in questo canale" : keyStatus === "ready" ? (uploadingMedia ? "Cifratura e caricamento file…" : `Scrivi in ${activeConversation.name}`) : "In attesa della chiave…"}
                   aria-label="Messaggio"
                 />
                 <div className="composer-emoji-wrap">
@@ -1621,7 +1694,7 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
                 });
               }}
               aria-label={`Profilo di ${member.display_name}`}
-            ><span className="member-avatar"><Avatar profile={member} /><i className={`status ${member.id === session.user.id ? (userStatus === "invisible" ? "status-away" : userStatus === "dnd" ? "status-dnd" : "status-online") : (remoteStatuses[member.id] === "dnd" ? "status-dnd" : onlineUserIds.includes(member.id) ? "status-online" : "status-away")}`} /></span><span><strong>{member.display_name}</strong><small>@{member.username}</small></span></button>
+            ><span className="member-avatar"><Avatar profile={member} /><i className={`status ${member.id === session.user.id ? (userStatus === "invisible" ? "status-away" : userStatus === "dnd" ? "status-dnd" : "status-online") : (remoteStatuses[member.id] === "dnd" ? "status-dnd" : onlineUserIds.includes(member.id) ? "status-online" : "status-away")}`} /></span><span><strong style={{color:rolesForUser(roleContext,member.id)[0]?.color}}>{member.display_name}</strong><small>{rolesForUser(roleContext,member.id)[0]?.name??`@${member.username}`}</small></span></button>
           ))}
         </div>
         <div className="privacy-note"><ShieldCheck size={16} /><p><strong>{keyStatus === "ready" ? "Chiave verificata" : "Supabase connesso"}</strong><span>{identity ? `Dispositivo ${identity.id.slice(0, 8)}` : "Registrazione dispositivo…"}</span></p><i className={`backend-light backend-${keyStatus === "error" ? "degraded" : "ready"}`} /></div>

@@ -1,3 +1,4 @@
+import { loadServerRoles } from "./server-roles";
 import { supabase } from "./supabase";
 
 export type SpaceChannel = { id: string; name: string; kind: string; category_id: string | null; position: number; send_permission: "members" | "admins" };
@@ -10,12 +11,13 @@ function db() { if (!supabase) throw new Error("Supabase non è configurato"); r
 export function validateManagementName(value: string, kind: "channel" | "category") { const clean = value.trim(); if (clean.length < 1 || clean.length > 80) throw new Error(`Nome ${kind === "channel" ? "canale" : "categoria"} non valido`); return clean; }
 export async function loadSpaceManagement(spaceId: string) {
   const client = db();
-  const [channels, members, invites, bans, categories] = await Promise.all([
+  const [channels, members, invites, bans, categories, roleContext] = await Promise.all([
     client.from("conversations").select("id,name,kind,category_id,position,send_permission").eq("space_id", spaceId).order("position"),
     client.from("space_members").select("user_id,role").eq("space_id", spaceId),
     client.from("space_invites").select("id,expires_at,use_count,max_uses,revoked_at,created_at").eq("space_id", spaceId).order("created_at", { ascending: false }),
     client.from("space_bans").select("user_id,banned_by,reason,created_at").eq("space_id", spaceId),
     client.from("space_categories").select("id,name,position").eq("space_id", spaceId).order("position"),
+    loadServerRoles(spaceId),
   ]);
   for (const result of [channels, members, invites, bans, categories]) if (result.error) throw result.error;
   const ids = (members.data ?? []).map(member => member.user_id);
@@ -24,6 +26,7 @@ export async function loadSpaceManagement(spaceId: string) {
   const profileById = new Map((profiles.data ?? []).map(profile => [profile.id,profile]));
   return {
     channels: (channels.data ?? []) as SpaceChannel[],
+    ...roleContext,
     members: (members.data ?? []).map(member => ({...member,username:profileById.get(member.user_id)?.username??member.user_id,display_name:profileById.get(member.user_id)?.display_name??"Membro"})) as SpaceMember[],
     invites: (invites.data ?? []) as SpaceInvite[], bans: (bans.data ?? []) as SpaceBan[], categories: (categories.data ?? []) as SpaceCategory[],
   };
@@ -40,3 +43,5 @@ export async function manageSpaceMember(spaceId: string, userId: string, role: "
 export async function kickSpaceMember(spaceId: string, userId: string) { const { error } = await db().rpc("kick_space_member", { p_space_id: spaceId, p_user_id: userId }); if (error) throw error; }
 export async function setSpaceBan(spaceId: string, userId: string, banned: boolean, reason?: string) { const { error } = await db().rpc("set_space_ban", { p_space_id: spaceId, p_user_id: userId, p_banned: banned, p_reason: reason ?? null }); if (error) throw error; }
 export async function revokeSpaceInvite(id: string) { const { error } = await db().rpc("revoke_space_invite", { p_invite_id: id }); if (error) throw error; }
+
+export async function createManagedChannel(spaceId: string, name: string, voice: boolean) { const { error } = await db().rpc(voice ? "create_space_voice_channel" : "create_space_channel", {p_space_id:spaceId,p_name:validateManagementName(name,"channel")}); if(error) throw error; }

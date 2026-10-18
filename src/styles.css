@@ -2826,3 +2826,5 @@ html, body, #root { background: var(--app-background); }
 :root[data-theme] .app-shell .composer:focus-within {
   border-color: color-mix(in srgb, var(--frost) 32%, var(--line));
 }
+/* Mentions use a quiet neutral surface; role colors identify the tag. */
+.chat-message.is-mentioned{background:rgba(185,190,200,.09);box-shadow:inset 2px 0 rgba(200,205,215,.44)}.message-mention{color:var(--text-primary,#e1e3e8);background:rgba(185,190,205,.15);border-radius:4px;padding:1px 3px;font-weight:600;box-decoration-break:clone;-webkit-box-decoration-break:clone}.message-role-label{font-size:10px;border:1px solid currentColor;border-radius:4px;padding:1px 5px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.mention-suggestions button[aria-selected=true]{background:rgba(185,190,200,.13)}

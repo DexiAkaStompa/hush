@@ -184,3 +184,37 @@ you're gonna have to public the whole source of the app or i WILL sue your ass)
 HSRL is a custom source-available license and is not an OSI-approved Open
 Source license. For commercial distribution, have the terms reviewed by a
 qualified legal professional.
+
+## Server roles and mentions
+
+Apply `supabase/migrations/20261018140413_roles_mentions_reactions.sql` before
+updating clients. Server management now includes custom role names, colors,
+member assignments and channel-specific allow/inherit/deny permissions.
+The supported capabilities are sending messages, adding reactions, joining
+voice, mass mentions, shared pins and message moderation. The default
+`@everyone` role applies to every member; assigned role grants are combined.
+Channel overrides apply to everyone first, then assigned roles, with explicit
+allows winning among assigned roles. The legacy administrator-only writing
+setting remains a final restriction. Owners and administrators bypass these
+restrictions. Custom roles do not grant administrator or role-management access.
+
+Channels stay visible to server members. These permissions do not implement
+private channels, rotate existing encryption keys or revoke downloaded content.
+Voice access is checked before joining and when authorizing private call topics;
+existing peer sessions rely on the normal client refreshing permissions and
+leaving. This does not introduce server-enforced muting or change the media engine.
+Permissions and role labels refresh on focus and every 20 seconds while visible;
+database checks on writes take effect immediately.
+
+User, role, `@everyone` and `@here` mentions are carried inside the encrypted
+message payload, including stable target IDs and validated text offsets.
+The composer supports multiword roles and keyboard selection. Mention rendering
+and mass-mention eligibility are receiver/client checks: the server cannot
+inspect end-to-end encrypted message text. Legacy messages without metadata
+use current names for mention recognition. Role metadata and assignments are
+visible to server members and are not end-to-end encrypted.
+
+Text and voice channels can be renamed, reordered by drag/drop or buttons,
+and assigned to categories. New channels append after the existing order.
+The migration also corrects reaction/pin broadcasts to pass `TG_OP` as the
+Realtime operation while preserving the `EXTRAS` event consumed by clients.
