@@ -188,7 +188,7 @@ export async function showDesktopNotification(options: ShowDesktopNotificationOp
           body,
           tag,
           silent: true, // Audio handled by Hush notification-sound manager
-          icon: "/favicon.ico",
+          icon: "/favicon.svg",
         });
 
         notif.onclick = () => {

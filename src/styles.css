@@ -106,8 +106,6 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--mint); outl
   background: #18222e; border-radius: var(--radius-control); transition: background .2s, transform .2s;
 }
 .brand-mark { color: var(--ink); background: var(--frost); }
-.brand-mark-slash { stroke: var(--coral); }
-.brand-mark:hover .brand-mark-slash { stroke: #e85448; }
 .brand-mark:hover, .server-icon:hover { border-radius: var(--radius-control); transform: translateY(-1px); }
 .server-icon.selected { background: var(--coral); color: #26120f; border-radius: var(--radius-control); position: relative; }
 .server-icon.selected::before { content: ""; position: absolute; left: -10px; width: 3px; height: 24px; border-radius: 0 3px 3px 0; background: var(--frost); }
