@@ -236,3 +236,11 @@ and updates the backend secrets. It uses state and PKCE, binds only to loopback,
 and never prints tokens. Existing files remain in the same private folder.
 The shared-media health check verifies Google authorization; expired grants
 produce an actionable error and are not retried as transient upload failures.
+
+Audio and video attachments have an on-demand inline player, including WAV/MP3
+and MP4/WebM when their codecs are supported by the browser. Playback uses local
+object URLs after authenticated download and end-to-end decryption; it never
+publishes a plaintext URL. Opening another player closes the previous one.
+Closing a player cancels its request, unloads its decoder and revokes the object
+URL. Inline playback has a 128 MiB memory budget; larger files remain available
+through the existing streamed download without an upload size restriction.

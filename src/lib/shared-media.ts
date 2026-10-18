@@ -4,7 +4,7 @@ const endpoint = import.meta.env.VITE_SHARED_MEDIA_URL?.trim();
 export const isSharedMediaConfigured = Boolean(endpoint);
 
 class StorageReauthorizationError extends Error {
-  constructor(){super("Il collegamento al Drive condiviso è scaduto o è stato revocato. Il proprietario deve ricollegare Google Drive; il tuo file è ancora pronto per essere inviato.");}
+  constructor(){super("Il collegamento al Drive condiviso è scaduto o è stato revocato. Il proprietario deve ricollegare Google Drive; riprova dopo il ricollegamento.");}
 }
 
 async function requestSharedMedia(params: Record<string, string>, body?: Blob, signal?: AbortSignal): Promise<Response> {

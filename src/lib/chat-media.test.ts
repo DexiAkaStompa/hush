@@ -287,3 +287,16 @@ test("keeps all 25 mounted images alive beyond idle cache capacity", async () =>
     expect(revoke).toHaveBeenCalledTimes(1);
   } finally { revoke.mockRestore(); }
 });
+
+test("discard releases decoded media immediately only after the final lease",async()=>{
+ const key=await createRoomKey(),encrypted=await encryptedFixture("conv-discard",key);
+ const download=vi.fn().mockResolvedValue(new Uint8Array(encrypted.ciphertext));
+ (globalThis as unknown as {window:{hushWindow:unknown}}).window={hushWindow:{downloadGDriveMedia:download}};
+ const attachment=fixtureAttachment("discard-path",encrypted.iv),revoke=vi.spyOn(URL,"revokeObjectURL");
+ try{
+  const url=await downloadAndDecryptChatImage(attachment,"conv-discard",key);await downloadAndDecryptChatImage(attachment,"conv-discard",key);
+  releaseChatMediaCacheEntry(attachment.path,url,true);expect(revoke).not.toHaveBeenCalled();
+  releaseChatMediaCacheEntry(attachment.path,url,true);expect(revoke).toHaveBeenCalledWith(url);
+  const fresh=await downloadAndDecryptChatImage(attachment,"conv-discard",key);expect(fresh).not.toBe(url);expect(download).toHaveBeenCalledTimes(2);releaseChatMediaCacheEntry(attachment.path,fresh,true);
+ }finally{revoke.mockRestore();}
+});

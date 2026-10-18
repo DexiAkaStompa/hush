@@ -1,10 +1,17 @@
+import { MediaAttachment } from "./MediaAttachment";
+import { playableMedia } from "../lib/media-preview";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Download, Eye, Image as ImageIcon, Loader2, X } from "lucide-react";
 import { downloadAndDecryptChatImage, releaseChatMediaCacheEntry, type ChatAttachmentMeta } from "../lib/chat-media";
 import { saveChatAttachment } from "../lib/media-download";
 
-export function ChatAttachment({
+type AttachmentProps={attachment:ChatAttachmentMeta;conversationId:string;roomKey:CryptoKey|null};
+export function ChatAttachment(props:AttachmentProps){
+  const format=playableMedia(props.attachment);
+  return format?<MediaAttachment {...props} format={format}/>:<ImageOrFileAttachment {...props}/>;
+}
+function ImageOrFileAttachment({
   attachment,
   conversationId,
   roomKey,

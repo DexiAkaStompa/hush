@@ -1,0 +1,164 @@
+.media-attachment {
+  width: min(480px, 100%);
+  margin-top: 7px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-surface);
+  overflow: hidden;
+  background: var(--soft-surface, var(--panel));
+  color: var(--frost);
+}
+.media-attachment-header {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 12px 14px;
+}
+.media-attachment-header > svg {
+  flex-shrink: 0;
+  color: var(--muted);
+}
+.media-attachment-header > div:first-of-type {
+  min-width: 0;
+  flex: 1;
+}
+.media-attachment-header strong {
+  display: block;
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.media-attachment-header span {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  margin-top: 2px;
+}
+.media-attachment-actions {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+}
+.media-attachment-actions :is(button, a) {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  color: var(--frost);
+  background: var(--panel);
+  cursor: pointer;
+}
+.media-attachment button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.media-attachment-actions :is(button, a):hover {
+  background: var(--panel-raised);
+}
+.media-attachment-open {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  min-height: 50px;
+  margin: 0 14px 10px;
+  width: calc(100% - 28px);
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background: var(--panel);
+  color: var(--frost);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.media-attachment-open:hover:not(:disabled) {
+  background: var(--panel-raised);
+}
+.media-attachment-loading {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 14px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.media-attachment-player audio {
+  display: block;
+  width: calc(100% - 24px);
+  height: 42px;
+  margin: 0 12px 10px;
+  color-scheme: dark;
+}
+.media-attachment-player video {
+  display: block;
+  width: 100%;
+  max-height: 360px;
+  min-height: 160px;
+  object-fit: contain;
+  background: #08090a;
+}
+.media-attachment-retention {
+  display: block;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.5;
+  padding: 0 14px 11px;
+}
+.media-attachment-video:has(video) .media-attachment-retention {
+  padding-top: 10px;
+}
+.media-attachment-error,
+.media-attachment-note {
+  margin: 0;
+  padding: 0 14px 12px;
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.media-attachment-note {
+  color: var(--muted);
+}
+.media-attachment-error {
+  color: var(--coral);
+}
+.media-attachment-error button {
+  margin-left: 8px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--frost);
+  border-radius: var(--radius-control);
+  padding: 4px 7px;
+  cursor: pointer;
+}
+.media-attachment :is(button, a):focus-visible {
+  outline: 1px solid var(--muted);
+  outline-offset: 2px;
+}
+@media (max-width: 600px) {
+  .media-attachment-header {
+    padding: 10px;
+    gap: 8px;
+  }
+  .media-attachment-open {
+    margin-inline: 10px;
+    width: calc(100% - 20px);
+  }
+  .media-attachment-player video {
+    max-height: 240px;
+    min-height: 120px;
+  }
+}
+.media-attachment-player audio {
+  border-radius: var(--radius-control);
+  overflow: hidden;
+}
+.media-attachment-player audio::-webkit-media-controls-enclosure {
+  border-radius: var(--radius-control);
+}
+.media-attachment-player audio::-webkit-media-controls-panel {
+  background: var(--panel-raised);
+  color: var(--frost);
+}

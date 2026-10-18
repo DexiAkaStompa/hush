@@ -278,11 +278,15 @@ export async function downloadAndDecryptChatImage(
 }
 
 /** Releases one mounted attachment's lease on its decrypted object URL. */
-export function releaseChatMediaCacheEntry(path: string, url: string) {
+export function releaseChatMediaCacheEntry(path: string, url: string, discard = false) {
   const entry = [...decryptedUrlCache.values()].find((candidate) => candidate.path === path && candidate.url === url);
   if (!entry) return;
   entry.consumers = Math.max(0, entry.consumers - 1);
   entry.lastUsed = Date.now();
+  if(discard&&entry.consumers===0){
+    const key=cacheKey(entry.path,entry.conversationId,entry.roomKey);
+    decryptedUrlCache.delete(key);decryptedCacheBytes-=entry.size;URL.revokeObjectURL(entry.url);
+  }
   evictIdleDecryptedUrls();
 }
 
