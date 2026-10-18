@@ -157,7 +157,7 @@ kbd { font-family: "Cascadia Code", monospace; font-size: 9px; padding: 2px 5px;
 .dm-row small { font-size: 10px; }
 .stacked-avatars { width: 30px; display: flex; }
 .stacked-avatars .avatar:last-child { margin-left: -9px; box-shadow: 0 0 0 2px var(--obsidian); }
-.user-panel { height: 64px; flex: 0 0 64px; padding: 9px 10px; display: flex; align-items: center; gap: 8px; background: #0c1219; border-top: 1px solid var(--line); }
+.user-panel { height: 64px; flex: 0 0 64px; margin-inline: calc(-1 * var(--sidebar-inset, 0px)); align-self: stretch; border-radius: 0; padding: 9px 10px; display: flex; align-items: center; gap: 8px; background: #0c1219; border-top: 1px solid var(--line); }
 .user-copy { min-width: 0; flex: 1; display: flex; flex-direction: column; }
 .user-copy strong { font-size: 12px; }
 .user-copy button { border: 0; background: none; color: var(--muted); padding: 1px 0; font-size: 9px; text-align: left; cursor: pointer; }
@@ -249,8 +249,8 @@ kbd { font-family: "Cascadia Code", monospace; font-size: 9px; padding: 2px 5px;
 .member > span:last-child { display: flex; flex-direction: column; gap: 2px; }
 .current-member { cursor: default; }
 .member strong { font-size: 11px; }.member small { color: var(--muted); font-size: 9px; }
-.member-avatar { position: relative; }
-.status { position: absolute; width: 9px; height: 9px; border: 2px solid var(--obsidian); border-radius: 50%; right: -1px; bottom: -1px; }
+.member-avatar { position: relative; display: inline-flex; flex-shrink: 0; }
+.status { position: absolute; width: 12px; height: 12px; box-sizing: border-box; border: 2px solid var(--obsidian); border-radius: 50%; right: -1px; bottom: -1px; z-index: 1; }
 .status-online, .status-live { background: var(--mint); }.status-away { background: #f4c76a; }.status-busy { background: var(--coral); }
 .privacy-note { margin-top: 28px; padding: 12px; display: flex; gap: 8px; color: #7e9188; border-top: 1px solid var(--line); }
 .privacy-note p { margin: 0; display: flex; flex-direction: column; gap: 3px; }.privacy-note strong { color: #a4b4ac; font-size: 9px; }.privacy-note span { font-size: 9px; line-height: 1.4; }
@@ -1232,7 +1232,7 @@ html, body, #root { background: var(--app-background); }
 :root[data-theme="hush-void"] .app-shell .brand-mark,
 :root[data-theme="hush-void"] .app-shell .server-icon,
 :root[data-theme="hush-void"] .app-shell .header-actions > button,
-:root[data-theme="hush-void"] .app-shell .user-panel > button,
+:root[data-theme="hush-void"] .app-shell .user-panel > button:not(.user-status-avatar-btn),
 :root[data-theme="hush-void"] .app-shell .composer button,
 :root[data-theme="hush-void"] .app-shell .control,
 :root[data-theme="hush-void"] .app-shell .music-transport > button,
@@ -2503,15 +2503,27 @@ html, body, #root { background: var(--app-background); }
   transform: scale(1.05);
 }
 
+/* The hit target must match its avatar so the badge anchors to the image. */
+.user-panel > .user-status-avatar-btn {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  overflow: visible;
+}
+
 .user-status-avatar-btn .status-badge {
   position: absolute;
-  width: 11px;
-  height: 11px;
+  width: 12px;
+  height: 12px;
   border-radius: 50%;
   bottom: -1px;
   right: -1px;
   border: 2px solid var(--obsidian, #0a0e13);
-  box-sizing: content-box;
+  box-sizing: border-box;
+  z-index: 1;
 }
 
 .user-status-text-row {

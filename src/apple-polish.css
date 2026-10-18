@@ -47,7 +47,8 @@
 }
 
 :root[data-theme="liquid-glass"] .app-shell .channel-sidebar {
-  padding-inline: 10px;
+  --sidebar-inset: 10px;
+  padding-inline: var(--sidebar-inset);
   background: var(--sidebar-background);
   -webkit-backdrop-filter: blur(26px) saturate(1.12);
   backdrop-filter: blur(26px) saturate(1.12);
