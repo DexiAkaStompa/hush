@@ -13,4 +13,5 @@ const pngBuffers = await Promise.all(
   pngSizes.map((size) => sharp(source).resize(size, size).png().toBuffer()),
 );
 await writeFile(path.join(outputDirectory, "icon.png"), await sharp(source).resize(512, 512).png().toBuffer());
+await writeFile(path.join(outputDirectory, "icon-mac.png"), await sharp(source).resize(1024, 1024).png().toBuffer());
 await writeFile(path.join(outputDirectory, "icon.ico"), await pngToIco(pngBuffers));

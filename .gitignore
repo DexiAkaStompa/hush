@@ -11,4 +11,5 @@ release-*
 supabase/.temp
 build/icon.png
 build/icon.ico
+build/icon-mac.png
 gdrive-config.json
