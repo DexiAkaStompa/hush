@@ -2,7 +2,8 @@ import { UserProfile } from "./components/UserProfile";
 import type { ProfileAnchor } from "./lib/profile-details";
 import { EMPTY_ROLE_CONTEXT, loadServerRoles, loadChannelPermissions, rolesForUser, canMassMention, reorderChannels, setMemberRoles, type ServerRoleContext, type ServerPermission } from "./lib/server-roles";
 import { extractMentions, resolveMentions, mentionsRecipient, mentionQuery, type MentionTarget, type MessageMention } from "./lib/mentions";
-import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type FormEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { captureChatScrollAnchor, restoreChatScrollAnchor, type ChatScrollAnchor } from "./lib/chat-scroll";
 import type { Session, RealtimeChannel } from "@supabase/supabase-js";
 import {
   Bell,
@@ -245,6 +246,7 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
   const [awayFromBottom, setAwayFromBottom] = useState(false);
   const [manageSpace, setManageSpace] = useState(false);
   const messagesRef = useRef<HTMLDivElement>(null);
+  const olderScrollAnchor = useRef<{conversationId:string; anchor:ChatScrollAnchor} | null>(null);
   const activeChannelRef = useRef<RealtimeChannel | null>(null);
   const activeIdRef = useRef<string | null>(null);
   const typingSentRef = useRef(0);
@@ -453,9 +455,9 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
       const older = await loadAndDecryptMessages(id, roomKey, members, { before: { createdAt: first.createdAt, id: first.id } });
       if (activeIdRef.current !== id) return;
       const element = messagesRef.current;
-      const oldHeight = element?.scrollHeight ?? 0;
+      const anchor = element ? captureChatScrollAnchor(element) : null;
+      olderScrollAnchor.current = anchor ? {conversationId:id, anchor} : null;
       setMessages(current => mergeMessages(current, older)); setHasOlder(older.length === 200);
-      requestAnimationFrame(() => { if (element) element.scrollTop += element.scrollHeight - oldHeight; });
     } catch (error) { setToast(readableError(error)); } finally { setLoadingOlder(false); }
   };
   const searchHistory = async () => {
@@ -1036,6 +1038,14 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
+
+  useLayoutEffect(() => {
+    const pending = olderScrollAnchor.current;
+    olderScrollAnchor.current = null;
+    if (pending && pending.conversationId === activeConversationId && messagesRef.current) {
+      restoreChatScrollAnchor(messagesRef.current, pending.anchor);
+    }
+  }, [messages, activeConversationId]);
 
   useEffect(() => {
     if (!awayFromBottom && !search && !showPins) messageEnd.current?.scrollIntoView({ behavior: "instant" });

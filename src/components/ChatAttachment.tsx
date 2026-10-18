@@ -9,7 +9,7 @@ import { saveChatAttachment } from "../lib/media-download";
 type AttachmentProps={attachment:ChatAttachmentMeta;conversationId:string;roomKey:CryptoKey|null};
 export function ChatAttachment(props:AttachmentProps){
   const format=playableMedia(props.attachment);
-  return format?<MediaAttachment {...props} format={format}/>:<ImageOrFileAttachment {...props}/>;
+  return format?<MediaAttachment {...props} format={format}/>:<ImageOrFileAttachment key={`${props.conversationId}:${props.attachment.id}:${props.attachment.path}`} {...props}/>;
 }
 function ImageOrFileAttachment({
   attachment,
@@ -22,6 +22,7 @@ function ImageOrFileAttachment({
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [nearViewport, setNearViewport] = useState(false);
+  const [imageLayout, setImageLayout] = useState<{width:number;height:number;reservedHeight:number} | null>(null);
   useEffect(() => {
     const element = containerRef.current;
     if (!element) return;
@@ -81,7 +82,7 @@ function ImageOrFileAttachment({
   };
 
   return (
-    <div className="chat-attachment-container" ref={containerRef}>
+    <div className="chat-attachment-container" ref={containerRef} style={!url && imageLayout ? {minHeight:imageLayout.reservedHeight} : undefined}>
       {!previewable ? <div className="chat-file-card"><ImageIcon size={20}/><span>{attachment.name} · {formatSize(attachment.size)}<small className="attachment-retention">Pulizia annuale dopo 12 mesi</small>{error ? <small role="alert">{error}</small> : null}</span>{downloadProgress !== null ? <><span role="status">{Math.round(downloadProgress * 100)}%</span><button type="button" className="lightbox-btn" onClick={() => downloadController.current?.abort()} aria-label="Annulla download"><X size={18}/></button></> : <button type="button" className="lightbox-btn" disabled={!roomKey} onClick={() => void download()} aria-label={`Scarica ${attachment.name}`}><Download size={18}/></button>}</div> : loading ? (
         <div className="chat-attachment-loading">
           <Loader2 size={18} className="attachment-spinner" />
@@ -104,7 +105,10 @@ function ImageOrFileAttachment({
             }}
             aria-label={`Ingrandisci ${attachment.name}`}
           >
-            <img src={url} alt={attachment.name} loading="lazy" />
+            <img src={url} alt={attachment.name} loading="lazy" width={imageLayout?.width} height={imageLayout?.height} onLoad={event => {
+              const image=event.currentTarget;
+              setImageLayout({width:image.naturalWidth,height:image.naturalHeight,reservedHeight:containerRef.current?.getBoundingClientRect().height ?? image.height});
+            }} />
             <div className="chat-attachment-overlay">
               <span>{attachment.name} · {formatSize(attachment.size)}</span>
               <Eye size={16} />
