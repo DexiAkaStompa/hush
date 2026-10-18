@@ -223,3 +223,16 @@ Clicking a member, message avatar or author opens a compact profile card. Its av
 opens the full profile with biography, membership dates and shared servers.
 Owners and administrators can search, assign and remove custom roles directly
 from either profile view; the existing server-side role permissions still apply.
+
+### Renewing the shared Drive connection
+
+Google OAuth apps left in Testing issue refresh tokens that expire after seven
+days. Set the existing Google Auth Platform project to Production before
+reauthorizing. Run `npm run gdrive:reconnect -- --project-ref YOUR_PROJECT_REF`
+with the existing local `gdrive-config.json` and an authenticated Supabase CLI.
+Open `http://127.0.0.1:8989/`, then authorize the same Google account. The helper
+checks the original folder, preserves its ID, saves the renewed configuration
+and updates the backend secrets. It uses state and PKCE, binds only to loopback,
+and never prints tokens. Existing files remain in the same private folder.
+The shared-media health check verifies Google authorization; expired grants
+produce an actionable error and are not retried as transient upload failures.

@@ -13,6 +13,10 @@ export type SharedMediaConfig = {
 };
 
 type FetchLike = typeof fetch;
+class StorageAuthorizationError extends Error {
+  constructor() { super("storage_reauthorization_required"); }
+}
+
 type TokenState = { value: string; expiresAt: number };
 let tokenState: TokenState | null = null;
 let tokenFlight: Promise<string> | null = null;
@@ -108,7 +112,11 @@ export async function googleToken(config: SharedMediaConfig, fetchFn: FetchLike)
   if (tokenFlight) return tokenFlight;
   tokenFlight = (async () => {
     const response = await fetchFn("https://oauth2.googleapis.com/token", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ client_id: config.googleClientId, client_secret: config.googleClientSecret, refresh_token: config.googleRefreshToken, grant_type: "refresh_token" }) });
-    if (!response.ok) throw new Error("google_token_failed");
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({})) as { error?: unknown };
+      if (payload.error === "invalid_grant" || payload.error === "invalid_client" || payload.error === "unauthorized_client") throw new StorageAuthorizationError();
+      throw new Error("google_token_failed");
+    }
     const payload = await response.json() as { access_token?: unknown; expires_in?: unknown };
     if (typeof payload.access_token !== "string") throw new Error("google_token_failed");
     tokenState = { value: payload.access_token, expiresAt: Date.now() + (typeof payload.expires_in === "number" ? payload.expires_in : 3600) * 1000 };
@@ -134,7 +142,11 @@ export function createHandler(config: SharedMediaConfig, fetchFn: FetchLike = fe
       const userId = await authenticatedUser(request, config, fetchFn);
       if (!userId) return bad(401, "unauthorized", headers);
       const url = new URL(request.url);
-      if (url.searchParams.get("status") === "1" && request.method === "GET") return json({ configured: Boolean(config.googleClientId && config.googleClientSecret && config.googleRefreshToken && config.googleFolderId) }, 200, headers);
+      if (url.searchParams.get("status") === "1" && request.method === "GET") {
+        const configured=Boolean(config.googleClientId && config.googleClientSecret && config.googleRefreshToken && config.googleFolderId);
+        if(configured)await googleToken(config,fetchFn);
+        return json({configured},200,headers);
+      }
       if (!config.googleClientId || !config.googleClientSecret || !config.googleRefreshToken || !config.googleFolderId) return bad(503, "storage_unconfigured", headers);
       const conversationId = url.searchParams.get("conversationId");
       if (!validUuid(conversationId)) return bad(400, "invalid_conversation", headers);
@@ -200,7 +212,11 @@ export function createHandler(config: SharedMediaConfig, fetchFn: FetchLike = fe
       if (bytes.byteLength !== size) return bad(502, "storage_download_failed", headers);
       headers.set("Content-Type", "application/octet-stream"); headers.set("Content-Length", String(bytes.byteLength));
       return new Response(bytes, { status: 200, headers });
-    } catch {
+    } catch (error) {
+      if(error instanceof StorageAuthorizationError){
+        console.error("shared-media authorization requires renewal");
+        return bad(503,"storage_reauthorization_required",headers);
+      }
       console.error("shared-media request failed");
       return bad(502, "storage_unavailable", headers);
     } finally { activeRequests--; }

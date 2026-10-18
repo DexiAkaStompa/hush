@@ -3,6 +3,10 @@ import { supabase } from "./supabase";
 const endpoint = import.meta.env.VITE_SHARED_MEDIA_URL?.trim();
 export const isSharedMediaConfigured = Boolean(endpoint);
 
+class StorageReauthorizationError extends Error {
+  constructor(){super("Il collegamento al Drive condiviso è scaduto o è stato revocato. Il proprietario deve ricollegare Google Drive; il tuo file è ancora pronto per essere inviato.");}
+}
+
 async function requestSharedMedia(params: Record<string, string>, body?: Blob, signal?: AbortSignal): Promise<Response> {
   if (!endpoint || !supabase) throw new Error("Archiviazione condivisa non configurata.");
   const url = new URL(endpoint);
@@ -21,9 +25,13 @@ async function requestSharedMedia(params: Record<string, string>, body?: Blob, s
     signal?.throwIfAborted();
     try {
       response = await fetch(url, { method: body ? "POST" : "GET", headers, body, signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(120_000)]) : AbortSignal.timeout(120_000) });
+      if(!response.ok){
+        const failure=await response.clone().json().catch(()=>null) as {error?:unknown}|null;
+        if(failure?.error==="storage_reauthorization_required")throw new StorageReauthorizationError();
+      }
       if (![429, 502, 503, 504].includes(response.status) || attempt === 3) break;
       await response.body?.cancel();
-    } catch (error) { if (signal?.aborted || attempt === 3) throw error; }
+    } catch (error) { if (error instanceof StorageReauthorizationError || signal?.aborted || attempt === 3) throw error; }
     await new Promise<void>((resolve, reject) => {
       const timer = setTimeout(done, 1000 * 2 ** attempt);
       function done() {signal?.removeEventListener("abort", cancel); resolve();}

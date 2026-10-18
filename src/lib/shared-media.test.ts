@@ -77,3 +77,9 @@ test("temporary failures retry the same encrypted chunk", async () => {
   expect(fetchMock).toHaveBeenCalledTimes(2);
   expect(fetchMock.mock.calls[0][1].body).toBe(fetchMock.mock.calls[1][1].body);
 });
+
+test("an expired owner Drive grant is actionable and never retried as a temporary failure",async()=>{
+ const fetchMock=vi.fn().mockResolvedValue(Response.json({error:"storage_reauthorization_required",details:"private provider detail"},{status:503}));vi.stubGlobal("fetch",fetchMock);
+ const {uploadSharedMedia}=await import("./shared-media");
+ await expect(uploadSharedMedia("conversation","attachment",new ArrayBuffer(17))).rejects.toThrow("proprietario deve ricollegare Google Drive");expect(fetchMock).toHaveBeenCalledOnce();
+});

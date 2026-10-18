@@ -115,3 +115,15 @@ it("limits concurrent requests before allocating upload bodies", async () => {
   try { expect((await handler(request("GET", "?status=1"))).status).toBe(429); }
   finally { release(); await Promise.all([first, second]); }
 });
+
+it("identifies expired Drive grants without exposing upstream details, including status checks",async()=>{
+ const base=mockFetch();const upstream=vi.fn(async(input:RequestInfo|URL,init?:RequestInit)=>String(input)==="https://oauth2.googleapis.com/token"?Response.json({error:"invalid_grant",error_description:"private upstream credentials"},{status:400}):base(input,init)) as typeof fetch;
+ const log=vi.spyOn(console,"error").mockImplementation(()=>{});
+ try{
+  const handler=createHandler(config,upstream);
+  const response=await handler(request("POST",`?conversationId=${conversationId}&attachmentId=${attachmentId}`,new Uint8Array(17)));
+  expect(response.status).toBe(503);expect(await response.json()).toEqual({error:"storage_reauthorization_required"});
+  const status=await handler(request("GET","?status=1"));expect(status.status).toBe(503);expect(await status.json()).toEqual({error:"storage_reauthorization_required"});
+  expect(log.mock.calls.flat().join(" ")).not.toContain("private upstream");
+ }finally{log.mockRestore();}
+});

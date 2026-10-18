@@ -1,6 +1,8 @@
 /* Chat controls share theme tokens across every appearance. */
 .chat-message {position:relative; border-radius: var(--radius-control); padding:12px 14px; min-height:66px;}
 .chat-message:hover,.chat-message:focus-within {background:var(--hover,rgba(127,127,127,.06));}
+/* The floating actions extend above the row; only inactive rows may clip paint. */
+.chat-message:hover,.chat-message:focus-within,.chat-message:has(.message-toolbar.is-open) {content-visibility:visible;contain:none;z-index:2;}
 .message-avatar-button {background:transparent;border:0;padding:0;align-self:start;cursor:pointer;}
 .message-toolbar {position:absolute;right:12px;top:-10px;display:flex;opacity:0;pointer-events:none;border:1px solid var(--line);background:var(--panel);border-radius: var(--radius-surface);padding:3px;box-shadow:0 4px 18px #0002;}
 .chat-message:hover .message-toolbar,.chat-message:focus-within .message-toolbar,.message-toolbar.is-open {opacity:1;pointer-events:auto;}
