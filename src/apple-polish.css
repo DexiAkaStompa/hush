@@ -27,7 +27,7 @@
 :root[data-theme="liquid-glass"] .app-shell .server-rail {
   padding-block: 14px;
   gap: 10px;
-  background: color-mix(in srgb, var(--rail-background) 92%, transparent);
+  background: var(--rail-background);
   -webkit-backdrop-filter: blur(22px) saturate(1.18);
   backdrop-filter: blur(22px) saturate(1.18);
 }
@@ -48,7 +48,7 @@
 
 :root[data-theme="liquid-glass"] .app-shell .channel-sidebar {
   padding-inline: 10px;
-  background: color-mix(in srgb, var(--sidebar-background) 88%, transparent);
+  background: var(--sidebar-background);
   -webkit-backdrop-filter: blur(26px) saturate(1.12);
   backdrop-filter: blur(26px) saturate(1.12);
 }
@@ -70,8 +70,8 @@
   transition: background-color 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
 }
 :root[data-theme="liquid-glass"] .app-shell .find-conversation:focus-within {
-  border-color: var(--blue);
-  box-shadow: 0 0 0 3px var(--hush-focus);
+  border-color: color-mix(in srgb, var(--frost) 35%, transparent);
+  box-shadow: none;
 }
 
 :root[data-theme="liquid-glass"] .app-shell .channel-section { margin-top: 20px; }
@@ -185,7 +185,7 @@
 /* Member list and active call are supporting surfaces, so they stay quieter. */
 :root[data-theme="liquid-glass"] .app-shell .member-sidebar {
   padding: 22px 16px;
-  background: color-mix(in srgb, var(--sidebar-background) 84%, transparent);
+  background: var(--sidebar-background);
   -webkit-backdrop-filter: blur(25px) saturate(1.12);
   backdrop-filter: blur(25px) saturate(1.12);
 }

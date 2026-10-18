@@ -2701,7 +2701,7 @@ html, body, #root { background: var(--app-background); }
 :root :is(.modal-form input:focus, .emoji-picker-search:focus) { border-color: var(--mint); box-shadow: 0 0 0 3px color-mix(in srgb, var(--mint) 14%, transparent); }
 :root :is(button, input, select, textarea, a):focus-visible { outline: 2px solid var(--blue); outline-offset: 3px; }
 
-/* Liquid Glass: a still, aquatic backdrop under thin smoked glass. */
+/* Neutral glass chrome; desktop transparency comes from the native compositor. */
 :root[data-theme="liquid-glass"] .app-shell :is(.server-rail, .channel-sidebar, .member-sidebar, .user-panel) {
   border-color: var(--line);
   box-shadow: inset 0 1px rgba(235, 250, 255, .14);
@@ -2710,7 +2710,7 @@ html, body, #root { background: var(--app-background); }
 }
 :root[data-theme="liquid-glass"] .app-shell .chat-panel { box-shadow: inset 0 1px rgba(235, 250, 255, .12); }
 :root[data-theme="liquid-glass"] .app-shell :is(.chat-header, .composer, .room-music, .call-dock) {
-  background: linear-gradient(135deg, rgba(216, 245, 255, .1), rgba(216, 245, 255, .025)), rgba(10, 29, 39, .46);
+  background: var(--overlay-sheen), var(--field-background);
   border-color: var(--line);
   box-shadow: inset 0 1px rgba(235, 250, 255, .19), 0 8px 28px rgba(0, 10, 18, .13);
   -webkit-backdrop-filter: blur(20px) saturate(1.25);
@@ -2724,7 +2724,7 @@ html, body, #root { background: var(--app-background); }
   backdrop-filter: var(--overlay-filter);
 }
 :root[data-theme="liquid-glass"] .app-shell :is(.channel-row.active, .dm-row.active, .server-icon.selected) {
-  background: linear-gradient(125deg, rgba(208, 243, 255, .19), rgba(145, 218, 218, .08));
+  background: rgba(255, 255, 255, .1);
   box-shadow: inset 0 1px rgba(235, 250, 255, .23), inset 0 0 0 1px rgba(198, 237, 245, .14);
 }
 :root[data-theme="liquid-glass"] .dot-pattern { opacity: .25; }
@@ -2791,3 +2791,28 @@ html, body, #root { background: var(--app-background); }
   :root[data-theme="liquid-glass"] .app-shell :is(.server-rail, .channel-sidebar, .member-sidebar, .user-panel, .chat-panel, .chat-header, .composer, .room-music, .call-dock, .media-stage) { background: var(--panel); backdrop-filter: none; -webkit-backdrop-filter: none; }
 }
 .user-context-menu { max-height: calc(100dvh - 24px); overflow-y: auto; overscroll-behavior: contain; }
+
+/* Text editing uses a quiet border; keyboard actions retain a neutral focus ring. */
+:root[data-theme] :is(input, textarea, select):focus {
+  outline: none;
+  box-shadow: none;
+  border-color: color-mix(in srgb, var(--frost) 36%, var(--line));
+}
+:root[data-theme] :is(button, a):focus-visible {
+  outline: 1px solid color-mix(in srgb, var(--frost) 65%, transparent);
+  outline-offset: 3px;
+}
+:root[data-theme] :is(.auth-input, .find-conversation):focus-within {
+  border-color: color-mix(in srgb, var(--frost) 36%, var(--line));
+  box-shadow: none;
+}
+:root[data-theme] .app-shell .composer textarea,
+:root[data-theme] .app-shell .composer textarea:focus {
+  background: transparent;
+  border: 0;
+  outline: none;
+  box-shadow: none;
+}
+:root[data-theme] .app-shell .composer:focus-within {
+  border-color: color-mix(in srgb, var(--frost) 32%, var(--line));
+}

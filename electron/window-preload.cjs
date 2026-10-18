@@ -14,6 +14,7 @@ contextBridge.exposeInMainWorld("hushWindow", {
   toggleMaximize: () => ipcRenderer.send("window:toggle-maximize"),
   close: () => ipcRenderer.send("window:close"),
   isMaximized: () => ipcRenderer.invoke("window:is-maximized"),
+  setMaterial: (enabled) => ipcRenderer.invoke("window:set-material", enabled),
   onMaximizedChange: (listener) => {
     const handler = (_event, maximized) => listener(Boolean(maximized));
     ipcRenderer.on("window:maximized-change", handler);

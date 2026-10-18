@@ -361,7 +361,7 @@
   white-space: nowrap;
 }
 .community-editor :focus-visible {
-  outline: 2px solid var(--blue);
+  outline: 1px solid color-mix(in srgb, var(--frost) 65%, transparent);
   outline-offset: 3px;
 }
 
@@ -448,3 +448,5 @@
   font-weight: 400;
   line-height: 1.6;
 }
+
+.community-editor :is(input, textarea):focus { outline: none; box-shadow: none; }

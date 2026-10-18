@@ -9,11 +9,16 @@ const {
   protocol,
   session,
   Notification,
+  nativeTheme,
 } = require("electron");
 const path = require("node:path");
 const fs = require("node:fs");
 const { pathToFileURL } = require("node:url");
 const { autoUpdater } = require("electron-updater");
+const { supportsAcrylic, materialWindowOptions, setWindowMaterial } = require("./window-material.cjs");
+
+// All Hush themes use light text. Keep native backdrops and dialogs dark too.
+nativeTheme.themeSource = "dark";
 
 if (process.platform === "win32" && typeof app.setAppUserModelId === "function") {
   app.setAppUserModelId("app.hush.private");
@@ -113,13 +118,16 @@ const publicLavalink = {
 };
 
 function roundedWindowShape(window) {
+  // Windows 11 owns the material and corner clipping. A custom window region
+  // bypasses native corners and needlessly rebuilds hundreds of rows on resize.
+  if (supportsAcrylic()) return;
   if (process.platform !== "win32" || !window || window.isDestroyed() || typeof window.setShape !== "function") return;
   if (window.isMaximized()) {
     window.setShape([]);
     return;
   }
   const { width, height } = window.getBounds();
-  const radius = Math.min(28, Math.floor(Math.min(width, height) / 2));
+  const radius = Math.min(12, Math.floor(Math.min(width, height) / 2));
   const rows = [];
   for (let y = 0; y < height; y += 1) {
     const edgeDistance = y < radius ? radius - y : y >= height - radius ? y - (height - 1 - radius) : 0;
@@ -164,6 +172,11 @@ ipcMain.on("window:toggle-maximize", (event) => {
 });
 ipcMain.on("window:close", (event) => windowForEvent(event)?.close());
 ipcMain.handle("window:is-maximized", (event) => windowForEvent(event)?.isMaximized() ?? false);
+ipcMain.handle("window:set-material", (event, enabled) => {
+  const window = windowForEvent(event);
+  if (!window || typeof enabled !== "boolean") return false;
+  return setWindowMaterial(window, enabled);
+});
 
 ipcMain.handle("notification:show", async (event, options) => {
   if (!windowForEvent(event) || !options || typeof options !== "object") return;
@@ -609,7 +622,7 @@ async function createMainWindow() {
     show: false,
     title: "Hush",
     frame: false,
-    transparent: true,
+    ...materialWindowOptions(),
     roundedCorners: true,
     hasShadow: true,
     backgroundColor: "#00000000",
