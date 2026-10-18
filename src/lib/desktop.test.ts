@@ -6,6 +6,8 @@ import { describe, expect, it, vi } from "vitest";
 function desktopHarness() {
   const handlers = new Map<string, (...args: any[]) => any>();
   const clipboard = { writeText: vi.fn() };
+  const nativeTheme = { themeSource: "system" };
+  const setWindowMaterial = vi.fn((_window: unknown, enabled: boolean) => enabled);
   const send = vi.fn();
   const frame = { url: "hush://app/index.html" };
   const window = { isDestroyed: () => false, webContents: { send, mainFrame: frame } };
@@ -14,13 +16,13 @@ function desktopHarness() {
   const updater = Object.assign(new EventEmitter(), {
     checkForUpdates: vi.fn().mockResolvedValue(null), setFeedURL: vi.fn(), quitAndInstall: vi.fn(),
   });
-  const electron = { app, clipboard, BrowserWindow: { fromWebContents: (contents: unknown) => contents === window.webContents ? window : null },
+  const electron = { app, clipboard, nativeTheme, BrowserWindow: { fromWebContents: (contents: unknown) => contents === window.webContents ? window : null },
     ipcMain: { on() {}, handle: (channel: string, handler: (...args: any[]) => any) => handlers.set(channel, handler) },
     protocol: { registerSchemesAsPrivileged() {} }, dialog: { showMessageBox: vi.fn().mockResolvedValue({ response: 1 }) },
     Notification: class { constructor() {} show() {} on() {} static isSupported() { return true; } },
   };
   const context: Record<string, any> = {
-    require: (name: string) => name === "electron" ? electron : name === "electron-updater" ? { autoUpdater: updater } : name === "./attachment-downloads.cjs" ? {registerAttachmentDownloads() {}} : {},
+    require: (name: string) => name === "electron" ? electron : name === "electron-updater" ? { autoUpdater: updater } : name === "./attachment-downloads.cjs" ? {registerAttachmentDownloads() {}} : name === "./window-material.cjs" ? { setWindowMaterial } : {},
     process: { env: {}, platform: "win32" }, setInterval: () => ({ unref() {} }), setImmediate: (fn: () => void) => fn(),
     URL, Response, console,
   };
@@ -28,10 +30,24 @@ function desktopHarness() {
   runInNewContext(source + "\nglobalThis.testApi = { configureAutoUpdater, checkForUpdates, setWindow: w => { mainWindow = w; } };", context);
   context.testApi.setWindow(window);
   const event = { sender: window.webContents, senderFrame: frame };
-  return { handlers, clipboard, updater, event, api: context.testApi, send };
+  return { handlers, clipboard, updater, event, api: context.testApi, send, nativeTheme, setWindowMaterial, window };
 }
 
 describe("desktop clipboard and updates", () => {
+  it("uses dark native surfaces and restricts material changes to the trusted main frame", () => {
+    const { handlers, event, nativeTheme, setWindowMaterial, window } = desktopHarness();
+    expect(nativeTheme.themeSource).toBe("dark");
+    const material = handlers.get("window:set-material")!;
+    expect(material(event, true)).toBe(true);
+    expect(setWindowMaterial).toHaveBeenLastCalledWith(window, true);
+    expect(material(event, false)).toBe(false);
+    expect(setWindowMaterial).toHaveBeenLastCalledWith(window, false);
+    setWindowMaterial.mockClear();
+    expect(material({ ...event, senderFrame: { url: "https://example.com" } }, true)).toBe(false);
+    expect(material({ ...event, sender: {} }, true)).toBe(false);
+    expect(material(event, "acrylic")).toBe(false);
+    expect(setWindowMaterial).not.toHaveBeenCalled();
+  });
   it("allows clipboard writes only from the trusted main frame", () => {
     const { handlers, clipboard, event } = desktopHarness();
     const write = handlers.get("clipboard:write")!;
