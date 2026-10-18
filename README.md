@@ -218,3 +218,8 @@ Text and voice channels can be renamed, reordered by drag/drop or buttons,
 and assigned to categories. New channels append after the existing order.
 The migration also corrects reaction/pin broadcasts to pass `TG_OP` as the
 Realtime operation while preserving the `EXTRAS` event consumed by clients.
+
+Clicking a member, message avatar or author opens a compact profile card. Its avatar
+opens the full profile with biography, membership dates and shared servers.
+Owners and administrators can search, assign and remove custom roles directly
+from either profile view; the existing server-side role permissions still apply.

@@ -10,6 +10,7 @@ export type Profile = {
   username: string;
   display_name: string;
   avatar_color: string;
+  created_at?: string;
   avatar_path?: string | null;
   banner_path?: string | null;
   bio?: string;

@@ -1,0 +1,528 @@
+.hush-profile-popover {
+  position: fixed;
+  z-index: 1200;
+  width: min(320px, calc(100vw - 24px));
+  max-height: calc(100dvh - 24px);
+  overflow: auto;
+  overscroll-behavior: contain;
+  background: var(--overlay-background, var(--panel));
+  background-image: var(--overlay-sheen);
+  border: 1px solid var(--overlay-border, var(--line));
+  border-radius: var(--radius-window);
+  box-shadow: var(--overlay-shadow);
+  backdrop-filter: var(--overlay-filter);
+  color: var(--frost);
+  isolation: isolate;
+}
+.hush-profile-cover {
+  height: 112px;
+  flex-shrink: 0;
+  position: relative;
+  overflow: hidden;
+}
+.hush-profile-cover:after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.25));
+  pointer-events: none;
+}
+.hush-profile-cover > img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.hush-profile-close {
+  position: absolute;
+  z-index: 2;
+  top: 10px;
+  right: 10px;
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #ffffff30;
+  border-radius: var(--radius-control);
+  background: #151719aa;
+  color: #fff;
+  cursor: pointer;
+}
+.hush-profile-body {
+  padding: 0 18px 18px;
+}
+.hush-profile-avatar-row {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: -40px;
+  position: relative;
+  z-index: 1;
+  margin-bottom: 14px;
+}
+.hush-profile-avatar {
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 84px;
+  height: 84px;
+  border: 4px solid var(--panel);
+  border-radius: 50%;
+  color: var(--frost);
+  font-size: 25px;
+  font-weight: 650;
+  cursor: pointer;
+}
+.hush-profile-avatar > img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+}
+.hush-profile-avatar:disabled {
+  cursor: default;
+  opacity: 1;
+}
+.hush-profile-status {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 18px;
+  height: 18px;
+  border: 4px solid var(--panel);
+  border-radius: 50%;
+  background: var(--muted);
+}
+.hush-profile-status.online {
+  background: #67cf9c;
+}
+.hush-profile-status.dnd {
+  background: #e17d82;
+}
+.hush-profile-status-label {
+  font-size: 11px;
+  color: var(--muted);
+  padding-bottom: 8px;
+}
+.hush-profile-body h2 {
+  margin: 0;
+  font-size: 21px;
+  line-height: 1.2;
+  letter-spacing: -0.025em;
+  overflow-wrap: anywhere;
+}
+.hush-profile-username {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 7px 0 0;
+  overflow-wrap: anywhere;
+}
+.hush-profile-username > span {
+  font-size: 11px;
+}
+.hush-profile-bio,
+.hush-profile-about {
+  font-size: 13px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin: 14px 0;
+}
+.hush-profile-bio {
+  max-height: 150px;
+  overflow: auto;
+}
+.hush-profile-message,
+.profile-shared-summary,
+.hush-profile-expand {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background: var(--soft-surface);
+  color: var(--frost);
+  padding: 9px 12px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  margin-top: 16px;
+  transition: background 0.12s ease;
+}
+.hush-profile-message:hover,
+.profile-shared-summary:hover,
+.hush-profile-expand:hover {
+  background: var(--panel-raised);
+}
+.profile-shared-summary,
+.hush-profile-expand {
+  justify-content: flex-start;
+  border: 0;
+  background: transparent;
+  padding: 7px 0;
+  margin-top: 10px;
+  color: var(--muted);
+}
+.profile-shared-summary svg:last-child,
+.hush-profile-expand svg {
+  margin-left: auto;
+}
+.hush-profile-roles {
+  margin-top: 17px;
+  border-top: 1px solid var(--line);
+  padding-top: 13px;
+}
+.hush-profile-roles h3,
+.hush-profile-details h3 {
+  font-size: 11px;
+  line-height: 1.5;
+  font-weight: 650;
+  margin: 0 0 10px;
+  letter-spacing: 0.03em;
+  color: var(--frost);
+}
+.hush-profile-roles h3 > span {
+  font-weight: 400;
+  color: var(--muted);
+  margin-left: 4px;
+  overflow-wrap: anywhere;
+}
+.hush-profile-role-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.hush-profile-role {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 7px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  font-size: 11px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.hush-profile-role > i,
+.hush-profile-role-options button > i {
+  width: 9px;
+  height: 9px;
+  flex: 0 0 9px;
+  border-radius: 50%;
+}
+.hush-profile-role button {
+  display: grid;
+  place-items: center;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 2px;
+  flex-shrink: 0;
+}
+.hush-profile-role button:hover {
+  color: var(--frost);
+}
+.hush-profile-role-add {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background: var(--soft-surface);
+  color: var(--frost);
+  cursor: pointer;
+}
+.hush-profile-role-add[aria-expanded="true"] {
+  background: var(--panel-raised);
+}
+.hush-profile-role-picker {
+  margin-top: 10px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-surface);
+  padding: 8px;
+  box-shadow: 0 8px 24px #0003;
+}
+.hush-profile-role-search {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  padding: 7px 8px;
+  background: var(--field-background);
+  color: var(--muted);
+}
+.hush-profile-role-search input {
+  width: 100%;
+  min-width: 0;
+  background: transparent;
+  color: var(--frost);
+  border: 0;
+  font: inherit;
+  font-size: 12px;
+  padding: 0;
+  outline: none;
+  box-shadow: none;
+}
+.hush-profile-role-options {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-height: 190px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  margin-top: 7px;
+}
+.hush-profile-role-options button {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 7px;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-control);
+  color: var(--frost);
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  font-size: 12px;
+}
+.hush-profile-role-options button span {
+  flex: 1;
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.hush-profile-role-options button:hover,
+.hush-profile-role-options button[aria-pressed="true"] {
+  background: var(--panel-raised);
+}
+.hush-profile-role-options button:disabled,
+.hush-profile-role button:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+.hush-profile-muted,
+.profile-details-error {
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.hush-profile-muted {
+  color: var(--muted);
+}
+.profile-details-error {
+  color: var(--coral);
+}
+.modal-card.hush-profile-full {
+  width: min(940px, calc(100vw - 32px));
+  max-height: calc(100dvh - 40px);
+  padding: 0;
+  overflow: auto;
+}
+.hush-profile-full > header {
+  padding: 20px 24px 14px;
+  margin: 0;
+}
+.hush-profile-full > header .eyebrow {
+  display: none;
+}
+.hush-profile-full > header h2 {
+  font-size: 18px;
+}
+.hush-profile-full-grid {
+  display: grid;
+  grid-template-columns: 320px minmax(0, 1fr);
+  gap: 28px;
+  padding: 10px 24px 24px;
+  min-height: 470px;
+}
+.hush-profile-identity {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-surface);
+  overflow: hidden;
+  align-self: start;
+  background: var(--soft-surface);
+}
+.hush-profile-full .hush-profile-cover {
+  height: 140px;
+}
+.hush-profile-full .hush-profile-avatar {
+  width: 96px;
+  height: 96px;
+}
+.hush-profile-full .hush-profile-avatar-row {
+  margin-top: -48px;
+}
+.hush-profile-details {
+  min-width: 0;
+}
+.hush-profile-tabs {
+  display: flex;
+  gap: 20px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 24px;
+}
+.hush-profile-tabs button {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  background: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  color: var(--muted);
+  padding: 13px 0;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.hush-profile-tabs button[aria-selected="true"] {
+  border-bottom-color: var(--frost);
+  color: var(--frost);
+}
+.hush-profile-tabs button > span {
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--panel-raised);
+}
+.hush-profile-details [hidden] {
+  display: none;
+}
+.hush-profile-about {
+  margin-top: 0;
+}
+.hush-profile-dates {
+  font-size: 12px;
+  display: grid;
+  gap: 6px;
+  margin-top: 28px;
+}
+.hush-profile-dates dt {
+  color: var(--muted);
+  font-size: 11px;
+  margin-top: 10px;
+}
+.hush-profile-dates dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.profile-shared-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.profile-shared-list button {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  color: var(--frost);
+  background: var(--soft-surface);
+  cursor: pointer;
+  text-align: left;
+}
+.profile-shared-list button:hover {
+  background: var(--panel-raised);
+}
+.profile-shared-list button > span:nth-child(2) {
+  flex: 1;
+  min-width: 0;
+}
+.profile-shared-list strong {
+  display: block;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.profile-shared-list small {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 4px;
+}
+.profile-space-icon {
+  display: grid;
+  place-items: center;
+  position: relative;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  overflow: hidden;
+  border-radius: var(--radius-control);
+  font-size: 12px;
+  font-weight: 650;
+}
+.profile-space-icon > img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.hush-profile-empty {
+  font-size: 13px;
+  color: var(--muted);
+  padding: 25px 0;
+}
+.message-author-button {
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+  text-align: left;
+  padding: 0;
+}
+.message-author-button:hover {
+  text-decoration: underline;
+}
+.hush-profile-popover :is(button, input):focus-visible,
+.hush-profile-full :is(button, input):focus-visible {
+  outline: 1px solid var(--muted);
+  outline-offset: 2px;
+}
+.hush-profile-role-search input:focus-visible {
+  outline: none;
+}
+.hush-profile-role-search:focus-within {
+  border-color: var(--muted);
+}
+@media (max-width: 700px) {
+  .hush-profile-full-grid {
+    grid-template-columns: 1fr;
+    gap: 20px;
+    padding: 0 16px 20px;
+  }
+  .hush-profile-full > header {
+    padding: 16px;
+  }
+  .hush-profile-tabs {
+    gap: 18px;
+  }
+  .hush-profile-full .hush-profile-cover {
+    height: 120px;
+  }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .hush-profile-popover {
+    background: var(--panel);
+    backdrop-filter: none;
+  }
+}
+@media (prefers-contrast: more) {
+  .hush-profile-popover {
+    background: var(--panel);
+    border-color: var(--frost);
+    backdrop-filter: none;
+  }
+}

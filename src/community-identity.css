@@ -206,6 +206,16 @@
   object-fit: cover;
   z-index: -2;
 }
+/* The cover spans the sidebar, including the glass theme's content inset. */
+:root .app-shell .channel-sidebar .community-server-title:has(.server-cover-image) {
+  width: calc(100% + 2 * var(--sidebar-inset, 0px));
+  margin-inline: calc(-1 * var(--sidebar-inset, 0px));
+  border-radius: 0;
+  transform: none;
+}
+:root[data-theme="liquid-glass"] .app-shell .community-server-title:has(.server-cover-image) {
+  padding-inline: calc(11px + var(--sidebar-inset, 0px));
+}
 .community-server-title:has(.server-cover-image):after {
   content: "";
   position: absolute;

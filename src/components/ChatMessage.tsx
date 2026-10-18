@@ -69,7 +69,7 @@ export function ChatMessage({
   onDelete: () => Promise<void>;
   onReact: (emoji: string) => Promise<void>;
   onPin: () => Promise<void>;
-  onProfile: () => void;
+  onProfile: (anchor: HTMLElement) => void;
   onToast: (text: string) => void;
 }) {
   const [menu, setMenu] = useState(false);
@@ -169,7 +169,7 @@ export function ChatMessage({
     >
       <button
         className="message-avatar-button"
-        onClick={onProfile}
+        onClick={(event) => onProfile(event.currentTarget)}
         aria-label={`Profilo di ${sender.display_name}`}
       >
         <span
@@ -182,7 +182,13 @@ export function ChatMessage({
       </button>
       <div className="message-copy">
         <div className="message-meta">
-          <strong style={{ color: senderRole?.color }}>{message.author}</strong>
+          <button
+            className="message-author-button"
+            style={{ color: senderRole?.color }}
+            onClick={(event) => onProfile(event.currentTarget)}
+          >
+            {message.author}
+          </button>
           {senderRole && (
             <span
               className="message-role-label"
@@ -239,7 +245,11 @@ export function ChatMessage({
               <button type="button" onClick={() => setEditing(false)}>
                 Annulla
               </button>
-              <button disabled={busy || !canEdit || (!text.trim() && !message.attachment)}>
+              <button
+                disabled={
+                  busy || !canEdit || (!text.trim() && !message.attachment)
+                }
+              >
                 Salva
               </button>
             </div>

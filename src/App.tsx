@@ -1,4 +1,6 @@
-import { EMPTY_ROLE_CONTEXT, loadServerRoles, loadChannelPermissions, rolesForUser, canMassMention, reorderChannels, type ServerRoleContext, type ServerPermission } from "./lib/server-roles";
+import { UserProfile } from "./components/UserProfile";
+import type { ProfileAnchor } from "./lib/profile-details";
+import { EMPTY_ROLE_CONTEXT, loadServerRoles, loadChannelPermissions, rolesForUser, canMassMention, reorderChannels, setMemberRoles, type ServerRoleContext, type ServerPermission } from "./lib/server-roles";
 import { extractMentions, resolveMentions, mentionsRecipient, mentionQuery, type MentionTarget, type MessageMention } from "./lib/mentions";
 import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Session, RealtimeChannel } from "@supabase/supabase-js";
@@ -198,7 +200,16 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
   const [profile, setProfile] = useState(() => profileFromSession(session));
   const [inviteLink, setInviteLink] = useState<string | null>(null);
   const [inviteNotice, setInviteNotice] = useState("");
-  const [viewedProfile, setViewedProfile] = useState<Profile | null>(null);
+  const [viewedProfile,setViewedProfile]=useState<Profile|null>(null);
+  const profileAnchorElement=useRef<HTMLElement|null>(null);
+  const [profileAnchor,setProfileAnchor]=useState<ProfileAnchor>({left:100,right:140,top:100,bottom:140});
+  const [profileExpanded,setProfileExpanded]=useState(false);
+  const openUserProfile=(user:Profile,anchor?:HTMLElement,expanded=false)=>{
+    if(!/^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(user.id)){setToast("Questo profilo non è più disponibile.");return;}
+    profileAnchorElement.current=anchor??null;
+    const rect=anchor?.getBoundingClientRect();setProfileAnchor(rect?{left:rect.left,right:rect.right,top:rect.top,bottom:rect.bottom}:{left:window.innerWidth/2-160,right:window.innerWidth/2-120,top:100,bottom:140});
+    setProfileExpanded(expanded);setViewedProfile(user);
+  };
   const [identity, setIdentity] = useState<DeviceIdentity | null>(null);
   const [spaces, setSpaces] = useState<Space[]>([]);
   const [channels, setChannels] = useState<Conversation[]>([]);
@@ -1571,7 +1582,7 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
                   const date = new Date(message.createdAt).toLocaleDateString("it");
                   return <div key={message.id}>
                     {(index === 0 || new Date(filteredMessages[index-1].createdAt).toLocaleDateString("it") !== date) && <div className="message-date">{date}</div>}
-                    <ChatMessage canEdit={canWrite} mentions={resolveMentions(message.body,message.mentions,targetsForSender(message.senderId??""))} mentionTargets={targetsForSender(message.senderId??"")} highlighted={mentionsRecipient(resolveMentions(message.body,message.mentions,targetsForSender(message.senderId??"")),session.user.id,myRoleIds,userStatus!=="invisible")} senderRole={rolesForUser(roleContext,message.senderId??"")[0]} canReact={activePermissions.includes("add_reactions")} canPin={activePermissions.includes("pin_messages")} canManageMessages={activePermissions.includes("manage_messages")} message={message} sender={sender} selfId={session.user.id} roomKey={roomKey} conversationId={activeConversation.id} reply={messages.find(item => item.id === message.replyId)} reactions={extras.reactions.filter(item => item.message_id === message.id)} pinned={extras.pins.some(item => item.message_id === message.id)} onReply={() => {setReplyingTo(message); messageInputRef.current?.focus();}} onEdit={text => editMessage(message, text)} onDelete={async () => {await deleteEncryptedMessage(message.id); if(activeIdRef.current === activeConversation.id) setMessages(prev => prev.filter(item => item.id !== message.id));}} onReact={async emoji => {await toggleMessageReaction(message.id, emoji); await refreshExtras(activeConversation.id);}} onPin={async () => {await toggleMessagePin(message.id); await refreshExtras(activeConversation.id);}} onProfile={() => setViewedProfile(sender)} onToast={setToast} />
+                    <ChatMessage canEdit={canWrite} mentions={resolveMentions(message.body,message.mentions,targetsForSender(message.senderId??""))} mentionTargets={targetsForSender(message.senderId??"")} highlighted={mentionsRecipient(resolveMentions(message.body,message.mentions,targetsForSender(message.senderId??"")),session.user.id,myRoleIds,userStatus!=="invisible")} senderRole={rolesForUser(roleContext,message.senderId??"")[0]} canReact={activePermissions.includes("add_reactions")} canPin={activePermissions.includes("pin_messages")} canManageMessages={activePermissions.includes("manage_messages")} message={message} sender={sender} selfId={session.user.id} roomKey={roomKey} conversationId={activeConversation.id} reply={messages.find(item => item.id === message.replyId)} reactions={extras.reactions.filter(item => item.message_id === message.id)} pinned={extras.pins.some(item => item.message_id === message.id)} onReply={() => {setReplyingTo(message); messageInputRef.current?.focus();}} onEdit={text => editMessage(message, text)} onDelete={async () => {await deleteEncryptedMessage(message.id); if(activeIdRef.current === activeConversation.id) setMessages(prev => prev.filter(item => item.id !== message.id));}} onReact={async emoji => {await toggleMessageReaction(message.id, emoji); await refreshExtras(activeConversation.id);}} onPin={async () => {await toggleMessagePin(message.id); await refreshExtras(activeConversation.id);}} onProfile={anchor=>openUserProfile(sender,anchor)} onToast={setToast} />
                   </div>;
                 })}
                 <div ref={messageEnd} />
@@ -1683,7 +1694,7 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
               type="button"
               className="member current-member member-profile-button"
               key={member.id}
-              onClick={() => setViewedProfile(member)}
+              onClick={event=>openUserProfile(member,event.currentTarget)}
               onContextMenu={(e) => {
                 e.preventDefault();
                 setContextMenu({
@@ -1703,35 +1714,12 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
       {confirmAction&&<Modal title={confirmAction.title} description={confirmAction.description} onClose={()=>{if(!busy)setConfirmAction(null);}}><div className="modal-form">{formError&&<p className="auth-error" role="alert">{formError}</p>}<button type="button" className="modal-primary" disabled={busy} onClick={()=>setConfirmAction(null)}>Annulla</button><button type="button" className="danger-action" disabled={busy} onClick={()=>void runAction(async()=>{await confirmAction.action();setConfirmAction(null);})}>{busy?"Attendi…":confirmAction.label}</button></div></Modal>}
       {identityTarget&&<CommunityIdentityEditor key={`${identityTarget.kind}:${identityTarget.id}`} value={identityTarget.value} label={identityTarget.kind==="space"?"server":activeConversation?.kind==="group_dm"?"gruppo":"canale"} readOnly={identityTarget.readOnly} onClose={()=>setIdentityTarget(null)} onSave={async value=>{await saveCommunityIdentity(identityTarget.kind,identityTarget.id,value);if(identityTarget.kind==="space")setSpaces(current=>current.map(space=>space.id===identityTarget.id?{...space,...value,identity_customized:true}:space));else {setChannels(current=>current.map(room=>room.id===identityTarget.id?{...room,...value,identity_customized:true}:room));setDirectMessages(current=>current.map(room=>room.id===identityTarget.id?{...room,...value,identity_customized:true}:room));}setToast("Personalizzazione salvata");}}/>}
       {inviteLink ? <Modal title="Invita nel server" description="Condividi questo link con gli amici. Scade tra 7 giorni; incollalo in Server → Usa invito." onClose={() => setInviteLink(null)}><div className="modal-form"><label>Link di invito<input readOnly value={inviteLink} onFocus={(event) => event.target.select()} /></label><button className="modal-primary" onClick={() => { void copyText(inviteLink).then(() => setInviteNotice("Invito copiato")).catch(() => setInviteNotice("Seleziona il link e premi Ctrl+C per copiarlo.")); }}>Copia invito</button><p role="status">{inviteNotice}</p></div></Modal> : null}
-      {viewedProfile ? (
-        <Modal title="Profilo" onClose={() => setViewedProfile(null)}>
-          <div className="profile-preview">
-            <div className="profile-banner" style={{ backgroundColor: viewedProfile.avatar_color }}>
-              <ProfileImage path={viewedProfile.banner_path} alt="Banner profilo" />
-            </div>
-            <div className="profile-preview-copy">
-              <Avatar profile={viewedProfile} />
-              <strong>{viewedProfile.display_name}</strong>
-              <small>@{viewedProfile.username}</small>
-              <p>{viewedProfile.bio}</p>
-              {viewedProfile.id !== session.user.id ? (
-                <button
-                  type="button"
-                  className="modal-primary"
-                  style={{ marginTop: 14 }}
-                  onClick={() => {
-                    const target = viewedProfile;
-                    setViewedProfile(null);
-                    void handleOpenDm(target);
-                  }}
-                >
-                  Invia messaggio
-                </button>
-              ) : null}
-            </div>
-          </div>
-        </Modal>
-      ) : null}
+      {viewedProfile&&<UserProfile key={`${viewedProfile.id}:${activeSpaceId??"dm"}`} profile={members.find(m=>m.id===viewedProfile.id)??viewedProfile} selfId={session.user.id} anchor={profileAnchor} anchorElement={profileAnchorElement.current} initialExpanded={profileExpanded} status={viewedProfile.id===session.user.id?(userStatus==="invisible"?"offline":userStatus):remoteStatuses[viewedProfile.id]==="dnd"?"dnd":onlineUserIds.includes(viewedProfile.id)?"online":"offline"} space={activeSpace} spaces={spaces} roleContext={roleContext} canManageRoles={canManageSpace&&roleContext.memberships.some(m=>m.user_id===viewedProfile.id)&&(roleContext.memberships.find(m=>m.user_id===viewedProfile.id)?.role!=="owner"||roleContext.memberships.find(m=>m.user_id===session.user.id)?.role==="owner")} onToggleRole={async(role,assigned)=>{
+        if(!activeSpaceId)return;
+        const spaceId=activeSpaceId,fresh=await loadServerRoles(spaceId),ids=rolesForUser(fresh,viewedProfile.id).map(r=>r.id);
+        await setMemberRoles(spaceId,viewedProfile.id,assigned?[...new Set([...ids,role.id])]:ids.filter(id=>id!==role.id));
+        const next=await loadServerRoles(spaceId);if(mentionContextRef.current.spaceId===spaceId)setRoleContext(next);
+      }} onMessage={()=>{const target=viewedProfile;setViewedProfile(null);void handleOpenDm(target);}} onSelectSpace={id=>{setViewedProfile(null);setActiveSpaceId(id);setSidebarOpen(false);}} onClose={()=>setViewedProfile(null)}/>}
       {modal === "space" ? <Modal title="Server" description="Crea un nuovo spazio oppure incolla un invito ricevuto da un amico." onClose={() => setModal(null)}><div className="modal-tabs"><button className={spaceMode === "create" ? "active" : ""} onClick={() => { setSpaceMode("create"); setFormPrimary(""); setFormError(null); }}>Crea</button><button className={spaceMode === "join" ? "active" : ""} onClick={() => { setSpaceMode("join"); setFormPrimary(""); setFormError(null); }}>Usa invito</button></div><form className="modal-form" onSubmit={submitSpace}><label>{spaceMode === "create" ? "Nome del server" : "Codice o link di invito"}<input autoFocus required maxLength={spaceMode === "create" ? 80 : 200} value={formPrimary} onChange={(event) => setFormPrimary(event.target.value)} placeholder={spaceMode === "create" ? "La nostra stanza" : "hush://invite/…"} /></label>{formError ? <div className="auth-error">{formError}</div> : null}<button className="modal-primary" disabled={busy || !formPrimary.trim()}>{busy ? "Attendi…" : spaceMode === "create" ? "Crea server" : "Entra nel server"}</button></form></Modal> : null}
       {modal === "channel" ? <Modal title="Nuovo canale" description={`Verrà aggiunto a ${activeSpace?.name ?? "questo server"} e riceverà una chiave E2EE separata.`} onClose={() => setModal(null)}><form className="modal-form" onSubmit={submitChannel}><label>Nome del canale<input autoFocus required maxLength={80} value={formPrimary} onChange={(event) => setFormPrimary(event.target.value)} placeholder="gaming" /></label>{formError ? <div className="auth-error">{formError}</div> : null}<button className="modal-primary" disabled={busy || !formPrimary.trim()}>{busy ? "Creazione…" : "Crea canale"}</button></form></Modal> : null}
       {modal === "dm" ? <Modal title="Nuovo gruppo DM" description="Inserisci gli username esatti, separati da virgole. Hush distribuirà la chiave ai loro dispositivi registrati." onClose={() => setModal(null)}><form className="modal-form" onSubmit={submitDm}><label>Nome del gruppo<input autoFocus required maxLength={80} value={formPrimary} onChange={(event) => setFormPrimary(event.target.value)} placeholder="Nome del gruppo" /></label><label>Username<input required value={formSecondary} onChange={(event) => setFormSecondary(event.target.value)} placeholder="@amico1, @amico2" /></label>{formError ? <div className="auth-error">{formError}</div> : null}<button className="modal-primary" disabled={busy || !formPrimary.trim() || !formSecondary.trim()}>{busy ? "Creazione…" : "Crea gruppo"}</button></form></Modal> : null}
@@ -1746,7 +1734,7 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
           target={contextMenu}
           currentUserId={session.user.id}
           onClose={() => setContextMenu(null)}
-          onViewProfile={setViewedProfile}
+          onViewProfile={user=>openUserProfile(user,undefined,true)}
           onOpenDm={handleOpenDm}
           onMention={handleMention}
           onOpenSettings={() => openModal("settings")}
