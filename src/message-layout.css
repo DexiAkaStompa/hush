@@ -1,0 +1,121 @@
+/* A continuous transcript, with the same alignment for incoming and own messages. */
+:root[data-theme] .app-shell .chat-panel .messages {
+  padding: 16px 0 24px;
+}
+:root[data-theme] .app-shell .chat-panel .messages > .channel-intro {
+  margin-inline: 20px;
+}
+:root[data-theme] .app-shell .chat-panel .messages > .conversation-empty {
+  margin-inline: 20px;
+}
+:root[data-theme] .app-shell .messages .chat-message {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  align-items: start;
+  column-gap: 12px;
+  min-height: 0;
+  margin: 0;
+  padding: 3px 20px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  contain-intrinsic-size: auto 54px;
+}
+:root[data-theme] .app-shell .messages .chat-message.is-group-start {
+  margin-top: 16px;
+}
+:root[data-theme] .app-shell .messages .chat-message.is-continuation {
+  contain-intrinsic-size: auto 26px;
+}
+:root[data-theme] .app-shell .messages .chat-message:is(:hover, :focus-within) {
+  background: color-mix(in srgb, var(--frost) 4%, transparent);
+}
+:root[data-theme] .app-shell .messages .chat-message.is-mentioned {
+  background: color-mix(in srgb, var(--frost) 8%, transparent);
+  box-shadow: inset 2px 0 color-mix(in srgb, var(--frost) 45%, transparent);
+}
+:root[data-theme] .app-shell .message-avatar-button {
+  width: 40px;
+  height: 40px;
+  margin-top: 2px;
+}
+:root[data-theme] .app-shell .message-avatar-button .avatar {
+  width: 40px;
+  height: 40px;
+  font-size: 13px;
+}
+:root[data-theme] .app-shell .message-copy {
+  min-width: 0;
+  width: 100%;
+}
+:root[data-theme] .app-shell .message-meta {
+  min-height: 20px;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+:root[data-theme] .app-shell .message-author-button {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  font-size: 14px;
+  font-weight: 650;
+  line-height: 20px;
+}
+:root[data-theme] .app-shell .message-meta time {
+  font-size: 11px;
+  color: var(--muted);
+}
+:root[data-theme] .app-shell .message-meta > small {
+  font-size: 10px;
+  color: var(--muted);
+}
+:root[data-theme] .app-shell .message-copy .message-text {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  letter-spacing: normal;
+  color: var(--frost);
+}
+.message-continuation-time {
+  display: block;
+  align-self: start;
+  padding-top: 3px;
+  width: 40px;
+  font-size: 10px;
+  line-height: 18px;
+  text-align: center;
+  color: var(--muted);
+  opacity: 0;
+}
+.chat-message:is(:hover, :focus-within) .message-continuation-time {
+  opacity: 1;
+}
+:root[data-theme] .app-shell .message-reactions {
+  margin-top: 5px;
+}
+:root[data-theme] .app-shell .message-date {
+  margin: 24px 20px 8px;
+}
+@media (max-width: 600px) {
+  :root[data-theme] .app-shell .messages .chat-message {
+    grid-template-columns: 36px minmax(0, 1fr);
+    column-gap: 10px;
+    padding-inline: 12px;
+  }
+  :root[data-theme] .app-shell .message-avatar-button,
+  :root[data-theme] .app-shell .message-avatar-button .avatar {
+    width: 36px;
+    height: 36px;
+  }
+  .message-continuation-time {
+    width: 36px;
+  }
+}
+@media (hover: none) {
+  .message-continuation-time {
+    opacity: 0.6;
+  }
+}

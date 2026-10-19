@@ -19,6 +19,7 @@ import { EmojiPicker } from "./EmojiPicker";
 import { copyText } from "../lib/clipboard";
 import { Modal } from "./Modal";
 import type { MessageMention, MentionTarget } from "../lib/mentions";
+import "../message-layout.css";
 export type Reaction = { message_id: string; user_id: string; emoji: string };
 export function ChatMessage({
   message,
@@ -44,6 +45,7 @@ export function ChatMessage({
   canPin = true,
   canManageMessages = false,
   canEdit = true,
+  continuation = false,
 }: {
   mentions?: MessageMention[];
   mentionTargets?: MentionTarget[];
@@ -53,6 +55,7 @@ export function ChatMessage({
   canPin?: boolean;
   canManageMessages?: boolean;
   canEdit?: boolean;
+  continuation?: boolean;
   message: DecryptedMessage & {
     replyId?: string | null;
     editedAt?: string | null;
@@ -151,10 +154,12 @@ export function ChatMessage({
       menuRef.current?.querySelector<HTMLButtonElement>("button")?.focus();
   }, [menu]);
   const grouped = [...new Set(reactions.map((reaction) => reaction.emoji))];
+  const compact = continuation && !pinned && !message.editedAt;
   return (
     <article
       ref={articleRef}
-      className={`message chat-message ${pinned ? "is-pinned" : ""} ${highlighted ? "is-mentioned" : ""}`}
+      className={`message chat-message ${compact ? "is-continuation" : "is-group-start"} ${pinned ? "is-pinned" : ""} ${highlighted ? "is-mentioned" : ""}`}
+      aria-label={`${message.author}, ${new Date(message.createdAt).toLocaleString("it")}`}
       id={`message-${message.id}`}
       onContextMenu={(event) => {
         event.preventDefault();
@@ -167,48 +172,63 @@ export function ChatMessage({
         }
       }}
     >
-      <button
-        className="message-avatar-button"
-        onClick={(event) => onProfile(event.currentTarget)}
-        aria-label={`Profilo di ${sender.display_name}`}
-      >
-        <span
-          className="avatar"
-          style={{ backgroundColor: sender.avatar_color }}
+      {compact ? (
+        <time
+          className="message-continuation-time"
+          dateTime={message.createdAt}
+          title={new Date(message.createdAt).toLocaleString("it")}
         >
-          {initialsFor(sender.display_name)}
-          <ProfileImage path={sender.avatar_path} alt="" />
-        </span>
-      </button>
+          {new Date(message.createdAt).toLocaleTimeString("it", {
+            hour: "2-digit",
+            minute: "2-digit",
+          })}
+        </time>
+      ) : (
+        <button
+          className="message-avatar-button"
+          onClick={(event) => onProfile(event.currentTarget)}
+          aria-label={`Profilo di ${sender.display_name}`}
+        >
+          <span
+            className="avatar"
+            style={{ backgroundColor: sender.avatar_color }}
+          >
+            {initialsFor(sender.display_name)}
+            <ProfileImage path={sender.avatar_path} alt="" />
+          </span>
+        </button>
+      )}
       <div className="message-copy">
-        <div className="message-meta">
-          <button
-            className="message-author-button"
-            style={{ color: senderRole?.color }}
-            onClick={(event) => onProfile(event.currentTarget)}
-          >
-            {message.author}
-          </button>
-          {senderRole && (
-            <span
-              className="message-role-label"
-              style={{ color: senderRole.color }}
+        {!compact && (
+          <div className="message-meta">
+            <button
+              className="message-author-button"
+              style={{ color: senderRole?.color }}
+              onClick={(event) => onProfile(event.currentTarget)}
             >
-              {senderRole.name}
-            </span>
-          )}
-          <time
-            dateTime={message.createdAt}
-            title={new Date(message.createdAt).toLocaleString("it")}
-          >
-            {new Date(message.createdAt).toLocaleTimeString("it", {
-              hour: "2-digit",
-              minute: "2-digit",
-            })}
-          </time>
-          {message.editedAt && <small>modificato</small>}
-          {pinned && <Pin size={12} aria-label="Messaggio fissato" />}
-        </div>
+              {message.author}
+            </button>
+            {senderRole && (
+              <span
+                className="message-role-label"
+                style={{ color: senderRole.color }}
+              >
+                {senderRole.name}
+              </span>
+            )}
+            <time
+              dateTime={message.createdAt}
+              title={new Date(message.createdAt).toLocaleString("it")}
+            >
+              {new Date(message.createdAt).toLocaleTimeString("it", {
+                hour: "2-digit",
+                minute: "2-digit",
+              })}
+            </time>
+            {message.editedAt && <small>modificato</small>}
+            {pinned && <Pin size={12} aria-label="Messaggio fissato" />}
+          </div>
+        )}
         {message.replyId && (
           <button
             className="message-reply"
