@@ -1,4 +1,5 @@
 import { UserProfile } from "./components/UserProfile";
+import { MessageSearch } from "./components/MessageSearch";
 import { FriendsPanel, FriendActions } from "./components/Friends";
 import { useFriendships } from "./lib/use-friendships";
 import "./navigation-rail.css";
@@ -485,6 +486,20 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
     finally {if(generation === searchGenerationRef.current) setSearchingHistory(false);}
   };
   useEffect(() => {searchGenerationRef.current++; setSearchingHistory(false); setHistoryResults(null); setHistoryNotice("");}, [search, activeConversationId]);
+  const openMessageSearch = useCallback(() => {
+    if (!activeConversation || activeConversation.kind === "voice_channel") {
+      setToast("Apri una chat per cercare nei messaggi.");
+      return;
+    }
+    setShowSearch(true);setShowPins(false);setSidebarOpen(false);
+    setStage(current=>current.open?{...current,expanded:false}:current);
+    document.querySelector<HTMLInputElement>("#message-search input")?.focus();
+  }, [activeConversation]);
+  const closeMessageSearch = useCallback(() => {
+    if (document.querySelector("#message-search")) document.querySelector<HTMLButtonElement>(".message-search-trigger")?.focus();
+    searchGenerationRef.current++;
+    setShowSearch(false);setSearch("");setHistoryResults(null);setHistoryNotice("");setSearchingHistory(false);
+  }, []);
   useEffect(() => {
     if (!activeSpaceId || !supabase) {setCategories([]); setMySpaceRole("member"); return;}
     setMySpaceRole("member");
@@ -1029,18 +1044,20 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented) return;
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
+        if (document.querySelector('[aria-modal="true"]')) return;
         event.preventDefault();
-        setShowSearch(true);
+        openMessageSearch();
       }
       if (event.key === "Escape") {
-        setShowSearch(false);
+        closeMessageSearch();
         setModal(null);
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
+  }, [openMessageSearch, closeMessageSearch]);
 
   useLayoutEffect(() => {
     const pending = olderScrollAnchor.current;
@@ -1310,7 +1327,6 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
         <button className="sidebar-close" onClick={() => setSidebarOpen(false)} aria-label="Chiudi menu"><X size={18} /></button>
         <div className="sidebar-scroll">
           {!activeSpace && <button className="friends-nav" aria-current={!activeConversationId ? "page" : undefined} onClick={() => {setActiveSpaceId(null);setActiveConversationId(null);setSidebarOpen(false);setStage(current=>current.open?{...current,expanded:false}:current);}}><UserPlus size={17}/> Amici{friendships.entries.some(row=>row.status==="pending"&&row.recipient_id===session.user.id)&&<span aria-label="Richieste di amicizia ricevute">{friendships.entries.filter(row=>row.status==="pending"&&row.recipient_id===session.user.id).length}</span>}</button>}
-          <button className="find-conversation" onClick={() => activeConversation ? setShowSearch(true) : setToast("Apri una conversazione per cercare nei messaggi.")}><Search size={16} /><span>Cerca nei messaggi</span><kbd>Ctrl K</kbd></button>
           {activeSpace ? (
             <>
               <div className="channel-section">
@@ -1534,8 +1550,7 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
               <button onClick={()=>setIdentityTarget({kind:"conversation",id:activeConversation.id,value:activeConversation,readOnly:!!activeConversation.space_id&&!canManageSpace})} aria-label={activeConversation.kind==="group_dm"?"Personalizza gruppo":"Informazioni e aspetto del canale"} title="Nome, descrizione e aspetto"><Settings size={17}/></button>
               {activeSpace ? <button onClick={createInvite} aria-label="Copia invito"><UserPlus size={19} /></button> : null}
               {["channel", "voice_channel"].includes(activeConversation.kind) && activeSpace?.owner_id === session.user.id ? <button onClick={deleteChannel} aria-label="Elimina canale"><Trash2 size={17} /></button> : null}
-              {activeConversation.kind !== "voice_channel" ? <button onClick={() => setShowSearch((current) => !current)} aria-label="Cerca"><Search size={17} /></button> : null}
-              {activeConversation.kind !== "voice_channel" && showSearch ? <label className="header-search"><Search size={15} /><input autoFocus value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Cerca · from: has: before: after:" /></label> : null}
+              {activeConversation.kind !== "voice_channel" ? <button className="message-search-trigger" onClick={openMessageSearch} aria-label="Cerca nei messaggi" aria-expanded={showSearch} aria-controls={showSearch?"message-search":undefined} title="Cerca nei messaggi · Ctrl+K"><Search size={17} /></button> : null}
             </div>
           ) : null}
         </header>
@@ -1585,7 +1600,8 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
               <span>{keyStatus === "ready" ? <>Impronta <code>{fingerprint}</code></> : keyStatus === "waiting" ? "Un membro deve aprire questa conversazione per autorizzare il dispositivo." : "Cifratura del dispositivo in corso…"}</span>
               {keyStatus === "ready" ? <span className="trust-action">{showCipher ? "Nascondi" : "Verifica"}</span> : null}
             </button>
-            <div className="chat-tools"><button aria-pressed={showPins} onClick={() => {setShowPins(!showPins); if(!showPins && roomKey && extras.pins.length) void loadAndDecryptMessages(activeConversation.id, roomKey, members, {ids: extras.pins.map(pin => pin.message_id)}).then(rows => {if(activeIdRef.current === activeConversation.id) setMessages(prev => mergeMessages(prev, rows));}).catch(error => setToast(readableError(error)));}}>Messaggi fissati ({extras.pins.length})</button>{search && <><button disabled={searchingHistory} onClick={() => void searchHistory()}>{searchingHistory ? "Ricerca in corso…" : "Cerca nella cronologia"}</button>{searchingHistory && <button onClick={() => {searchGenerationRef.current++;setSearchingHistory(false);}}>Ferma</button>}<span>{historyNotice || "Ricerca nei messaggi caricati"}</span></>}</div>
+            {showSearch && <MessageSearch key={activeConversation.id} name={activeConversation.name} query={search} onChange={setSearch} onClose={closeMessageSearch} onSearch={()=>void searchHistory()} onStop={()=>{searchGenerationRef.current++;setSearchingHistory(false);setHistoryNotice(`${historyResults?.length??0} risultati · ricerca interrotta`);}} searching={searchingHistory} ready={keyStatus==="ready"} resultCount={filteredMessages.length} notice={historyNotice}/>}
+            <div className="chat-tools"><button aria-pressed={showPins} onClick={() => {setShowPins(!showPins); if(!showPins && roomKey && extras.pins.length) void loadAndDecryptMessages(activeConversation.id, roomKey, members, {ids: extras.pins.map(pin => pin.message_id)}).then(rows => {if(activeIdRef.current === activeConversation.id) setMessages(prev => mergeMessages(prev, rows));}).catch(error => setToast(readableError(error)));}}>Messaggi fissati ({extras.pins.length})</button></div>
             {showCipher ? <section className="cipher-inspector"><div><span className="eyebrow">ultimo pacchetto salvato</span><code>{latestCipher ? `${latestCipher.iv}.${latestCipher.ciphertext}` : "Nessun messaggio inviato."}</code></div><button onClick={() => setShowCipher(false)} aria-label="Chiudi"><X size={16} /></button></section> : null}
             <div className="chat-content chat-content-text">
               <div className="messages" ref={messagesRef} onScroll={event => {const element=event.currentTarget; setAwayFromBottom(element.scrollHeight-element.scrollTop-element.clientHeight > 100);}}>

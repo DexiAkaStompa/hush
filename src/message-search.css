@@ -1,0 +1,87 @@
+.message-search {
+  flex-shrink: 0;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--frost);
+}
+.message-search form {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.message-search form > svg {
+  color: var(--muted);
+  flex-shrink: 0;
+}
+.message-search input {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 12px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--frost);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background: var(--field-background, var(--soft-surface));
+}
+.message-search button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 12px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--frost);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background: var(--soft-surface, var(--panel));
+  cursor: pointer;
+}
+.message-search button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.message-search :focus-visible {
+  outline: 1px solid var(--muted);
+  outline-offset: 2px;
+}
+.message-search .message-search-close {
+  padding: 9px;
+  flex-shrink: 0;
+}
+.message-search-info {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 6px 16px;
+  margin-top: 9px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.message-search-info > span {
+  overflow-wrap: anywhere;
+}
+.app-shell .header-actions > .message-search-trigger {
+  display: grid;
+}
+@media (max-width: 600px) {
+  .message-search {
+    padding: 10px 12px;
+  }
+  .message-search form {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .message-search input {
+    flex-basis: calc(100% - 40px);
+  }
+  .message-search form > button[type="submit"] {
+    margin-left: 25px;
+  }
+  .message-search-info {
+    font-size: 10px;
+  }
+}
