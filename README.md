@@ -244,3 +244,11 @@ publishes a plaintext URL. Opening another player closes the previous one.
 Closing a player cancels its request, unloads its decoder and revokes the object
 URL. Inline playback has a 128 MiB memory budget; larger files remain available
 through the existing streamed download without an upload size restriction.
+
+Friendships are available from Home → Amici and from user profiles. Users can
+send requests by exact username, accept or decline incoming requests, cancel
+outgoing requests and remove friends. RLS restricts each relationship to its two
+participants; only the recipient can accept it. An unordered unique pair blocks
+duplicate and crossed requests, and outgoing pending requests are capped at 100.
+The client refreshes via Realtime, on focus and with a visible-page fallback poll.
+Removing a friendship preserves existing conversations and messages.

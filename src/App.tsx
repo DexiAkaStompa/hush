@@ -1,4 +1,6 @@
 import { UserProfile } from "./components/UserProfile";
+import { FriendsPanel, FriendActions } from "./components/Friends";
+import { useFriendships } from "./lib/use-friendships";
 import type { ProfileAnchor } from "./lib/profile-details";
 import { EMPTY_ROLE_CONTEXT, loadServerRoles, loadChannelPermissions, rolesForUser, canMassMention, reorderChannels, setMemberRoles, type ServerRoleContext, type ServerPermission } from "./lib/server-roles";
 import { extractMentions, resolveMentions, mentionsRecipient, mentionQuery, type MentionTarget, type MessageMention } from "./lib/mentions";
@@ -198,6 +200,8 @@ export function App() {
 }
 
 function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; theme: ThemeId; onThemeChange: (theme: ThemeId) => void }) {
+  const friendships = useFriendships(session.user.id);
+  const incomingFriendRequests = friendships.entries.filter(row=>row.status==="pending"&&row.recipient_id===session.user.id).length;
   const [profile, setProfile] = useState(() => profileFromSession(session));
   const [inviteLink, setInviteLink] = useState<string | null>(null);
   const [inviteNotice, setInviteNotice] = useState("");
@@ -747,14 +751,12 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
     if (!identity || !supabase) return;
 
     // Check if 1-on-1 DM already exists with this user
-    const existing = directMessages.find((dm) => {
-      const details = dmDetails[dm.id];
-      if (details?.recipient?.id === targetUser.id) return true;
-      return (
-        dm.name.toLowerCase() === targetUser.display_name.toLowerCase() ||
-        dm.name.toLowerCase() === targetUser.username.toLowerCase()
-      );
-    });
+    // Match a person by membership, never by a group's editable display name.
+    let existing = directMessages.find(dm => dmDetails[dm.id]?.recipient?.id === targetUser.id);
+    if (!existing) {
+      const recipients = await loadDmRecipients(directMessages.map(dm=>dm.id), session.user.id);
+      existing = directMessages.find(dm => recipients[dm.id]?.recipient?.id === targetUser.id);
+    }
 
     if (existing) {
       setActiveSpaceId(null);
@@ -786,7 +788,7 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
     } finally {
       setBusy(false);
     }
-  }, [directMessages, dmDetails, identity, refreshWorkspace, updateDmDetails]);
+  }, [directMessages, dmDetails, identity, refreshWorkspace, updateDmDetails, session.user.id]);
 
   const handleMention = useCallback((targetUser: Profile) => {
     setDraft((current) => `${current ? current.trimEnd() + " " : ""}@${targetUser.username} `);
@@ -1290,7 +1292,7 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
     <div className="app-shell">
       <DotPattern />
       <aside className="server-rail" aria-label="Server">
-        <button className={`brand-mark ${activeSpaceId === null ? "selected" : ""}`} onClick={() => { setActiveSpaceId(null); setActiveConversationId(null); setStage((current) => current.open ? { ...current, expanded: false } : current); }} aria-label="Messaggi diretti" title="Messaggi diretti"><BrandMark size={28} /></button>
+        <button className={`brand-mark ${activeSpaceId === null ? "selected" : ""}`} onClick={() => { setActiveSpaceId(null); setActiveConversationId(null); setStage((current) => current.open ? { ...current, expanded: false } : current); }} aria-label={`Messaggi diretti e amici${incomingFriendRequests ? `, ${incomingFriendRequests} richieste ricevute` : ""}`} title="Messaggi diretti e amici"><BrandMark size={28} />{incomingFriendRequests>0&&<span className="friends-rail-badge">{incomingFriendRequests}</span>}</button>
         <div className="rail-rule" />
         {spaces.map((space) => (
           <button className={`server-icon ${activeSpaceId === space.id ? "selected" : ""}`} key={space.id} onClick={() => selectSpace(space.id)} aria-label={space.name} title={space.name} style={{borderColor:identityColor(space.accent_color)}}>{safeCommunityImage(space.icon_data)?<img className="community-icon-img" src={space.icon_data!} alt=""/>:initialsFor(space.name)}{allTextConversations.some(conv=>conv.space_id===space.id && (unreads[conv.id]?.unread_count??0)>0) && <i className="server-unread-dot"/>}</button>
@@ -1306,6 +1308,7 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
         </button>
         <button className="sidebar-close" onClick={() => setSidebarOpen(false)} aria-label="Chiudi menu"><X size={18} /></button>
         <div className="sidebar-scroll">
+          {!activeSpace && <button className="friends-nav" aria-current={!activeConversationId ? "page" : undefined} onClick={() => {setActiveSpaceId(null);setActiveConversationId(null);setSidebarOpen(false);setStage(current=>current.open?{...current,expanded:false}:current);}}><UserPlus size={17}/> Amici{friendships.entries.some(row=>row.status==="pending"&&row.recipient_id===session.user.id)&&<span aria-label="Richieste di amicizia ricevute">{friendships.entries.filter(row=>row.status==="pending"&&row.recipient_id===session.user.id).length}</span>}</button>}
           <button className="find-conversation" onClick={() => activeConversation ? setShowSearch(true) : setToast("Apri una conversazione per cercare nei messaggi.")}><Search size={16} /><span>Cerca nei messaggi</span><kbd>Ctrl K</kbd></button>
           {activeSpace ? (
             <>
@@ -1510,7 +1513,7 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
           {safeCommunityImage(activeConversation?.banner_data) && <img className="conversation-banner-image" src={activeConversation!.banner_data!} alt="" aria-hidden="true" />}
           <button className="mobile-menu" onClick={() => setSidebarOpen(true)} aria-label="Apri menu"><Menu size={20} /></button>
           {safeCommunityImage(activeConversation?.icon_data)?<img className="conversation-header-icon" src={activeConversation!.icon_data!} alt=""/>:activeConversation?.kind === "voice_channel" ? <Volume2 size={21} className="hash-icon voice-icon" /> : activeConversation ? <Hash size={21} className="hash-icon" /> : <ShieldCheck size={21} className="hash-icon" />}
-          <div className="channel-heading"><button className="conversation-identity-trigger" title="Nome, descrizione e aspetto" disabled={!activeConversation} onClick={()=>activeConversation&&setIdentityTarget({kind:"conversation",id:activeConversation.id,value:activeConversation,readOnly:!!activeConversation.space_id&&!canManageSpace})}><strong>{(activeConversation && !activeConversation.identity_customized && !activeConversation.description && !activeConversation.icon_data && !activeSpaceId && dmDetails[activeConversation.id]?.recipient?.display_name) ? dmDetails[activeConversation.id].recipient!.display_name : (activeConversation?.name ?? "Il tuo spazio Hush")}</strong>{activeConversation?.description&&<small title={activeConversation.description}>{activeConversation.description}</small>}</button><span>{activeConversation ? activeConversation.kind === "voice_channel" ? `${members.length} membri · canale vocale` : `${members.length} membri` : `Benvenuto, ${profile.display_name}`}</span></div>
+          <div className="channel-heading"><button className="conversation-identity-trigger" title="Nome, descrizione e aspetto" disabled={!activeConversation} onClick={()=>activeConversation&&setIdentityTarget({kind:"conversation",id:activeConversation.id,value:activeConversation,readOnly:!!activeConversation.space_id&&!canManageSpace})}><strong>{(activeConversation && !activeConversation.identity_customized && !activeConversation.description && !activeConversation.icon_data && !activeSpaceId && dmDetails[activeConversation.id]?.recipient?.display_name) ? dmDetails[activeConversation.id].recipient!.display_name : (activeConversation?.name ?? (activeSpaceId ? "Il tuo spazio Hush" : "Amici"))}</strong>{activeConversation?.description&&<small title={activeConversation.description}>{activeConversation.description}</small>}</button><span>{activeConversation ? activeConversation.kind === "voice_channel" ? `${members.length} membri · canale vocale` : `${members.length} membri` : `Benvenuto, ${profile.display_name}`}</span></div>
           {activeConversation ? (
             <div className="header-actions">
               <button
@@ -1693,7 +1696,7 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
             </div>
           </>
         ) : (
-          <div className="chat-content empty-chat"><section className="workspace-empty"><div className="workspace-empty-mark"><BrandMark size={46} /></div><span className="eyebrow">spazio privato</span><h1>{loading ? "Caricamento…" : "Pronto per iniziare"}</h1><p>Riunisci i tuoi amici in un server, usa un invito oppure inizia una conversazione privata.</p><button className="empty-primary" onClick={() => openModal("space")}><Plus size={17} /> Crea o unisciti</button></section></div>
+          !activeSpaceId ? <FriendsPanel friendships={friendships} onMessage={user=>void handleOpenDm(user)} onProfile={openUserProfile}/> : <div className="chat-content empty-chat"><section className="workspace-empty"><div className="workspace-empty-mark"><BrandMark size={46} /></div><span className="eyebrow">spazio privato</span><h1>{loading ? "Caricamento…" : "Pronto per iniziare"}</h1><p>Riunisci i tuoi amici in un server, usa un invito oppure inizia una conversazione privata.</p><button className="empty-primary" onClick={() => openModal("space")}><Plus size={17} /> Crea o unisciti</button></section></div>
         )}
       </main>
 
@@ -1725,7 +1728,7 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
       {confirmAction&&<Modal title={confirmAction.title} description={confirmAction.description} onClose={()=>{if(!busy)setConfirmAction(null);}}><div className="modal-form">{formError&&<p className="auth-error" role="alert">{formError}</p>}<button type="button" className="modal-primary" disabled={busy} onClick={()=>setConfirmAction(null)}>Annulla</button><button type="button" className="danger-action" disabled={busy} onClick={()=>void runAction(async()=>{await confirmAction.action();setConfirmAction(null);})}>{busy?"Attendi…":confirmAction.label}</button></div></Modal>}
       {identityTarget&&<CommunityIdentityEditor key={`${identityTarget.kind}:${identityTarget.id}`} value={identityTarget.value} label={identityTarget.kind==="space"?"server":activeConversation?.kind==="group_dm"?"gruppo":"canale"} readOnly={identityTarget.readOnly} onClose={()=>setIdentityTarget(null)} onSave={async value=>{await saveCommunityIdentity(identityTarget.kind,identityTarget.id,value);if(identityTarget.kind==="space")setSpaces(current=>current.map(space=>space.id===identityTarget.id?{...space,...value,identity_customized:true}:space));else {setChannels(current=>current.map(room=>room.id===identityTarget.id?{...room,...value,identity_customized:true}:room));setDirectMessages(current=>current.map(room=>room.id===identityTarget.id?{...room,...value,identity_customized:true}:room));}setToast("Personalizzazione salvata");}}/>}
       {inviteLink ? <Modal title="Invita nel server" description="Condividi questo link con gli amici. Scade tra 7 giorni; incollalo in Server → Usa invito." onClose={() => setInviteLink(null)}><div className="modal-form"><label>Link di invito<input readOnly value={inviteLink} onFocus={(event) => event.target.select()} /></label><button className="modal-primary" onClick={() => { void copyText(inviteLink).then(() => setInviteNotice("Invito copiato")).catch(() => setInviteNotice("Seleziona il link e premi Ctrl+C per copiarlo.")); }}>Copia invito</button><p role="status">{inviteNotice}</p></div></Modal> : null}
-      {viewedProfile&&<UserProfile key={`${viewedProfile.id}:${activeSpaceId??"dm"}`} profile={members.find(m=>m.id===viewedProfile.id)??viewedProfile} selfId={session.user.id} anchor={profileAnchor} anchorElement={profileAnchorElement.current} initialExpanded={profileExpanded} status={viewedProfile.id===session.user.id?(userStatus==="invisible"?"offline":userStatus):remoteStatuses[viewedProfile.id]==="dnd"?"dnd":onlineUserIds.includes(viewedProfile.id)?"online":"offline"} space={activeSpace} spaces={spaces} roleContext={roleContext} canManageRoles={canManageSpace&&roleContext.memberships.some(m=>m.user_id===viewedProfile.id)&&(roleContext.memberships.find(m=>m.user_id===viewedProfile.id)?.role!=="owner"||roleContext.memberships.find(m=>m.user_id===session.user.id)?.role==="owner")} onToggleRole={async(role,assigned)=>{
+      {viewedProfile&&<UserProfile key={`${viewedProfile.id}:${activeSpaceId??"dm"}`} friendshipAction={<FriendActions key={viewedProfile.id} user={viewedProfile} friendships={friendships}/>} profile={members.find(m=>m.id===viewedProfile.id)??viewedProfile} selfId={session.user.id} anchor={profileAnchor} anchorElement={profileAnchorElement.current} initialExpanded={profileExpanded} status={viewedProfile.id===session.user.id?(userStatus==="invisible"?"offline":userStatus):remoteStatuses[viewedProfile.id]==="dnd"?"dnd":onlineUserIds.includes(viewedProfile.id)?"online":"offline"} space={activeSpace} spaces={spaces} roleContext={roleContext} canManageRoles={canManageSpace&&roleContext.memberships.some(m=>m.user_id===viewedProfile.id)&&(roleContext.memberships.find(m=>m.user_id===viewedProfile.id)?.role!=="owner"||roleContext.memberships.find(m=>m.user_id===session.user.id)?.role==="owner")} onToggleRole={async(role,assigned)=>{
         if(!activeSpaceId)return;
         const spaceId=activeSpaceId,fresh=await loadServerRoles(spaceId),ids=rolesForUser(fresh,viewedProfile.id).map(r=>r.id);
         await setMemberRoles(spaceId,viewedProfile.id,assigned?[...new Set([...ids,role.id])]:ids.filter(id=>id!==role.id));

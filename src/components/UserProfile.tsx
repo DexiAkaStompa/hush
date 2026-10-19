@@ -1,4 +1,4 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import {
   Check,
@@ -45,6 +45,7 @@ type Props = {
   onMessage: () => void;
   onSelectSpace: (id: string) => void;
   onClose: () => void;
+  friendshipAction?: ReactNode;
 };
 const statusLabels = {
   online: "Online",
@@ -66,6 +67,7 @@ export function UserProfile({
   onMessage,
   onSelectSpace,
   onClose,
+  friendshipAction,
 }: Props) {
   const [expanded, setExpanded] = useState(initialExpanded),
     [tab, setTab] = useState<"about" | "shared">("about"),
@@ -269,6 +271,7 @@ export function UserProfile({
             Invia messaggio
           </button>
         )}
+        {friendshipAction}
         {!expanded && (
           <button
             className="profile-shared-summary"
