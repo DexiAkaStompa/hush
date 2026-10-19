@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, expect, test } from "vitest";
 import { PGlite } from "@electric-sql/pglite";
-import migration from "../../supabase/migrations/20261019222228_friendships.sql?raw";
+import migration from "../../supabase/migrations/20261019222510_friendships.sql?raw";
 const db = new PGlite();
 const a = "00000000-0000-0000-0000-000000000001",
   b = "00000000-0000-0000-0000-000000000002",
