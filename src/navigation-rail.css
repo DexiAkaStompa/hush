@@ -1,0 +1,63 @@
+.server-rail .rail-item {
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+.server-rail .rail-item::before {
+  content: "";
+  position: absolute;
+  left: -12px;
+  top: 50%;
+  width: 4px;
+  height: 30px;
+  border-radius: 4px;
+  background: var(--frost);
+  opacity: 0;
+  transform: translateY(-50%) scaleY(0.25);
+  transition:
+    opacity 140ms ease,
+    transform 140ms ease;
+  pointer-events: none;
+}
+.server-rail .rail-item:hover::before {
+  opacity: 0.45;
+}
+.server-rail .rail-item.is-selected::before {
+  opacity: 1;
+  transform: translateY(-50%) scaleY(1);
+}
+:root[data-theme] .app-shell .server-rail .brand-mark {
+  background: var(--soft-surface, var(--panel));
+  color: var(--muted);
+  box-shadow: none;
+  transform: none;
+}
+:root[data-theme] .app-shell .server-rail .brand-mark.selected {
+  background: #090a0c;
+  color: #fff;
+  border-color: #ffffff60;
+  box-shadow: inset 0 0 0 1px #ffffff38;
+  transform: none;
+}
+:root[data-theme] .app-shell .server-rail .brand-mark.selected:hover {
+  background: #151618;
+  color: #fff;
+}
+:root[data-theme] .app-shell .server-rail .server-icon.selected {
+  background: var(--panel-raised, var(--panel));
+  color: var(--frost);
+  outline: 2px solid var(--frost);
+  outline-offset: 3px;
+  box-shadow: none;
+  transform: none;
+}
+/* The marker lives outside the icon so uploaded artwork cannot clip it. */
+:root[data-theme] .app-shell .server-rail .server-icon.selected::before {
+  display: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .server-rail .rail-item::before {
+    transition: none;
+  }
+}

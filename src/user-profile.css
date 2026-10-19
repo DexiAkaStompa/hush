@@ -47,6 +47,74 @@
   color: #fff;
   cursor: pointer;
 }
+.hush-profile-top-actions {
+  position: absolute;
+  z-index: 3;
+  top: 10px;
+  right: 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.hush-profile-top-actions .hush-profile-close {
+  position: static;
+}
+.modal-header-actions {
+  margin-left: auto;
+}
+.friend-compact {
+  position: relative;
+}
+.friend-compact .friend-icon-button {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid #ffffff30;
+  border-radius: var(--radius-control);
+  background: #151719c9;
+  color: #fff;
+  cursor: pointer;
+}
+.friend-compact .friend-icon-button:hover {
+  background: #35373be6;
+}
+.friend-compact .friend-icon-button:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+.friend-compact .friend-icon-button:focus-visible {
+  outline: 1px solid #fff;
+  outline-offset: 2px;
+}
+.friend-compact-panel {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  z-index: 4;
+  width: 240px;
+  max-width: calc(100vw - 64px);
+  padding: 12px;
+  border: 1px solid var(--overlay-border, var(--line));
+  border-radius: var(--radius-surface);
+  background: var(--overlay-background, var(--panel));
+  color: var(--frost);
+  box-shadow: var(--overlay-shadow, 0 12px 32px #0005);
+}
+.friend-compact-status {
+  font-size: 12px;
+  margin: 0 0 10px;
+  color: var(--muted);
+}
+.modal-card > header .friend-compact-panel .friend-actions button {
+  width: auto;
+  height: auto;
+  min-width: 0;
+  min-height: 32px;
+  display: inline-flex;
+  padding: 9px 12px;
+}
 .hush-profile-body {
   padding: 0 18px 18px;
 }

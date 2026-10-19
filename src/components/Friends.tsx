@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import {
   Check,
   MessageCircle,
@@ -6,6 +6,9 @@ import {
   UserPlus,
   Users,
   X,
+  Clock,
+  Loader2,
+  UserCheck,
 } from "lucide-react";
 import { ProfileImage } from "./ProfileImage";
 import { friendshipError, friendshipKind } from "../lib/friendships";
@@ -16,13 +19,30 @@ import "../friends.css";
 export function FriendActions({
   user,
   friendships,
+  compact = false,
 }: {
   user: Profile;
   friendships: FriendshipsController;
+  compact?: boolean;
 }) {
   const [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [confirm, setConfirm] = useState(false);
+  const [open, setOpen] = useState(false);
+  const root = useRef<HTMLDivElement>(null),
+    trigger = useRef<HTMLButtonElement>(null),
+    controlsId = useId();
+  useEffect(() => {
+    if (!open) return;
+    const outside = (event: PointerEvent) => {
+      if (!root.current?.contains(event.target as Node)) {
+        setOpen(false);
+        setConfirm(false);
+      }
+    };
+    document.addEventListener("pointerdown", outside);
+    return () => document.removeEventListener("pointerdown", outside);
+  }, [open]);
   const row = friendships.entries.find((row) => row.user.id === user.id);
   const kind = row ? friendshipKind(row, friendships.selfId) : null;
   const run = async (action: () => Promise<void>) => {
@@ -32,14 +52,16 @@ export function FriendActions({
     try {
       await action();
       setConfirm(false);
+      setOpen(false);
     } catch (e) {
       setError(friendshipError(e));
+      if (compact) setOpen(true);
     } finally {
       setBusy(false);
     }
   };
   if (user.id === friendships.selfId) return null;
-  return (
+  const controls = (
     <div className="friend-actions-wrap">
       <div className="friend-actions">
         {friendships.loading ? (
@@ -106,6 +128,91 @@ export function FriendActions({
         <p className="friends-error" role="alert">
           {error}
         </p>
+      )}
+    </div>
+  );
+  if (!compact) return controls;
+  const label = friendships.loading
+    ? "Caricamento amicizia"
+    : friendships.error
+      ? "Ricarica amicizie"
+      : kind === "friend"
+        ? "Amici: gestisci amicizia"
+        : kind === "incoming"
+          ? "Richiesta ricevuta: accetta o rifiuta"
+          : kind === "outgoing"
+            ? "Richiesta inviata: gestisci richiesta"
+            : "Aggiungi amico";
+  const Icon =
+    busy || friendships.loading
+      ? Loader2
+      : kind === "friend"
+        ? UserCheck
+        : kind === "outgoing"
+          ? Clock
+          : UserPlus;
+  return (
+    <div
+      className="friend-compact"
+      ref={root}
+      onKeyDown={(event) => {
+        if (event.key === "Escape" && (open || error)) {
+          event.preventDefault();
+          event.stopPropagation();
+          setOpen(false);
+          setError("");
+          setConfirm(false);
+          trigger.current?.focus();
+        }
+      }}
+    >
+      <button
+        type="button"
+        className="friend-icon-button"
+        ref={trigger}
+        aria-label={label}
+        title={label}
+        disabled={busy || friendships.loading}
+        aria-expanded={kind || friendships.error ? open : undefined}
+        aria-controls={open ? controlsId : undefined}
+        onClick={() => {
+          if (friendships.error) {
+            void friendships.refresh();
+            return;
+          }
+          if (!kind) {
+            void run(() => friendships.send(user.username));
+            return;
+          }
+          setOpen((value) => !value);
+          setConfirm(false);
+        }}
+      >
+        <Icon
+          size={16}
+          className={
+            busy || friendships.loading ? "attachment-spinner" : undefined
+          }
+        />
+      </button>
+      {(open || error) && (
+        <div
+          className="friend-compact-panel"
+          id={controlsId}
+          role="group"
+          aria-label="Gestisci amicizia"
+        >
+          {kind && (
+            <p className="friend-compact-status">
+              {kind === "friend"
+                ? "Siete amici"
+                : kind === "incoming"
+                  ? "Ti ha inviato una richiesta"
+                  : "Richiesta inviata"}
+            </p>
+          )}
+          {controls}
+        </div>
       )}
     </div>
   );

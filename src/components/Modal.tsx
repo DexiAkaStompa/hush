@@ -14,6 +14,7 @@ type ModalProps = {
   children: ReactNode;
   onClose: () => void;
   className?: string;
+  headerActions?: ReactNode;
 };
 const modalStack: symbol[] = [];
 const modalCards = new Map<symbol, HTMLElement>();
@@ -35,6 +36,7 @@ export function Modal({
   children,
   onClose,
   className = "",
+  headerActions,
 }: ModalProps) {
   const id = useId();
   const card = useRef<HTMLElement>(null);
@@ -137,6 +139,9 @@ export function Modal({
             <span className="eyebrow">Hush · spazio privato</span>
             <h2 id={id}>{title}</h2>
           </div>
+          {headerActions && (
+            <div className="modal-header-actions">{headerActions}</div>
+          )}
           <button type="button" onClick={onClose} aria-label="Chiudi">
             <X size={18} />
           </button>

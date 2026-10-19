@@ -1,4 +1,11 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import {
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { createPortal } from "react-dom";
 import {
   Check,
@@ -271,7 +278,6 @@ export function UserProfile({
             Invia messaggio
           </button>
         )}
-        {friendshipAction}
         {!expanded && (
           <button
             className="profile-shared-summary"
@@ -311,7 +317,12 @@ export function UserProfile({
   );
   if (expanded)
     return (
-      <Modal title="Profilo" onClose={onClose} className="hush-profile-full">
+      <Modal
+        title="Profilo"
+        onClose={onClose}
+        className="hush-profile-full"
+        headerActions={friendshipAction}
+      >
         <div className="hush-profile-full-grid">
           <section className="hush-profile-identity">{identity}</section>
           <section className="hush-profile-details">
@@ -405,13 +416,16 @@ export function UserProfile({
       aria-labelledby={titleId}
       style={{ ...position, visibility: positioned ? "visible" : "hidden" }}
     >
-      <button
-        className="hush-profile-close"
-        aria-label="Chiudi profilo"
-        onClick={onClose}
-      >
-        <X size={16} />
-      </button>
+      <div className="hush-profile-top-actions">
+        {friendshipAction}
+        <button
+          className="hush-profile-close"
+          aria-label="Chiudi profilo"
+          onClick={onClose}
+        >
+          <X size={16} />
+        </button>
+      </div>
       {identity}
     </section>,
     document.body,
