@@ -47,10 +47,17 @@
 :root[data-theme] .app-shell .server-rail .server-icon.selected {
   background: var(--panel-raised, var(--panel));
   color: var(--frost);
-  outline: 2px solid var(--frost);
-  outline-offset: 3px;
+  outline: none;
   box-shadow: none;
   transform: none;
+}
+:root[data-theme] .app-shell .server-rail .server-icon {
+  border-color: transparent;
+  outline: none;
+  box-shadow: none;
+}
+.server-rail .rail-item:has(.server-icon:focus-visible)::before {
+  opacity: 1;
 }
 /* The marker lives outside the icon so uploaded artwork cannot clip it. */
 :root[data-theme] .app-shell .server-rail .server-icon.selected::before {
