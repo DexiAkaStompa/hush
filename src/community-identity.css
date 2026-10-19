@@ -256,28 +256,46 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.conversation-cover {
-  height: 100px;
-  flex-shrink: 0;
+/* Keep the artwork behind the existing controls, including in the DM list. */
+:root .app-shell :is(.chat-header, .dm-row).has-conversation-banner {
   position: relative;
-  overflow: hidden;
-  border-bottom: 1px solid var(--line);
+  isolation: isolate;
+  background: #171b20;
 }
-.conversation-cover img {
+:root .app-shell .has-conversation-banner > .conversation-banner-image {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: -2;
 }
-.conversation-cover button {
+:root .app-shell .has-conversation-banner::before {
+  content: "";
   position: absolute;
-  right: 14px;
-  bottom: 12px;
-  border: 1px solid #ffffff35;
-  border-radius: var(--radius-control);
-  background: #0008;
-  color: white;
-  padding: 7px 10px;
-  cursor: pointer;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #090d13cf, #090d1399 50%, #090d13c7);
+  pointer-events: none;
+  z-index: -1;
+}
+:root .app-shell .dm-row.has-conversation-banner {
+  margin-block: 3px;
+  box-shadow: inset 0 0 0 1px #ffffff1a;
+}
+:root .app-shell .dm-row.has-conversation-banner:is(:hover, .active) {
+  box-shadow: inset 0 0 0 1px #ffffff70;
+}
+:root .app-shell .has-conversation-banner :is(.dm-name, .conversation-identity-trigger, .header-actions > button, .mobile-menu, .hash-icon) {
+  color: #fff;
+}
+:root .app-shell .has-conversation-banner :is(.dm-snippet, .channel-heading > span, .conversation-identity-trigger small) {
+  color: #ffffffd9;
+}
+:root .app-shell .chat-header.has-conversation-banner .header-actions > button:hover {
+  background: #ffffff24;
 }
 .identity-settings-entry {
   display: flex;
@@ -315,9 +333,6 @@
   }
   .identity-custom-color {
     margin-left: 0;
-  }
-  .conversation-cover {
-    height: 80px;
   }
 }
 

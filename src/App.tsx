@@ -1378,7 +1378,7 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
 
                 return (
                   <button
-                    className={`dm-row ${activeConversationId === conversation.id ? "active" : ""}`}
+                    className={`dm-row ${activeConversationId === conversation.id ? "active" : ""} ${safeCommunityImage(conversation.banner_data) ? "has-conversation-banner" : ""}`}
                     key={conversation.id}
                     onClick={() => {
                       setActiveSpaceId(null);
@@ -1399,6 +1399,7 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
                       }
                     }}
                   >
+                    {safeCommunityImage(conversation.banner_data) && <img className="conversation-banner-image" src={conversation.banner_data!} alt="" aria-hidden="true" />}
                     <span className="dm-avatar" style={{ backgroundColor: avatarColor }}>
                       {safeCommunityImage(conversation.icon_data) ? <img className="community-icon-img" src={conversation.icon_data!} alt=""/> : partner?.avatar_path ? (
                         <ProfileImage path={partner.avatar_path} alt="" className="dm-avatar-img" />
@@ -1505,7 +1506,8 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
       </aside>
 
       <main className="chat-panel">
-        <header className="chat-header">
+        <header className={`chat-header ${safeCommunityImage(activeConversation?.banner_data) ? "has-conversation-banner" : ""}`}>
+          {safeCommunityImage(activeConversation?.banner_data) && <img className="conversation-banner-image" src={activeConversation!.banner_data!} alt="" aria-hidden="true" />}
           <button className="mobile-menu" onClick={() => setSidebarOpen(true)} aria-label="Apri menu"><Menu size={20} /></button>
           {safeCommunityImage(activeConversation?.icon_data)?<img className="conversation-header-icon" src={activeConversation!.icon_data!} alt=""/>:activeConversation?.kind === "voice_channel" ? <Volume2 size={21} className="hash-icon voice-icon" /> : activeConversation ? <Hash size={21} className="hash-icon" /> : <ShieldCheck size={21} className="hash-icon" />}
           <div className="channel-heading"><button className="conversation-identity-trigger" title="Nome, descrizione e aspetto" disabled={!activeConversation} onClick={()=>activeConversation&&setIdentityTarget({kind:"conversation",id:activeConversation.id,value:activeConversation,readOnly:!!activeConversation.space_id&&!canManageSpace})}><strong>{(activeConversation && !activeConversation.identity_customized && !activeConversation.description && !activeConversation.icon_data && !activeSpaceId && dmDetails[activeConversation.id]?.recipient?.display_name) ? dmDetails[activeConversation.id].recipient!.display_name : (activeConversation?.name ?? "Il tuo spazio Hush")}</strong>{activeConversation?.description&&<small title={activeConversation.description}>{activeConversation.description}</small>}</button><span>{activeConversation ? activeConversation.kind === "voice_channel" ? `${members.length} membri · canale vocale` : `${members.length} membri` : `Benvenuto, ${profile.display_name}`}</span></div>
@@ -1533,7 +1535,6 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
             </div>
           ) : null}
         </header>
-        {safeCommunityImage(activeConversation?.banner_data)&&<div className="conversation-cover"><img src={activeConversation!.banner_data!} alt="Copertina della conversazione"/><button onClick={()=>activeConversation&&setIdentityTarget({kind:"conversation",id:activeConversation.id,value:activeConversation,readOnly:!!activeConversation.space_id&&!canManageSpace})}>Informazioni sullo spazio</button></div>}
 
         <MediaStage
           open={stage.open}
