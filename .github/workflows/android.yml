@@ -78,7 +78,7 @@ jobs:
           apk="release/Hush-${version}-android.apk"
           cp android/app/build/outputs/apk/release/app-release.apk "$apk"
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$apk"
-          sha256sum "$apk" > "$apk.sha256"
+          (cd release && sha256sum "$(basename "$apk")" > "$(basename "$apk").sha256")
       - name: Enable emulator acceleration
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
