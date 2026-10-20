@@ -8,6 +8,9 @@ const config: CapacitorConfig = {
   server: { androidScheme: "https" },
   android: { allowMixedContent: false, minWebViewVersion: 119 },
   ios: { contentInset: "automatic", preferredContentMode: "mobile" },
-  plugins: { Keyboard: { resize: "native", resizeOnFullScreen: true } },
+  plugins: {
+    Keyboard: { resize: "native", resizeOnFullScreen: true },
+    SystemBars: { style: "DARK", initialViewportFitValueHint: "cover" },
+  },
 };
 export default config;

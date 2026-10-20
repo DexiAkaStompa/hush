@@ -88,6 +88,7 @@ html.native-app {
 @media (max-width: 600px) {
   .native-app .chat-header {
     height: auto;
+    flex-basis: auto;
     min-height: 60px;
     flex-wrap: wrap;
     gap: 4px;
