@@ -1376,6 +1376,7 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
       else if (modal) setModal(null);
       else if (showEmojiPicker) setShowEmojiPicker(false);
       else if (showSearch) closeMessageSearch();
+      else if (isMobile && stage.open && stage.expanded) setStage(current => ({...current,expanded:false}));
       else if (isMobile && !mobileBrowsing) setMobileBrowsing(true);
       else if (sidebarOpen) setSidebarOpen(false);
       else if (activeConversationId && !isMobile) { setActiveConversationId(null); setSidebarOpen(true); }
@@ -1384,7 +1385,8 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
     };
     document.addEventListener('hush:back', back);
     return () => document.removeEventListener('hush:back', back);
-  }, [confirmAction, identityTarget, viewedProfile, manageSpace, modal, showEmojiPicker, showSearch, sidebarOpen, activeConversationId, isMobile, mobileBrowsing, mobileActions, showStatusMenu, contextMenu]);
+  }, [confirmAction, identityTarget, viewedProfile, manageSpace, modal, showEmojiPicker, showSearch, sidebarOpen, activeConversationId, isMobile, mobileBrowsing, mobileActions, showStatusMenu, contextMenu, stage.open, stage.expanded]);
+  useEffect(() => { if (isMobile && stage.open && stage.expanded) setMobileBrowsing(false); }, [isMobile, stage.open, stage.expanded]);
   const selectSpace = (spaceId: string) => {
     setActiveSpaceId(spaceId);
     setActiveConversationId(null);
