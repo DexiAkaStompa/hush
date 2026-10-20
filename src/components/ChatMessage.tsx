@@ -107,7 +107,10 @@ export function ChatMessage({
   const pickerRef = useRef<HTMLDivElement>(null);
   const [popupPosition, setPopupPosition] = useState({ left: 8, top: 8 });
   const openPopup = (
-    event: MouseEvent<HTMLElement>,
+    event: Pick<
+      MouseEvent<HTMLElement>,
+      "currentTarget" | "clientX" | "clientY"
+    >,
     kind: "menu" | "picker",
   ) => {
     const anchor = event.currentTarget.getBoundingClientRect();
@@ -134,6 +137,17 @@ export function ChatMessage({
       setMenu(false);
     }
   };
+  const press = useRef<{
+    timer: ReturnType<typeof setTimeout>;
+    x: number;
+    y: number;
+  } | null>(null);
+  const pressed = useRef(false);
+  const cancelPress = () => {
+    if (press.current) clearTimeout(press.current.timer);
+    press.current = null;
+  };
+  useEffect(() => cancelPress, []);
   useEffect(() => {
     if (!menu && !picker) return;
     const dismiss = (event: PointerEvent) => {
@@ -169,8 +183,54 @@ export function ChatMessage({
       className={`message chat-message ${compact ? "is-continuation" : "is-group-start"} ${pinned ? "is-pinned" : ""} ${highlighted ? "is-mentioned" : ""}`}
       aria-label={`${message.author}, ${new Date(message.createdAt).toLocaleString("it")}`}
       id={`message-${message.id}`}
+      tabIndex={0}
+      onPointerDown={(event) => {
+        pressed.current = false;
+        if (
+          event.pointerType !== "touch" ||
+          !document.documentElement.classList.contains("native-app") ||
+          (event.target as Element).closest(
+            "button,a,input,textarea,video,audio",
+          )
+        )
+          return;
+        const currentTarget = event.currentTarget,
+          clientX = event.clientX,
+          clientY = event.clientY;
+        cancelPress();
+        press.current = {
+          x: clientX,
+          y: clientY,
+          timer: setTimeout(() => {
+            pressed.current = true;
+            openPopup({ currentTarget, clientX, clientY }, "menu");
+            press.current = null;
+          }, 450),
+        };
+      }}
+      onPointerMove={(event) => {
+        if (
+          press.current &&
+          Math.hypot(
+            event.clientX - press.current.x,
+            event.clientY - press.current.y,
+          ) > 10
+        )
+          cancelPress();
+      }}
+      onPointerUp={cancelPress}
+      onPointerCancel={cancelPress}
+      onClickCapture={(event) => {
+        if (pressed.current && articleRef.current?.contains(event.target as Node)) {
+          event.preventDefault();
+          event.stopPropagation();
+          pressed.current = false;
+        }
+      }}
       onContextMenu={(event) => {
         event.preventDefault();
+        cancelPress();
+        if (pressed.current) return;
         openPopup(event, "menu");
       }}
       onKeyDown={(event) => {

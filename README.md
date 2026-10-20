@@ -300,3 +300,9 @@ up on a subsequent launch after 24 hours. Device cloud backup is disabled.
 The shared-media and link-preview functions explicitly allow the bundled Android
 origin https://localhost, preserving configured web/desktop origins and all
 existing authentication and conversation membership checks.
+
+Android phone navigation now separates the conversation/server browser from the
+full-width chat. Friends use compact row actions; secondary conversation controls
+live in a sheet, while a long press opens message actions without permanent
+transcript toolbars. The composer supports multiline Return and a separate send
+button. A compact call bar preserves access to an ongoing collapsed call.

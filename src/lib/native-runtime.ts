@@ -20,6 +20,18 @@ export async function initNativeRuntime() {
   const launch = await App.getLaunchUrl();
   if (launch?.url) receive(launch.url);
   await App.addListener("backButton", async () => {
+    if (
+      document.querySelector('[role="dialog"], .message-options, .emoji-picker, .friend-compact-panel')
+    ) {
+      (document.activeElement ?? document).dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "Escape",
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+      return;
+    }
     const event = new Event("hush:back", { cancelable: true });
     if (document.dispatchEvent(event)) await App.minimizeApp();
   });

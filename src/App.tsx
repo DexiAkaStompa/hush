@@ -1,3 +1,4 @@
+import { useMobileLayout } from "./lib/use-mobile-layout";
 import { UserProfile } from "./components/UserProfile";
 import { MessageSearch } from "./components/MessageSearch";
 import { isMessageContinuation } from "./lib/message-layout";
@@ -12,6 +13,8 @@ import { type FormEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRe
 import { captureChatScrollAnchor, restoreChatScrollAnchor, type ChatScrollAnchor } from "./lib/chat-scroll";
 import type { Session, RealtimeChannel } from "@supabase/supabase-js";
 import {
+  ArrowLeft,
+  MoreHorizontal,
   Bell,
   BellOff,
   ChevronDown,
@@ -274,6 +277,12 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
   const [showSearch, setShowSearch] = useState(false);
   const [showCipher, setShowCipher] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const isMobile = useMobileLayout();
+  const [mobileBrowsing, setMobileBrowsing] = useState(true);
+  const [mobileActions, setMobileActions] = useState(false);
+  const [dmQuery, setDmQuery] = useState("");
+  useEffect(() => { setMobileActions(false); }, [activeConversationId]);
+
   const [modal, setModal] = useState<ModalKind>(null);
   const [spaceMode, setSpaceMode] = useState<"create" | "join">("create");
   const [formPrimary, setFormPrimary] = useState("");
@@ -756,7 +765,7 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
     setSpaces(data.spaces);
     setDirectMessages(data.directMessages);
     setActiveSpaceId((current) => preferredSpaceId ?? current ?? data.spaces[0]?.id ?? null);
-    if (preferredConversationId) setActiveConversationId(preferredConversationId);
+    if (preferredConversationId) {setActiveConversationId(preferredConversationId);setMobileBrowsing(false);}
     void updateDmDetails(data.directMessages, identity);
     return data;
   }, [identity, session, updateDmDetails]);
@@ -779,6 +788,7 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
   }, []);
 
   const handleOpenDm = useCallback(async (targetUser: Profile) => {
+    setMobileBrowsing(false);
     if (!identity || !supabase) return;
 
     // Check if 1-on-1 DM already exists with this user
@@ -845,7 +855,7 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
             savedSpaceId && data.spaces.some((s) => s.id === savedSpaceId)
               ? savedSpaceId
               : data.spaces[0]?.id ?? null;
-          setActiveSpaceId(initialSpaceId);
+          setActiveSpaceId(isMobile ? null : initialSpaceId);
         }
         void updateDmDetails(data.directMessages, nextIdentity);
       })
@@ -1318,6 +1328,7 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
   };
 
   const openHushLink = async (value:string) => {
+    setMobileBrowsing(false);
     if(!supabase)throw Error('not_configured');
     const url=new URL(value);
     if(url.protocol!=='hush:')throw Error('invalid_link');
@@ -1327,7 +1338,7 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
       if(!preview.data)throw Error('invalid_or_expired_invite');
       let spaceId=preview.data.id;
       if(!preview.data.is_member){const joined=await supabase.rpc('join_space_with_invite',{p_token:token});if(joined.error)throw joined.error;spaceId=joined.data;}
-      await refreshWorkspace(spaceId);setActiveConversationId(null);await refreshChannels(spaceId);setSidebarOpen(false);return;
+      await refreshWorkspace(spaceId);setActiveConversationId(null);await refreshChannels(spaceId);setSidebarOpen(false);setMobileBrowsing(true);return;
     }
     if(url.hostname==='channel'){
       const {data,error}=await supabase.from('conversations').select('*').eq('id',url.pathname.slice(1)).maybeSingle();if(error)throw error;if(!data)throw Error('channel_not_accessible');
@@ -1355,31 +1366,57 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
   }, [session.user.id]);
   useEffect(() => {
     const back = (event: Event) => {
-      if (confirmAction) setConfirmAction(null);
+      if (showStatusMenu) setShowStatusMenu(false);
+      else if (contextMenu) setContextMenu(null);
+      else if (confirmAction) setConfirmAction(null);
       else if (identityTarget) setIdentityTarget(null);
       else if (viewedProfile) setViewedProfile(null);
+      else if (mobileActions) setMobileActions(false);
       else if (manageSpace) setManageSpace(false);
       else if (modal) setModal(null);
       else if (showEmojiPicker) setShowEmojiPicker(false);
       else if (showSearch) closeMessageSearch();
+      else if (isMobile && !mobileBrowsing) setMobileBrowsing(true);
       else if (sidebarOpen) setSidebarOpen(false);
-      else if (activeConversationId) { setActiveConversationId(null); setSidebarOpen(true); }
+      else if (activeConversationId && !isMobile) { setActiveConversationId(null); setSidebarOpen(true); }
       else return;
       event.preventDefault();
     };
     document.addEventListener('hush:back', back);
     return () => document.removeEventListener('hush:back', back);
-  }, [confirmAction, identityTarget, viewedProfile, manageSpace, modal, showEmojiPicker, showSearch, sidebarOpen, activeConversationId]);
+  }, [confirmAction, identityTarget, viewedProfile, manageSpace, modal, showEmojiPicker, showSearch, sidebarOpen, activeConversationId, isMobile, mobileBrowsing, mobileActions, showStatusMenu, contextMenu]);
   const selectSpace = (spaceId: string) => {
     setActiveSpaceId(spaceId);
     setActiveConversationId(null);
     setStage((current) => current.open ? { ...current, expanded: false } : current);
   };
 
+  const togglePinnedMessages = () => { if (!activeConversation) return; setShowPins(!showPins); if(!showPins && roomKey && extras.pins.length) void loadAndDecryptMessages(activeConversation.id, roomKey, members, {ids: extras.pins.map(pin => pin.message_id)}).then(rows => {if(activeIdRef.current === activeConversation.id) setMessages(prev => mergeMessages(prev, rows));}).catch(error => setToast(readableError(error)));};
+  const conversationActions = activeConversation ? (<div className="header-actions">
+              <button
+                type="button"
+                className={`header-bell-btn ${isChatMuted(activeConversation.id) ? "muted" : ""}`}
+                onClick={() => {
+                  const next = toggleChatMute(activeConversation.id);
+                  setToast(next ? "Notifiche silenziate per questa chat" : "Notifiche riattivate per questa chat");
+                }}
+                aria-label={isChatMuted(activeConversation.id) ? "Notifiche silenziate. Clicca per attivare." : "Notifiche attive. Clicca per silenziare."}
+                title={isChatMuted(activeConversation.id) ? "Notifiche silenziate (Clicca per riattivare)" : "Notifiche attive (Clicca per silenziare)"}
+              >
+                {isChatMuted(activeConversation.id) ? <BellOff size={18} /> : <Bell size={18} />}
+              </button>
+              <button onClick={() => startCall(activeConversation, false)} aria-label="Avvia chiamata"><Phone size={18} /></button>
+              <button onClick={() => startCall(activeConversation, true)} aria-label="Avvia videochiamata"><Video size={19} /></button>
+              <button onClick={()=>setIdentityTarget({kind:"conversation",id:activeConversation.id,value:activeConversation,readOnly:!!activeConversation.space_id&&!canManageSpace})} aria-label={activeConversation.kind==="group_dm"?"Personalizza gruppo":"Informazioni e aspetto del canale"} title="Nome, descrizione e aspetto"><Settings size={17}/></button>
+              {activeConversation.kind === "voice_channel" && <button onClick={()=>void copyText(`hush://channel/${activeConversation.id}`).then(()=>setToast("Link del canale copiato")).catch(()=>setToast("Impossibile copiare il link."))} aria-label="Copia link del canale" title="Condividi questo canale"><Copy size={17}/></button>}{activeSpace ? <button onClick={createInvite} aria-label="Copia invito"><UserPlus size={19} /></button> : null}
+              {["channel", "voice_channel"].includes(activeConversation.kind) && activeSpace?.owner_id === session.user.id ? <button onClick={deleteChannel} aria-label="Elimina canale"><Trash2 size={17} /></button> : null}
+              {activeConversation.kind !== "voice_channel" ? <button className="message-search-trigger" onClick={openMessageSearch} aria-label="Cerca nei messaggi" aria-expanded={showSearch} aria-controls={showSearch?"message-search":undefined} title="Cerca nei messaggi · Ctrl+K"><Search size={17} /></button> : null}
+            </div>) : null;
+
   return (
-    <div className="app-shell">
+    <div className="app-shell" data-mobile-view={mobileBrowsing ? "browse" : "content"}>
       <DotPattern />
-      <aside className="server-rail" aria-label="Server">
+      <aside className="server-rail" aria-label="Server" onClickCapture={() => { setMobileBrowsing(true); setSidebarOpen(false); }}>
         <div className={`rail-item ${activeSpaceId === null ? "is-selected" : ""}`}><button className={`brand-mark ${activeSpaceId === null ? "selected" : ""}`} aria-current={activeSpaceId===null?"page":undefined} onClick={() => { setActiveSpaceId(null); setActiveConversationId(null); setStage((current) => current.open ? { ...current, expanded: false } : current); }} aria-label={`Messaggi diretti e amici${incomingFriendRequests ? `, ${incomingFriendRequests} richieste ricevute` : ""}`} title="Messaggi diretti e amici"><BrandMark size={28} />{incomingFriendRequests>0&&<span className="friends-rail-badge">{incomingFriendRequests}</span>}</button></div>
         <div className="rail-rule" />
         {spaces.map((space) => (
@@ -1388,13 +1425,14 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
         <button className="server-icon add-server" onClick={() => openModal("space")} aria-label="Crea o unisciti a un server"><Plus size={20} /></button>
       </aside>
 
-      <aside className={`channel-sidebar ${sidebarOpen ? "sidebar-open" : ""}`}>
+      <aside className={`channel-sidebar ${sidebarOpen ? "sidebar-open" : ""}`} onClickCapture={event => { if ((event.target as Element).closest(".dm-row,.channel-row,.friends-nav")) setMobileBrowsing(false); }}>
         <button style={{"--identity-accent":identityColor(activeSpace?.accent_color)} as import("react").CSSProperties} className={`server-title ${activeSpace?"community-server-title":""}`} onClick={() => activeSpace && openModal("server")} disabled={!activeSpace}>
           {safeCommunityImage(activeSpace?.banner_data)&&<img className="server-cover-image" src={activeSpace!.banner_data!} alt=""/>}
-          <span><span className="eyebrow">spazio privato</span><strong>{activeSpace?.name ?? "Messaggi diretti"}</strong>{activeSpace?.description&&<small title={activeSpace.description}>{activeSpace.description}</small>}</span>
+          <span><span className="eyebrow">spazio privato</span><strong>{activeSpace?.name ?? (isMobile ? "Messaggi" : "Messaggi diretti")}</strong>{activeSpace?.description&&<small title={activeSpace.description}>{activeSpace.description}</small>}</span>
           {activeSpace ? <ChevronDown size={17} /> : null}
         </button>
         <button className="sidebar-close" onClick={() => setSidebarOpen(false)} aria-label="Chiudi menu"><X size={18} /></button>
+        {isMobile && !activeSpace && <div className="mobile-browse-tools"><label><Search size={18}/><input type="search" value={dmQuery} onChange={event => setDmQuery(event.target.value)} placeholder="Cerca una conversazione" aria-label="Cerca una conversazione" /></label><button onClick={() => openModal("dm")} aria-label="Nuova conversazione"><Plus size={21}/></button></div>}
         <div className="sidebar-scroll">
           {!activeSpace && <button className="friends-nav" aria-current={!activeConversationId ? "page" : undefined} onClick={() => {setActiveSpaceId(null);setActiveConversationId(null);setSidebarOpen(false);setStage(current=>current.open?{...current,expanded:false}:current);}}><UserPlus size={17}/> Amici{friendships.entries.some(row=>row.status==="pending"&&row.recipient_id===session.user.id)&&<span aria-label="Richieste di amicizia ricevute">{friendships.entries.filter(row=>row.status==="pending"&&row.recipient_id===session.user.id).length}</span>}</button>}
           {activeSpace ? (
@@ -1458,7 +1496,7 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
           ) : (
             <div className="channel-section">
               <div className="section-label"><span>messaggi diretti</span><button onClick={() => openModal("dm")} aria-label="Nuovo gruppo DM"><Plus size={14} /></button></div>
-              {directMessages.map((conversation) => {
+              {directMessages.filter(conversation => !dmQuery.trim() || `${conversation.name} ${dmDetails[conversation.id]?.recipient?.display_name ?? ""} ${dmDetails[conversation.id]?.recipient?.username ?? ""}`.toLocaleLowerCase().includes(dmQuery.trim().toLocaleLowerCase())).map((conversation) => {
                 const details = dmDetails[conversation.id];
                 const partner = details?.recipient;
                 const isGroup=!!conversation.identity_customized||!!conversation.icon_data||!!conversation.description;
@@ -1499,6 +1537,7 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
                         <UserRound size={16} />
                       )}
                     </span>
+                    {partner && <i className={`dm-presence status-${onlineUserIds.includes(partner.id) ? (remoteStatuses[partner.id] === "dnd" ? "dnd" : "online") : "invisible"}`} aria-label={onlineUserIds.includes(partner.id) ? "Online" : "Offline"}/>}
                     <span className="dm-copy">
                       <strong className="dm-name">{displayName}{!!unreads[conversation.id]?.unread_count && <span className="unread-badge">{unreads[conversation.id].unread_count}</span>}{isChatMuted(conversation.id) ? <BellOff size={12} className="sidebar-mute-icon" /> : null}</strong>
                       <small className="dm-snippet">{snippet}</small>
@@ -1573,7 +1612,7 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
                 <span className="status-dot status-dnd" />
                 <div className="status-menu-text">
                   <strong>Non Disturbare</strong>
-                  <small>Nessuna notifica di Windows né suoni</small>
+                  <small>Silenzia notifiche e suoni</small>
                 </div>
               </button>
               <button
@@ -1595,36 +1634,19 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
         </div>
       </aside>
 
+      {isMobile && mobileActions && <Modal className="mobile-actions-sheet" title="Azioni della chat" onClose={() => setMobileActions(false)}><div onClick={event => { if ((event.target as Element).closest('button')) setMobileActions(false); }}>{conversationActions}<button className="mobile-sheet-pins" onClick={() => {togglePinnedMessages();setMobileActions(false);}}>Messaggi fissati ({extras.pins.length})</button><button className="mobile-sheet-pins" onClick={() => {setShowCipher(value => !value);setMobileActions(false);}}>Dettagli della cifratura</button></div></Modal>}
       <main className="chat-panel">
         <header className={`chat-header ${safeCommunityImage(activeConversation?.banner_data) ? "has-conversation-banner" : ""}`}>
           {safeCommunityImage(activeConversation?.banner_data) && <img className="conversation-banner-image" src={activeConversation!.banner_data!} alt="" aria-hidden="true" />}
-          <button className="mobile-menu" onClick={() => setSidebarOpen(true)} aria-label="Apri menu"><Menu size={20} /></button>
+          <button className="mobile-menu" onClick={() => isMobile ? setMobileBrowsing(true) : setSidebarOpen(true)} aria-label={isMobile ? "Torna alle conversazioni" : "Apri menu"}>{isMobile ? <ArrowLeft size={23}/> : <Menu size={20} />}</button>
+          {isMobile && activeConversation && !safeCommunityImage(activeConversation.icon_data) && !activeSpaceId && dmDetails[activeConversation.id]?.recipient && <span className="mobile-conversation-avatar" aria-hidden="true" style={{background:dmDetails[activeConversation.id].recipient!.avatar_color}}>{initialsFor(dmDetails[activeConversation.id].recipient!.display_name)}<ProfileImage path={dmDetails[activeConversation.id].recipient!.avatar_path} alt=""/></span>}
           {safeCommunityImage(activeConversation?.icon_data)?<img className="conversation-header-icon" src={activeConversation!.icon_data!} alt=""/>:activeConversation?.kind === "voice_channel" ? <Volume2 size={21} className="hash-icon voice-icon" /> : activeConversation ? <Hash size={21} className="hash-icon" /> : <ShieldCheck size={21} className="hash-icon" />}
           <div className="channel-heading"><button className="conversation-identity-trigger" title="Nome, descrizione e aspetto" disabled={!activeConversation} onClick={()=>activeConversation&&setIdentityTarget({kind:"conversation",id:activeConversation.id,value:activeConversation,readOnly:!!activeConversation.space_id&&!canManageSpace})}><strong>{(activeConversation && !activeConversation.identity_customized && !activeConversation.description && !activeConversation.icon_data && !activeSpaceId && dmDetails[activeConversation.id]?.recipient?.display_name) ? dmDetails[activeConversation.id].recipient!.display_name : (activeConversation?.name ?? (activeSpaceId ? "Il tuo spazio Hush" : "Amici"))}</strong>{activeConversation?.description&&<small title={activeConversation.description}>{activeConversation.description}</small>}</button><span>{activeConversation ? activeConversation.kind === "voice_channel" ? `${members.length} membri · canale vocale` : `${members.length} membri` : `Benvenuto, ${profile.display_name}`}</span></div>
-          {activeConversation ? (
-            <div className="header-actions">
-              <button
-                type="button"
-                className={`header-bell-btn ${isChatMuted(activeConversation.id) ? "muted" : ""}`}
-                onClick={() => {
-                  const next = toggleChatMute(activeConversation.id);
-                  setToast(next ? "Notifiche silenziate per questa chat" : "Notifiche riattivate per questa chat");
-                }}
-                aria-label={isChatMuted(activeConversation.id) ? "Notifiche silenziate. Clicca per attivare." : "Notifiche attive. Clicca per silenziare."}
-                title={isChatMuted(activeConversation.id) ? "Notifiche silenziate (Clicca per riattivare)" : "Notifiche attive (Clicca per silenziare)"}
-              >
-                {isChatMuted(activeConversation.id) ? <BellOff size={18} /> : <Bell size={18} />}
-              </button>
-              <button onClick={() => startCall(activeConversation, false)} aria-label="Avvia chiamata"><Phone size={18} /></button>
-              <button onClick={() => startCall(activeConversation, true)} aria-label="Avvia videochiamata"><Video size={19} /></button>
-              <button onClick={()=>setIdentityTarget({kind:"conversation",id:activeConversation.id,value:activeConversation,readOnly:!!activeConversation.space_id&&!canManageSpace})} aria-label={activeConversation.kind==="group_dm"?"Personalizza gruppo":"Informazioni e aspetto del canale"} title="Nome, descrizione e aspetto"><Settings size={17}/></button>
-              {activeConversation.kind === "voice_channel" && <button onClick={()=>void copyText(`hush://channel/${activeConversation.id}`).then(()=>setToast("Link del canale copiato")).catch(()=>setToast("Impossibile copiare il link."))} aria-label="Copia link del canale" title="Condividi questo canale"><Copy size={17}/></button>}{activeSpace ? <button onClick={createInvite} aria-label="Copia invito"><UserPlus size={19} /></button> : null}
-              {["channel", "voice_channel"].includes(activeConversation.kind) && activeSpace?.owner_id === session.user.id ? <button onClick={deleteChannel} aria-label="Elimina canale"><Trash2 size={17} /></button> : null}
-              {activeConversation.kind !== "voice_channel" ? <button className="message-search-trigger" onClick={openMessageSearch} aria-label="Cerca nei messaggi" aria-expanded={showSearch} aria-controls={showSearch?"message-search":undefined} title="Cerca nei messaggi · Ctrl+K"><Search size={17} /></button> : null}
-            </div>
-          ) : null}
+          {isMobile && activeConversation ? <div className="mobile-header-actions"><button onClick={() => startCall(activeConversation, false)} aria-label="Avvia chiamata"><Phone size={21}/></button>{activeConversation.kind !== "voice_channel" && <button onClick={openMessageSearch} aria-label="Cerca nei messaggi"><Search size={21}/></button>}<button onClick={() => setMobileActions(true)} aria-label="Altre azioni della chat"><MoreHorizontal size={21}/></button></div> : conversationActions}
+
         </header>
 
+        {isMobile && stage.open && !stage.expanded && <div className="mobile-call-dock"><button onClick={() => setStage(current => ({...current,expanded:true}))} aria-label="Riapri chiamata"><Volume2 size={18}/><span>{stage.roomName}</span></button><button onClick={leaveCall} aria-label="Lascia chiamata"><PhoneOff size={19}/></button></div>}
         <MediaStage
           open={stage.open}
           expanded={stage.expanded}
@@ -1671,7 +1693,7 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
               {keyStatus === "ready" ? <span className="trust-action">{showCipher ? "Nascondi" : "Verifica"}</span> : null}
             </button>
             {showSearch && <MessageSearch key={activeConversation.id} name={activeConversation.name} query={search} onChange={setSearch} onClose={closeMessageSearch} onSearch={()=>void searchHistory()} onStop={()=>{searchGenerationRef.current++;setSearchingHistory(false);setHistoryNotice(`${historyResults?.length??0} risultati · ricerca interrotta`);}} searching={searchingHistory} ready={keyStatus==="ready"} resultCount={filteredMessages.length} notice={historyNotice}/>}
-            <div className="chat-tools"><button aria-pressed={showPins} onClick={() => {setShowPins(!showPins); if(!showPins && roomKey && extras.pins.length) void loadAndDecryptMessages(activeConversation.id, roomKey, members, {ids: extras.pins.map(pin => pin.message_id)}).then(rows => {if(activeIdRef.current === activeConversation.id) setMessages(prev => mergeMessages(prev, rows));}).catch(error => setToast(readableError(error)));}}>Messaggi fissati ({extras.pins.length})</button></div>
+            <div className="chat-tools"><button aria-pressed={showPins} onClick={togglePinnedMessages}>Messaggi fissati ({extras.pins.length})</button></div>
             {showCipher ? <section className="cipher-inspector"><div><span className="eyebrow">ultimo pacchetto salvato</span><code>{latestCipher ? `${latestCipher.iv}.${latestCipher.ciphertext}` : "Nessun messaggio inviato."}</code></div><button onClick={() => setShowCipher(false)} aria-label="Chiudi"><X size={16} /></button></section> : null}
             <div className="chat-content chat-content-text">
               <div className="messages" ref={messagesRef} onScroll={event => {const element=event.currentTarget; setAwayFromBottom(element.scrollHeight-element.scrollTop-element.clientHeight > 100);}}>
@@ -1738,7 +1760,7 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
                   aria-label="Allega file"
                   title="Allega un file · pulizia annuale dopo 12 mesi"
                 >
-                  <ImagePlus size={19} />
+                  {isMobile ? <Plus size={22}/> : <ImagePlus size={19} />}
                 </button>
                 <textarea rows={1} maxLength={8000}
                   ref={messageInputRef}
@@ -1747,7 +1769,7 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
                   aria-controls={mentionOptions.length?"mention-options":undefined}
                   aria-activedescendant={mentionOptions.length?`mention-option-${Math.min(mentionIndex,mentionOptions.length-1)}`:undefined}
                   onChange={event => {setDraft(event.target.value);setMentionCursor(event.target.selectionStart);setMentionIndex(0);setMentionDismissed(false); if(activeChannelRef.current && Date.now()-typingSentRef.current > 2000) {typingSentRef.current=Date.now(); void broadcastTyping(activeChannelRef.current, session.user.id, !!event.target.value).catch(() => undefined);}}}
-                  onKeyDown={event => {if(!event.nativeEvent.isComposing&&mentionOptions.length){if(event.key==="ArrowDown"||event.key==="ArrowUp"){event.preventDefault();setMentionIndex(index=>(index+(event.key==="ArrowDown"?1:-1)+mentionOptions.length)%mentionOptions.length);return;}if((event.key==="Enter"&&!event.shiftKey)||event.key==="Tab"){event.preventDefault();insertMention(mentionOptions[Math.min(mentionIndex,mentionOptions.length-1)]);return;}if(event.key==="Escape"){event.preventDefault();event.stopPropagation();setMentionDismissed(true);return;}}if(event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {event.preventDefault();event.currentTarget.form?.requestSubmit();}}}
+                  onKeyDown={event => {if(!event.nativeEvent.isComposing&&mentionOptions.length){if(event.key==="ArrowDown"||event.key==="ArrowUp"){event.preventDefault();setMentionIndex(index=>(index+(event.key==="ArrowDown"?1:-1)+mentionOptions.length)%mentionOptions.length);return;}if((event.key==="Enter"&&!event.shiftKey)||event.key==="Tab"){event.preventDefault();insertMention(mentionOptions[Math.min(mentionIndex,mentionOptions.length-1)]);return;}if(event.key==="Escape"){event.preventDefault();event.stopPropagation();setMentionDismissed(true);return;}}if(event.key === "Enter" && !isMobile && !event.shiftKey && !event.nativeEvent.isComposing) {event.preventDefault();event.currentTarget.form?.requestSubmit();}}}
                   disabled={!canWrite || keyStatus !== "ready" || uploadingMedia}
                   placeholder={!canWrite ? "Non hai il permesso di scrivere in questo canale" : keyStatus === "ready" ? (uploadingMedia ? "Cifratura e caricamento file…" : `Scrivi in ${activeConversation.name}`) : "In attesa della chiave…"}
                   aria-label="Messaggio"
@@ -1783,7 +1805,7 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
             </div>
           </>
         ) : (
-          !activeSpaceId ? <FriendsPanel friendships={friendships} onMessage={user=>void handleOpenDm(user)} onProfile={openUserProfile}/> : <div className="chat-content empty-chat"><section className="workspace-empty"><div className="workspace-empty-mark"><BrandMark size={46} /></div><span className="eyebrow">spazio privato</span><h1>{loading ? "Caricamento…" : "Pronto per iniziare"}</h1><p>Riunisci i tuoi amici in un server, usa un invito oppure inizia una conversazione privata.</p><button className="empty-primary" onClick={() => openModal("space")}><Plus size={17} /> Crea o unisciti</button></section></div>
+          !activeSpaceId ? <FriendsPanel compactActions={isMobile} friendships={friendships} onMessage={user=>void handleOpenDm(user)} onProfile={openUserProfile}/> : <div className="chat-content empty-chat"><section className="workspace-empty"><div className="workspace-empty-mark"><BrandMark size={46} /></div><span className="eyebrow">spazio privato</span><h1>{loading ? "Caricamento…" : "Pronto per iniziare"}</h1><p>Riunisci i tuoi amici in un server, usa un invito oppure inizia una conversazione privata.</p><button className="empty-primary" onClick={() => openModal("space")}><Plus size={17} /> Crea o unisciti</button></section></div>
         )}
       </main>
 

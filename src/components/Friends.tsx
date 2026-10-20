@@ -222,10 +222,12 @@ export function FriendsPanel({
   friendships,
   onMessage,
   onProfile,
+  compactActions = false,
 }: {
   friendships: FriendshipsController;
   onMessage: (user: Profile) => void;
   onProfile: (user: Profile, anchor: HTMLElement) => void;
+  compactActions?: boolean;
 }) {
   const [tab, setTab] = useState<"friends" | "pending" | "add">("friends"),
     [query, setQuery] = useState(""),
@@ -301,7 +303,7 @@ export function FriendsPanel({
               <MessageCircle size={18} />
             </button>
           )}
-          <FriendActions user={row.user} friendships={friendships} />
+          <FriendActions compact={compactActions} user={row.user} friendships={friendships} />
         </div>
       </article>
     ));
