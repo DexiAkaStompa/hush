@@ -1,0 +1,55 @@
+.desktop-call-slot { flex: 0 0 auto; min-width: 0; }
+.desktop-call-widget {
+  margin: 0 calc(-1 * var(--sidebar-inset, 0px));
+  padding: 10px;
+  color: var(--frost);
+  background: color-mix(in srgb, var(--rail-background) 92%, var(--frost) 8%);
+  border-top: 1px solid var(--line);
+  -webkit-app-region: no-drag;
+}
+.call-widget-heading { display: flex; align-items: center; gap: 3px; margin-bottom: 9px; }
+.desktop-call-widget button { padding: 0; border: 0; border-radius: var(--radius-control); color: var(--muted); cursor: pointer; background: transparent; -webkit-app-region: no-drag; }
+.desktop-call-widget button:hover { color: var(--frost); background: color-mix(in srgb, var(--frost) 9%, transparent); }
+.desktop-call-widget button:focus-visible, .call-widget-popover button:focus-visible, .call-widget-popover select:focus-visible { outline: 2px solid var(--frost); outline-offset: 2px; }
+.desktop-call-widget button:active:not(:disabled) { transform: scale(.96); }
+.desktop-call-widget button:disabled { opacity: .4; cursor: not-allowed; }
+.desktop-call-widget .call-widget-room { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; padding: 3px 0; text-align: left; }
+.call-widget-room > svg { flex-shrink: 0; color: var(--mint); }
+.is-connecting .call-widget-room > svg { color: var(--muted); }
+.call-widget-room > span { min-width: 0; }
+.call-widget-room strong { display: block; font-size: 11px; font-weight: 650; line-height: 1.45; color: var(--mint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.is-connecting .call-widget-room strong { color: var(--muted); }
+.call-widget-room small { display: block; color: var(--muted); font-size: 11px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; max-width: 100%; }
+.desktop-call-widget .call-widget-icon { width: 28px; height: 30px; flex-shrink: 0; display: grid; place-items: center; }
+.desktop-call-widget .call-widget-leave:hover { background: color-mix(in srgb, #e57380 14%, transparent); color: #f397a0; }
+.call-widget-actions { display: flex; gap: 6px; }
+.call-widget-actions > button, .call-widget-microphone { flex: 1; min-width: 0; height: 30px; background: color-mix(in srgb, var(--frost) 6%, transparent); border-radius: var(--radius-control); }
+.call-widget-actions > button { display: grid; place-items: center; color: var(--frost); }
+.call-widget-actions > .is-active { background: color-mix(in srgb, var(--mint) 17%, transparent); color: var(--mint); }
+.call-widget-actions .is-muted { color: #f397a0; }
+.call-widget-microphone { display: flex; overflow: hidden; }
+.call-widget-microphone button { height: 30px; display: grid; place-items: center; color: var(--frost); flex: 1; border-radius: 0; }
+.call-widget-microphone button:last-child { flex: 0 0 18px; border-left: 1px solid var(--line); }
+.call-widget-popover {
+  position: fixed; z-index: 320; width: 284px; box-sizing: border-box;
+  max-height: calc(100dvh - 24px); overflow-y: auto; padding: 14px;
+  color: var(--frost); background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius-surface); box-shadow: 0 12px 36px #0006;
+  -webkit-app-region: no-drag;
+}
+.call-widget-popover header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+.call-widget-popover strong { font-size: 13px; font-weight: 650; }
+.call-widget-popover button { background: transparent; color: var(--muted); border: 0; border-radius: var(--radius-control); cursor: pointer; }
+.call-widget-popover header button { width: 26px; height: 26px; display: grid; place-items: center; }
+.call-widget-popover button:hover { color: var(--frost); background: color-mix(in srgb, var(--frost) 8%, transparent); }
+.call-widget-popover label { display: block; margin-top: 14px; font-size: 11px; font-weight: 600; color: var(--muted); }
+.call-widget-popover select { margin-top: 7px; display: block; width: 100%; height: 34px; padding: 0 8px; border: 1px solid var(--line); border-radius: var(--radius-control); background: var(--rail-background); color: var(--frost); font: inherit; }
+.call-widget-popover input[type="range"] { display: block; width: 100%; margin-top: 10px; accent-color: var(--frost); }
+.call-widget-popover output { float: right; color: var(--frost); font-variant-numeric: tabular-nums; }
+.call-widget-popover p { font-size: 11px; line-height: 1.6; color: var(--muted); margin: 12px 0 0; }
+.call-widget-quality { display: flex; gap: 10px; font-size: 12px; color: var(--mint); }
+.call-widget-quality svg { flex-shrink: 0; }
+.call-widget-quality small { display: block; font-size: 11px; line-height: 1.55; color: var(--muted); margin-top: 5px; }
+.call-widget-popover .call-widget-open { margin-top: 14px; padding: 9px 12px; background: color-mix(in srgb, var(--frost) 7%, transparent); font-size: 12px; color: var(--frost); }
+@media (prefers-reduced-motion: reduce) { .desktop-call-widget button:active:not(:disabled) { transform: none; } }
+@media (prefers-contrast: more) { .desktop-call-widget, .call-widget-popover { border-color: var(--frost); } }

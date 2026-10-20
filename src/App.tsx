@@ -298,6 +298,7 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
   const mutedChatIds = useMutedChats();
   const [showStatusMenu, setShowStatusMenu] = useState(false);
   const statusMenuRef = useRef<HTMLDivElement>(null);
+  const [desktopCallTarget, setDesktopCallTarget] = useState<HTMLDivElement | null>(null);
   const ringtoneStopRef = useRef<(() => void) | null>(null);
   const initialLoadedRef = useRef(false);
   const dmDetailsRef = useRef(dmDetails);
@@ -1560,7 +1561,7 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
             </div>
           )}
         </div>
-        {stage.open ? (
+        {!isMobile ? <div className="desktop-call-slot" ref={setDesktopCallTarget} /> : stage.open ? (
           <section className="call-dock" aria-label="Chiamata connessa">
             <div><span className="call-dock-live"><i /> connesso</span><strong>{stage.roomName}</strong><small>La chiamata resta attiva mentre navighi.</small></div>
             <button onClick={() => setStage((current) => ({ ...current, expanded: true }))} aria-label="Riapri chiamata"><PanelTopOpen size={16} /></button>
@@ -1681,6 +1682,8 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
           }}
           onMinimize={() => setStage((current) => ({ ...current, expanded: false }))}
           onClose={leaveCall}
+          dockTarget={desktopCallTarget}
+          onExpand={() => setStage(current => ({...current, expanded: true}))}
         />
 
         {stage.expanded ? null : activeConversation ? activeConversation.kind === "voice_channel" ? (

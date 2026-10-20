@@ -26,11 +26,11 @@ export function WindowControls() {
   if (!api) return null;
   return (
     <nav className="window-controls" aria-label="Controlli finestra">
-      <button onClick={api.minimize} aria-label="Riduci a icona"><Minus size={15} /></button>
-      <button onClick={api.toggleMaximize} aria-label={maximized ? "Ripristina finestra" : "Ingrandisci finestra"}>
+      <button onClick={() => api.minimize()} aria-label="Riduci a icona"><Minus size={15} /></button>
+      <button onClick={() => api.toggleMaximize()} aria-label={maximized ? "Ripristina finestra" : "Ingrandisci finestra"}>
         {maximized ? <Square size={12} /> : <Maximize2 size={13} />}
       </button>
-      <button className="window-close" onClick={api.close} aria-label="Chiudi Hush"><X size={16} /></button>
+      <button className="window-close" onClick={() => api.close()} aria-label="Chiudi Hush"><X size={16} /></button>
     </nav>
   );
 }

@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { CallDock } from "./CallDock";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { Maximize2, Mic, MicOff, Minimize2, MonitorUp, PhoneOff, Video, VideoOff, Volume2, VolumeX } from "lucide-react";
 import { callTopic, type WebRtcSignal } from "../lib/realtime";
@@ -32,6 +34,8 @@ type MediaStageProps = {
   ) => void;
   onMinimize: () => void;
   onClose: () => void;
+  dockTarget?: HTMLElement | null;
+  onExpand?: () => void;
 };
 
 type CallSignal = {
@@ -57,6 +61,7 @@ function StreamTile({
   label,
   profile,
   muted = false,
+  deafened = false,
   isLocalMicMuted = false,
   focused = false,
   onFocus,
@@ -68,6 +73,7 @@ function StreamTile({
   label: string;
   profile?: Pick<Profile, "id" | "display_name" | "avatar_color" | "avatar_path" | "banner_path"> | null;
   muted?: boolean;
+  deafened?: boolean;
   isLocalMicMuted?: boolean;
   focused?: boolean;
   onFocus?: () => void;
@@ -87,11 +93,11 @@ function StreamTile({
     : (!hasVideo && stream && stream.getAudioTracks().length > 0 ? stream : (audioStream ?? null));
 
   // Microphone Voice controls
-  const isVoiceMuted = muted || userPrefs.muted;
+  const isVoiceMuted = muted || deafened || userPrefs.muted;
   const effectiveVoiceVolume = isVoiceMuted ? 0 : Math.max(0, Math.min(1, (userPrefs.volume / 100) * (settings.outputVolume / 100)));
 
   // Stream (game / desktop audio) controls
-  const isStreamMuted = muted || userPrefs.streamMuted;
+  const isStreamMuted = muted || deafened || userPrefs.streamMuted;
   const effectiveStreamVolume = isStreamMuted ? 0 : Math.max(0, Math.min(1, (userPrefs.streamVolume / 100) * (settings.outputVolume / 100)));
 
   // Speaking indicator listens to voice microphone
@@ -265,6 +271,8 @@ export function MediaStage({
   onUserContextMenu,
   onMinimize,
   onClose,
+  dockTarget,
+  onExpand,
 }: MediaStageProps) {
   const settings = useMediaSettings();
   const settingsRef = useRef(settings);
@@ -275,6 +283,10 @@ export function MediaStage({
   const [mic, setMic] = useState(false);
   const [camera, setCamera] = useState(false);
   const [sharing, setSharing] = useState(false);
+  const [deafened, setDeafened] = useState(false);
+  const deafenedRef = useRef(false);
+  const [connected, setConnected] = useState(false);
+  const [latency, setLatency] = useState<number | null>(null);
   const [notice, setNotice] = useState("Connessione diretta in preparazione…");
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [remoteStreams, setRemoteStreams] = useState<Record<string, MediaStream>>({});
@@ -295,6 +307,8 @@ export function MediaStage({
     let active = true;
     callGeneration.current++;
     micEnabled.current = true;
+    setConnected(false);
+    setLatency(null);
     let channel: RealtimeChannel | null = null;
     const peers = peersRef.current;
     const client = supabase;
@@ -541,9 +555,10 @@ export function MediaStage({
         .subscribe((status) => {
           if (status === "SUBSCRIBED") {
             void channel?.track({ userId, inCall: true, sharing: false, joinedAt: new Date().toISOString() })
-              .then(() => setNotice("Chiamata WebRTC cifrata. In attesa degli altri membri…"))
+              .then(() => { if (active) { setConnected(true); setNotice("Chiamata WebRTC cifrata. In attesa degli altri membri…"); } })
               .catch(() => reportCallError("Presence non disponibile per questa chiamata."));
-          } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+          } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+            if (active) setConnected(false);
             reportCallError("Realtime non raggiungibile: controlla la migrazione dei canali vocali.");
           }
         });
@@ -594,6 +609,10 @@ export function MediaStage({
       setMic(false);
       setCamera(false);
       setSharing(false);
+      setDeafened(false);
+      deafenedRef.current = false;
+      setConnected(false);
+      setLatency(null);
       setFocusedTile(null);
     };
   }, [conversationId, open, startWithVideo, userId]);
@@ -611,7 +630,7 @@ export function MediaStage({
       const previous = local.getAudioTracks();
       previous.forEach((track) => local.removeTrack(track));
       const track = opened.stream.getAudioTracks()[0];
-      track.enabled = micEnabled.current;
+      track.enabled = micEnabled.current && !deafenedRef.current;
       local.addTrack(track);
       localStreamRef.current = local;
       setMic(track.enabled);
@@ -638,6 +657,29 @@ export function MediaStage({
 
   useEffect(() => { microphoneRef.current?.setVolume(settings.inputVolume); }, [settings.inputVolume]);
 
+  useEffect(() => {
+    if (!open) return;
+    let active = true, pending = false;
+    const sample = async () => {
+      if (pending) return;
+      pending = true;
+      try {
+        const values = await Promise.all([...peersRef.current.values()].filter(peer => peer.connectionState === "connected").map(async (peer): Promise<number | null> => {
+          const stats = await peer.getStats();
+          let rtt: number | null = null;
+          stats.forEach(report => { if (report.type === "candidate-pair" && report.state === "succeeded" && (report.nominated || report.selected) && typeof report.currentRoundTripTime === "number") rtt = Math.round(report.currentRoundTripTime * 1000); });
+          return rtt;
+        }));
+        const valid = values.filter((value): value is number => value !== null);
+        if (active) setLatency(valid.length ? Math.max(...valid) : null);
+      } catch { if (active) setLatency(null); }
+      finally { pending = false; }
+    };
+    void sample();
+    const timer = window.setInterval(() => { void sample(); }, 5000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [open, conversationId]);
+
   if (!open || !conversationId) return null;
 
   const renegotiatePeers = async () => {
@@ -659,12 +701,22 @@ export function MediaStage({
   };
 
   const toggleMic = async () => {
+    if (deafenedRef.current) { deafenedRef.current = false; setDeafened(false); }
     const track = localStreamRef.current?.getAudioTracks()[0];
     if (!track || track.readyState === "ended") { micEnabled.current = true; setMicRetry((value) => value + 1); return; }
     track.enabled = !track.enabled;
     micEnabled.current = track.enabled;
     setMic(track.enabled);
     void playCallSound(track.enabled ? "enabled" : "disabled");
+  };
+
+  const toggleDeafen = () => {
+    const next = !deafenedRef.current;
+    deafenedRef.current = next;
+    setDeafened(next);
+    const track = localStreamRef.current?.getAudioTracks()[0];
+    if (track) { track.enabled = !next && micEnabled.current; setMic(track.enabled); }
+    void playCallSound(next ? "disabled" : "enabled");
   };
 
   const toggleCamera = async () => {
@@ -810,7 +862,8 @@ export function MediaStage({
     }
   };
 
-  return (
+  return (<>
+    {dockTarget && onExpand && createPortal(<CallDock roomName={roomName} connected={connected} notice={notice} latency={latency} mic={mic} deafened={deafened} camera={camera} sharing={sharing} canShare={typeof navigator.mediaDevices?.getDisplayMedia === "function"} onExpand={onExpand} onLeave={onClose} onMic={toggleMic} onDeafen={toggleDeafen} onCamera={toggleCamera} onShare={toggleShare} />, dockTarget)}
     <section className={`media-stage ${expanded ? "stage-expanded" : "stage-minimized"}`} aria-label="Chiamata in corso" aria-hidden={!expanded}>
       <header className="stage-header">
         <div><span className="eyebrow"><span className="live-dot" /> {roomName}</span><h2>{participants.length + 1} partecipanti</h2></div>
@@ -847,6 +900,7 @@ export function MediaStage({
               voiceStream={remoteVoiceStreams[participantId] ?? null}
               label={`${memberNames[participantId] ?? user.display_name ?? "Membro"}${isScreenShare ? " · schermo" : ""}`}
               profile={user}
+              deafened={deafened}
               focused={focusedTile === participantId}
               onFocus={() => setFocusedTile((value) => value === participantId ? null : participantId)}
               onContextMenu={(e) => onUserContextMenu?.(e, user, true, { isStream, isScreenShare })}
@@ -862,5 +916,5 @@ export function MediaStage({
         <button className="control hangup" onClick={onClose} aria-label="Lascia chiamata"><PhoneOff size={19} /></button>
       </div>
     </section>
-  );
+  </>);
 }
