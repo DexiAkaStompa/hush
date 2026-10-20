@@ -27,6 +27,15 @@ public class HushLaunchTest {
                 if (!ready) Thread.sleep(500);
             }
             assertTrue("Bundled login failed to load or secure encryption API missing", ready);
+            // Android only allows clipboard reads while the app window has focus.
+            boolean focused = false;
+            for (int attempt = 0; attempt < 40 && !focused; attempt++) {
+                AtomicReference<Boolean> value = new AtomicReference<>(false);
+                scenario.onActivity(activity -> value.set(activity.hasWindowFocus()));
+                focused = value.get();
+                if (!focused) Thread.sleep(100);
+            }
+            assertTrue("App window did not receive focus for the clipboard check", focused);
             scenario.onActivity(activity -> activity.getBridge().getWebView().evaluateJavascript(
                 "window.hushNativeSmoke='running';(async()=>{const c=window.Capacitor;await c.nativePromise('Filesystem','writeFile',{path:'hush-smoke.bin',directory:'CACHE',data:'AAE='});await c.nativePromise('Filesystem','appendFile',{path:'hush-smoke.bin',directory:'CACHE',data:'AgM='});const f=await c.nativePromise('Filesystem','readFile',{path:'hush-smoke.bin',directory:'CACHE'});await c.nativePromise('Filesystem','deleteFile',{path:'hush-smoke.bin',directory:'CACHE'});if(f.data!=='AAECAw==')throw Error('binary mismatch');await c.nativePromise('Clipboard','write',{string:'Hush smoke test'});const text=await c.nativePromise('Clipboard','read',{});if(text.value!=='Hush smoke test')throw Error('clipboard mismatch');window.hushNativeSmoke='passed';})().catch(error=>window.hushNativeSmoke='failed: '+String(error?.message||error));void 0;", null));
             String result = "running";
