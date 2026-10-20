@@ -12,7 +12,7 @@
     "url": "https://github.com/DexiAkaStompa/hush.git"
   },
   "private": true,
-  "version": "0.5.61",
+  "version": "0.5.62",
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
