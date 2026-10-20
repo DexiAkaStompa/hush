@@ -1,0 +1,14 @@
+{
+  "name": "hush-turn-credentials",
+  "main": "worker.ts",
+  "compatibility_date": "2026-10-20",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "preview_urls": false,
+  "observability": { "enabled": true, "logs": { "enabled": true, "invocation_logs": false } },
+  "vars": {
+    "SUPABASE_URL": "https://zvzyzuzlqbuvvffxyquk.supabase.co",
+    "ALLOWED_ORIGINS": "hush://app,https://localhost,http://127.0.0.1:5173,http://localhost:5173"
+  },
+  "secrets": { "required": ["SUPABASE_PUBLISHABLE_KEY", "TURN_KEY_ID", "TURN_KEY_API_TOKEN"] }
+}

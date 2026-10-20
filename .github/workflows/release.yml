@@ -49,6 +49,7 @@ jobs:
           VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
           VITE_MUSIC_BRIDGE_URL: ${{ secrets.VITE_MUSIC_BRIDGE_URL }}
           VITE_SHARED_MEDIA_URL: ${{ vars.VITE_SHARED_MEDIA_URL }}
+          VITE_TURN_URL: ${{ vars.VITE_TURN_URL }}
         run: |
           npm run icons:build
           npm run build
@@ -91,6 +92,7 @@ jobs:
           VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
           VITE_MUSIC_BRIDGE_URL: ${{ secrets.VITE_MUSIC_BRIDGE_URL }}
           VITE_SHARED_MEDIA_URL: ${{ vars.VITE_SHARED_MEDIA_URL }}
+          VITE_TURN_URL: ${{ vars.VITE_TURN_URL }}
         run: |
           npm run icons:build
           npm run build
@@ -138,6 +140,7 @@ jobs:
           VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
           VITE_MUSIC_BRIDGE_URL: ${{ secrets.VITE_MUSIC_BRIDGE_URL }}
           VITE_SHARED_MEDIA_URL: ${{ vars.VITE_SHARED_MEDIA_URL }}
+          VITE_TURN_URL: ${{ vars.VITE_TURN_URL }}
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
         run: |
           npm run icons:build

@@ -1,7 +1,7 @@
 # Desktop call controls
 
 The desktop sidebar hosts a compact call widget above the user profile while a
-call is active. It shows the signaling channel's actual connection state, room
+call is active. It shows the signaling and peer transport connection state, room
 name, camera, screen sharing, microphone, deafen and disconnect controls. The
 room name reopens the full call without changing the selected conversation.
 

@@ -9,6 +9,8 @@ type Props = {
   connected: boolean;
   notice: string;
   latency: number | null;
+  relayAvailable?: boolean;
+  connectionPath?: "direct" | "relay" | null;
   mic: boolean;
   deafened: boolean;
   camera: boolean;
@@ -95,7 +97,7 @@ export function CallDock(props: Props) {
         {deviceSelect("audiooutput", settings.outputId, "Uscita audio")}
         <label>Volume in uscita <output>{settings.outputVolume}%</output><input type="range" min="0" max="100" value={settings.outputVolume} onChange={event => updateMediaSettings({ outputVolume: Number(event.target.value) })} /></label>
         {deviceError && <p role="status">{deviceError}</p>}
-      </> : <><div className="call-widget-quality"><Signal size={23} /><span>{connected ? "Canale vocale connesso" : "Collegamento al canale…"}<small>{latency === null ? "Latenza disponibile quando un partecipante è collegato." : `Latenza WebRTC: ${latency} ms`}</small></span></div><p>{notice}</p><button className="call-widget-open" onClick={() => { setPanel(null); props.onExpand(); }}>Apri chiamata</button></>}
+      </> : <><div className="call-widget-quality"><Signal size={23} /><span>{connected ? "Canale vocale connesso" : "Collegamento al canale…"}<small>{latency === null ? "Latenza disponibile quando un partecipante è collegato." : `Latenza WebRTC: ${latency} ms`}</small></span></div><p>{props.connectionPath === "relay" ? "Traffico cifrato tramite relay." : props.connectionPath === "direct" ? "Collegamento diretto tra i partecipanti." : "Collegamento con i partecipanti in preparazione."}<br/>{props.relayAvailable ? "Connessione alternativa disponibile per VPN e reti restrittive." : "Relay non disponibile: alcune VPN o reti potrebbero impedire la chiamata."}</p><p>{notice}</p><button className="call-widget-open" onClick={() => { setPanel(null); props.onExpand(); }}>Apri chiamata</button></>}
     </div>, document.body)}
   </>;
 }

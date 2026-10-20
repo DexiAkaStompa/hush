@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { CallDock } from "./CallDock";
+import { createPeerNegotiator } from "../lib/peer-negotiation";
+import { monitorPeerRecovery } from "../lib/peer-recovery";
+import { DEFAULT_ICE_SERVERS, loadCallIceConfig } from "../lib/call-ice";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { Maximize2, Mic, MicOff, Minimize2, MonitorUp, PhoneOff, Video, VideoOff, Volume2, VolumeX } from "lucide-react";
 import { callTopic, type WebRtcSignal } from "../lib/realtime";
@@ -286,7 +289,10 @@ export function MediaStage({
   const [deafened, setDeafened] = useState(false);
   const deafenedRef = useRef(false);
   const [connected, setConnected] = useState(false);
+  const [transportReady, setTransportReady] = useState(true);
   const [latency, setLatency] = useState<number | null>(null);
+  const [relayAvailable, setRelayAvailable] = useState(false);
+  const [connectionPath, setConnectionPath] = useState<"direct" | "relay" | null>(null);
   const [notice, setNotice] = useState("Connessione diretta in preparazione…");
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [remoteStreams, setRemoteStreams] = useState<Record<string, MediaStream>>({});
@@ -301,6 +307,8 @@ export function MediaStage({
   const screenAudioSendersRef = useRef(new Map<string, RTCRtpSender>());
   const peersRef = useRef(new Map<string, RTCPeerConnection>());
   const channelRef = useRef<RealtimeChannel | null>(null);
+  const negotiationsRef = useRef(new Map<string, ReturnType<typeof createPeerNegotiator>>());
+  const recoveriesRef = useRef(new Map<string, () => void>());
 
   useEffect(() => {
     if (!open || !conversationId || !supabase) return;
@@ -309,10 +317,18 @@ export function MediaStage({
     micEnabled.current = true;
     setConnected(false);
     setLatency(null);
+    setRelayAvailable(false);
+    setConnectionPath(null);
     let channel: RealtimeChannel | null = null;
     const peers = peersRef.current;
     const client = supabase;
-    const pendingIce = new Map<string, RTCIceCandidateInit[]>();
+    const credentialsController = new AbortController();
+    let iceServers = DEFAULT_ICE_SERVERS;
+    let credentialsExpireAt = 0;
+    let refreshingCredentials = false;
+    const updateTransport = () => {
+      if (active) setTransportReady([...peers.values()].every(peer => peer.connectionState === "connected"));
+    };
 
     const reportCallError = (message: string) => {
       if (active) setNotice(message);
@@ -328,22 +344,13 @@ export function MediaStage({
       if (response !== "ok") throw new Error("Signaling WebRTC non consegnato");
     };
 
-    const negotiate = async (peerId: string, peer: RTCPeerConnection) => {
-      if (peer.signalingState !== "stable") return;
-      const offer = await peer.createOffer();
-      const sdp = optimizeSdpQuality(offer.sdp || "", settingsRef.current);
-      await peer.setLocalDescription({ type: "offer", sdp });
-      if (sdp) await sendSignal(peerId, { kind: "offer", sdp });
-    };
+    const negotiate = (peerId: string, _peer: RTCPeerConnection) => negotiationsRef.current.get(peerId)?.negotiate() ?? Promise.resolve();
 
     const ensurePeer = (peerId: string) => {
       const existing = peers.get(peerId);
       if (existing) return existing;
       const peer = new RTCPeerConnection({
-        iceServers: [
-          { urls: "stun:stun.cloudflare.com:3478" },
-          { urls: "stun:stun.l.google.com:19302" },
-        ],
+        iceServers,
       });
       localStreamRef.current?.getTracks().forEach((track) => {
         const sender = peer.addTrack(track, localStreamRef.current!);
@@ -443,55 +450,38 @@ export function MediaStage({
           [peerId]: new MediaStream(peerEntry!.voiceStream.getTracks()),
         }));
       };
-      peer.onconnectionstatechange = () => {
-        if (!["failed", "closed", "disconnected"].includes(peer.connectionState)) return;
-        peerStreamMap.current.delete(peerId);
-        screenAudioSendersRef.current.delete(peerId);
-        setRemoteStreams((current) => {
-          const next = { ...current };
-          delete next[peerId];
-          return next;
-        });
-        setRemoteVoiceStreams((current) => {
-          const next = { ...current };
-          delete next[peerId];
-          return next;
-        });
-      };
       peers.set(peerId, peer);
+      const negotiator = createPeerNegotiator(peer, {
+        polite: userId.localeCompare(peerId) > 0,
+        send: signal => sendSignal(peerId, signal),
+        prepareSdp: sdp => optimizeSdpQuality(sdp, settingsRef.current),
+        onError: () => reportCallError("Ricollegamento audio in corso…"),
+      });
+      negotiationsRef.current.set(peerId, negotiator);
+      recoveriesRef.current.set(peerId, monitorPeerRecovery(peer, {
+        restart: async () => { peer.restartIce(); await negotiator.negotiate(); },
+        onState: state => {
+          updateTransport();
+          if (state === "disconnected" || state === "failed") reportCallError("Connessione audio interrotta. Ricollegamento automatico in corso…");
+          else if (state === "connected") reportCallError("Collegamento audio attivo.");
+        },
+        onClosed: () => {
+          if (!active) return;
+          peerStreamMap.current.delete(peerId);
+          screenAudioSendersRef.current.delete(peerId);
+          setRemoteStreams(current => { const next = {...current}; delete next[peerId]; return next; });
+          setRemoteVoiceStreams(current => { const next = {...current}; delete next[peerId]; return next; });
+        },
+        onExhausted: () => reportCallError("Non riesco a ristabilire il collegamento audio. Controlla la connessione e rientra nella chiamata."),
+      }));
+      updateTransport();
       return peer;
-    };
-
-    const flushPendingIce = async (peerId: string, peer: RTCPeerConnection) => {
-      const candidates = pendingIce.get(peerId) ?? [];
-      pendingIce.delete(peerId);
-      for (const candidate of candidates) await peer.addIceCandidate(candidate);
     };
 
     const handleSignal = async (payload: CallSignal) => {
       if (payload.targetId !== userId || !payload.senderId || !payload.signal) return;
-      const peer = ensurePeer(payload.senderId);
-      if (payload.signal.kind === "offer") {
-        await peer.setRemoteDescription({ type: "offer", sdp: payload.signal.sdp });
-        await flushPendingIce(payload.senderId, peer);
-        const answer = await peer.createAnswer();
-        const sdp = optimizeSdpQuality(answer.sdp || "", settingsRef.current);
-        await peer.setLocalDescription({ type: "answer", sdp });
-        if (sdp) await sendSignal(payload.senderId, { kind: "answer", sdp });
-        return;
-      }
-      if (payload.signal.kind === "answer") {
-        await peer.setRemoteDescription({ type: "answer", sdp: payload.signal.sdp });
-        await flushPendingIce(payload.senderId, peer);
-        return;
-      }
-      const candidate: RTCIceCandidateInit = {
-        candidate: payload.signal.candidate,
-        sdpMid: payload.signal.sdpMid,
-        sdpMLineIndex: payload.signal.sdpMLineIndex,
-      };
-      if (peer.remoteDescription) await peer.addIceCandidate(candidate);
-      else pendingIce.set(payload.senderId, [...(pendingIce.get(payload.senderId) ?? []), candidate]);
+      ensurePeer(payload.senderId);
+      await negotiationsRef.current.get(payload.senderId)?.receive(payload.signal);
     };
 
     const syncPresence = () => {
@@ -510,6 +500,10 @@ export function MediaStage({
       const activePeerIds = new Set(peerIds);
       for (const [peerId, peer] of peers) {
         if (activePeerIds.has(peerId)) continue;
+        recoveriesRef.current.get(peerId)?.();
+        recoveriesRef.current.delete(peerId);
+        negotiationsRef.current.get(peerId)?.dispose();
+        negotiationsRef.current.delete(peerId);
         peer.close();
         peers.delete(peerId);
         peerStreamMap.current.delete(peerId);
@@ -526,6 +520,7 @@ export function MediaStage({
         });
       }
       setParticipants(peerIds);
+      updateTransport();
       for (const peerId of peerIds) {
         const peer = ensurePeer(peerId);
         if (userId.localeCompare(peerId) < 0 && !peer.remoteDescription) {
@@ -535,6 +530,11 @@ export function MediaStage({
     };
 
     const startSignaling = async () => {
+      const config = await loadCallIceConfig(conversationId, credentialsController.signal);
+      if (!active) return;
+      iceServers = config.iceServers;
+      credentialsExpireAt = config.expiresAt;
+      setRelayAvailable(config.relayAvailable);
       await client.realtime.setAuth();
       if (!active) return;
       const topic = callTopic(conversationId);
@@ -568,6 +568,23 @@ export function MediaStage({
       reportCallError("Impossibile aprire il canale della chiamata. Controlla la configurazione Supabase.");
     });
 
+    const refreshCredentials = window.setInterval(() => {
+      if (!active || refreshingCredentials || credentialsExpireAt > Date.now() + 15 * 60000) return;
+      refreshingCredentials = true;
+      void loadCallIceConfig(conversationId, credentialsController.signal, true).then(async config => {
+        if (!active || !config.relayAvailable) return;
+        const renewAllocations = config.expiresAt !== credentialsExpireAt;
+        credentialsExpireAt = config.expiresAt;
+        iceServers = config.iceServers;
+        setRelayAvailable(true);
+        for (const [id, peer] of peers) {
+          if (peer.signalingState === "closed") continue;
+          peer.setConfiguration({ ...peer.getConfiguration(), iceServers });
+          if (renewAllocations) { peer.restartIce(); await negotiationsRef.current.get(id)?.negotiate(); }
+        }
+      }).catch(() => reportCallError("Rinnovo della connessione alternativa in corso…")).finally(() => { refreshingCredentials = false; });
+    }, 60000);
+
     if (startWithVideo) void navigator.mediaDevices.getUserMedia({ video: cameraConstraints(settingsRef.current) })
       .then((stream) => {
         if (!active) { stream.getTracks().forEach((track) => track.stop()); return; }
@@ -587,6 +604,8 @@ export function MediaStage({
 
     return () => {
       active = false;
+      credentialsController.abort();
+      window.clearInterval(refreshCredentials);
       callGeneration.current++;
       if (channel) {
         void channel.untrack();
@@ -599,9 +618,13 @@ export function MediaStage({
       screenStreamRef.current?.getTracks().forEach((track) => track.stop());
       localStreamRef.current = null;
       screenStreamRef.current = null;
+      recoveriesRef.current.forEach(stop => stop());
+      recoveriesRef.current.clear();
+      negotiationsRef.current.forEach(negotiator => negotiator.dispose());
+      negotiationsRef.current.clear();
       peers.forEach((peer) => peer.close());
       peers.clear();
-      pendingIce.clear();
+      setTransportReady(true);
       setRemoteStreams({});
       setRemoteVoiceStreams({});
       setParticipants([]);
@@ -613,6 +636,8 @@ export function MediaStage({
       deafenedRef.current = false;
       setConnected(false);
       setLatency(null);
+      setRelayAvailable(false);
+      setConnectionPath(null);
       setFocusedTile(null);
     };
   }, [conversationId, open, startWithVideo, userId]);
@@ -646,7 +671,7 @@ export function MediaStage({
         }
       }));
       if (!active) return;
-      await renegotiatePeers();
+      void renegotiatePeers().catch(() => { if (active) setNotice("Ricollegamento audio in corso…"); });
       setNotice("Microfono pronto · " + (settingsRef.current.noise === "rnnoise" ? "riduzione del rumore RNNoise" : settingsRef.current.noise === "standard" ? "riduzione standard" : "riduzione disattivata"));
     }).catch(() => {
       capture?.close();
@@ -664,15 +689,19 @@ export function MediaStage({
       if (pending) return;
       pending = true;
       try {
-        const values = await Promise.all([...peersRef.current.values()].filter(peer => peer.connectionState === "connected").map(async (peer): Promise<number | null> => {
+        const values = await Promise.all([...peersRef.current.values()].filter(peer => peer.connectionState === "connected").map(async (peer): Promise<{ rtt: number | null; relay: boolean }> => {
           const stats = await peer.getStats();
           let rtt: number | null = null;
-          stats.forEach(report => { if (report.type === "candidate-pair" && report.state === "succeeded" && (report.nominated || report.selected) && typeof report.currentRoundTripTime === "number") rtt = Math.round(report.currentRoundTripTime * 1000); });
-          return rtt;
+          let relay = false;
+          stats.forEach(report => { if (report.type === "candidate-pair" && report.state === "succeeded" && (report.nominated || report.selected)) {
+            if (typeof report.currentRoundTripTime === "number") rtt = Math.round(report.currentRoundTripTime * 1000);
+            relay ||= stats.get(report.localCandidateId)?.candidateType === "relay" || stats.get(report.remoteCandidateId)?.candidateType === "relay";
+          } });
+          return { rtt, relay };
         }));
-        const valid = values.filter((value): value is number => value !== null);
-        if (active) setLatency(valid.length ? Math.max(...valid) : null);
-      } catch { if (active) setLatency(null); }
+        const valid = values.map(value => value.rtt).filter((value): value is number => value !== null);
+        if (active) { setLatency(valid.length ? Math.max(...valid) : null); setConnectionPath(values.length ? values.some(value => value.relay) ? "relay" : "direct" : null); }
+      } catch { if (active) { setLatency(null); setConnectionPath(null); } }
       finally { pending = false; }
     };
     void sample();
@@ -683,21 +712,7 @@ export function MediaStage({
   if (!open || !conversationId) return null;
 
   const renegotiatePeers = async () => {
-    const channel = channelRef.current;
-    if (!channel) return;
-    for (const [peerId, peer] of peersRef.current) {
-      if (peer.signalingState !== "stable") continue;
-      const offer = await peer.createOffer();
-      const sdp = optimizeSdpQuality(offer.sdp || "", settingsRef.current);
-      await peer.setLocalDescription({ type: "offer", sdp });
-      if (sdp) {
-        await channel.send({
-          type: "broadcast",
-          event: "webrtc.call.signal",
-          payload: { senderId: userId, targetId: peerId, signal: { kind: "offer", sdp } },
-        });
-      }
-    }
+    await Promise.all([...negotiationsRef.current.values()].map(negotiator => negotiator.negotiate()));
   };
 
   const toggleMic = async () => {
@@ -864,7 +879,7 @@ export function MediaStage({
   };
 
   return (<>
-    {dockTarget && onExpand && createPortal(<CallDock roomName={roomName} connected={connected} notice={notice} latency={latency} mic={mic} deafened={deafened} camera={camera} sharing={sharing} canShare={typeof navigator.mediaDevices?.getDisplayMedia === "function"} onExpand={onExpand} onLeave={onClose} onMic={toggleMic} onDeafen={toggleDeafen} onCamera={toggleCamera} onShare={toggleShare} />, dockTarget)}
+    {dockTarget && onExpand && createPortal(<CallDock roomName={roomName} connected={connected && transportReady} notice={notice} latency={latency} relayAvailable={relayAvailable} connectionPath={connectionPath} mic={mic} deafened={deafened} camera={camera} sharing={sharing} canShare={typeof navigator.mediaDevices?.getDisplayMedia === "function"} onExpand={onExpand} onLeave={onClose} onMic={toggleMic} onDeafen={toggleDeafen} onCamera={toggleCamera} onShare={toggleShare} />, dockTarget)}
     <section className={`media-stage ${expanded ? "stage-expanded" : "stage-minimized"}`} aria-label="Chiamata in corso" aria-hidden={!expanded}>
       <header className="stage-header">
         <div><span className="eyebrow"><span className="live-dot" /> {roomName}</span><h2>{participants.length + 1} partecipanti</h2></div>

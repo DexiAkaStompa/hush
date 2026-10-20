@@ -595,7 +595,7 @@ function configureContentSecurityPolicy() {
       "script-src 'self' 'wasm-unsafe-eval'",
       "worker-src 'self'",
       "style-src 'self' 'unsafe-inline'",
-      "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://music.hush.contact https://*.youtube.com https://*.googlevideo.com https://open.spotify.com https://*.googleapis.com https://drive.usercontent.google.com https://*.google.com",
+      "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://hush-turn-credentials.mattiapalermo317.workers.dev https://music.hush.contact https://*.youtube.com https://*.googlevideo.com https://open.spotify.com https://*.googleapis.com https://drive.usercontent.google.com https://*.google.com",
       "img-src 'self' data: blob: https:",
       "media-src 'self' blob: https:",
       "frame-src https://www.youtube-nocookie.com https://www.youtube.com https://open.spotify.com",
