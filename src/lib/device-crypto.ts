@@ -1,4 +1,4 @@
-import { createRoomKey } from "./crypto";
+import { createRoomKey, registerRoomKeyRing, roomKeyCandidates } from "./crypto";
 import { supabase } from "./supabase";
 
 const encoder = new TextEncoder();
@@ -27,6 +27,7 @@ type KeyEnvelope = {
   nonce: string;
   ciphertext: string;
 };
+const loadedKeys = new WeakMap<DeviceIdentity, Map<string, { revision: string; key: CryptoKey }>>();
 
 function bytesToBase64(bytes: Uint8Array) {
   let binary = "";
@@ -60,9 +61,11 @@ async function readIdentity(userId: string) {
 async function writeIdentity(identity: DeviceIdentity) {
   const database = await openDatabase();
   return new Promise<void>((resolve, reject) => {
-    const request = database.transaction(STORE_NAME, "readwrite").objectStore(STORE_NAME).put(identity);
-    request.onsuccess = () => resolve();
-    request.onerror = () => reject(request.error);
+    const transaction = database.transaction(STORE_NAME, "readwrite");
+    transaction.objectStore(STORE_NAME).put(identity);
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error);
+    transaction.onabort = () => reject(transaction.error ?? new Error("Salvataggio della chiave del dispositivo interrotto"));
   }).finally(() => database.close());
 }
 
@@ -86,7 +89,18 @@ async function generateIdentity(userId: string): Promise<DeviceIdentity> {
   return { id: crypto.randomUUID(), userId, privateKey, publicKey };
 }
 
-export async function ensureDeviceIdentity(userId: string) {
+const identityLoads = new Map<string, Promise<DeviceIdentity>>();
+export function ensureDeviceIdentity(userId: string) {
+  const pending = identityLoads.get(userId);
+  if (pending) return pending;
+  const task = (navigator.locks
+    ? navigator.locks.request(`hush:device-identity:${userId}`, () => loadDeviceIdentity(userId))
+    : loadDeviceIdentity(userId)).finally(() => identityLoads.delete(userId));
+  identityLoads.set(userId, task);
+  return task;
+}
+
+async function loadDeviceIdentity(userId: string) {
   if (!supabase) throw new Error("Supabase non è configurato");
   let identity = await readIdentity(userId);
   if (!identity) {
@@ -135,6 +149,7 @@ async function wrapRoomKey(
   roomKey: CryptoKey,
   recipient: PublicDevice,
   senderDeviceId: string,
+  keyEpoch = 0,
 ): Promise<KeyEnvelope> {
   const recipientJwk = JSON.parse(recipient.hpke_public_key) as JsonWebKey;
   const recipientPublicKey = await crypto.subtle.importKey(
@@ -160,7 +175,7 @@ async function wrapRoomKey(
     conversation_id: conversationId,
     recipient_device_id: recipient.id,
     sender_device_id: senderDeviceId,
-    key_epoch: 0,
+    key_epoch: keyEpoch,
     ephemeral_public_key: ephemeralPublicKey,
     nonce: bytesToBase64(nonce),
     ciphertext: bytesToBase64(new Uint8Array(ciphertext)),
@@ -188,6 +203,8 @@ async function devicesForConversation(conversationId: string) {
 
 export async function initializeConversationKey(conversationId: string, identity: DeviceIdentity) {
   if (!supabase) throw new Error("Supabase non è configurato");
+  const existing = await loadConversationKey(conversationId, identity);
+  if (existing) return existing;
   const roomKey = await createRoomKey();
   const devices = await devicesForConversation(conversationId);
   if (!devices.some((device) => device.id === identity.id)) {
@@ -196,9 +213,10 @@ export async function initializeConversationKey(conversationId: string, identity
   const envelopes = await Promise.all(
     devices.map((device) => wrapRoomKey(conversationId, roomKey, device, identity.id)),
   );
-  const { error } = await supabase.rpc("store_conversation_key_envelopes", { p_envelopes: envelopes });
+  const { error } = await supabase.rpc("initialize_conversation_key_envelopes", { p_conversation_id: conversationId, p_envelopes: envelopes });
   if (error) throw error;
-  return roomKey;
+  // Never use a generated key unless this device can read it back from storage.
+  return loadConversationKey(conversationId, identity);
 }
 
 export async function loadConversationKey(conversationId: string, identity: DeviceIdentity) {
@@ -208,25 +226,41 @@ export async function loadConversationKey(conversationId: string, identity: Devi
     .select("conversation_id, recipient_device_id, sender_device_id, key_epoch, ephemeral_public_key, nonce, ciphertext")
     .eq("conversation_id", conversationId)
     .eq("recipient_device_id", identity.id)
-    .eq("key_epoch", 0)
-    .maybeSingle();
+    .order("key_epoch");
   if (error) throw error;
-  if (!data) return null;
+  if (!data?.length) return null;
+  const revision = JSON.stringify(data);
+  let cache = loadedKeys.get(identity);
+  if (!cache) { cache = new Map(); loadedKeys.set(identity, cache); }
+  const previous = cache.get(conversationId);
+  if (previous?.revision === revision) return previous.key;
+  const recovered: { key: CryptoKey; id: number }[] = [];
+  for (const envelope of data) {
+    try {
+      const ephemeralPublicKey = await crypto.subtle.importKey(
+        "jwk", envelope.ephemeral_public_key as JsonWebKey,
+        { name: "ECDH", namedCurve: "P-256" }, false, [],
+      );
+      const wrappingKey = await deriveWrappingKey(identity.privateKey, ephemeralPublicKey, conversationId);
+      const raw = await crypto.subtle.decrypt(
+        { name: "AES-GCM", iv: base64ToBytes(envelope.nonce) }, wrappingKey, base64ToBytes(envelope.ciphertext),
+      );
+      const key = await crypto.subtle.importKey("raw", raw, { name: "AES-GCM" }, true, ["encrypt", "decrypt"]);
+      const id = await recoveryKeyId(key);
+      if (!recovered.some(item => item.id === id)) recovered.push({ key, id });
+    } catch { /* An unusable envelope must not hide other valid historical keys. */ }
+  }
+  if (!recovered.length) throw new Error("Le chiavi di questo dispositivo non sono leggibili. Non cancellare i dati dell'app.");
+  recovered.sort((a, b) => a.id - b.id);
+  const key = registerRoomKeyRing(recovered[0].key, recovered.map(item => item.key), recovered.map(item => item.id).join(","));
+  cache.set(conversationId, { revision, key });
+  return key;
+}
 
-  const ephemeralPublicKey = await crypto.subtle.importKey(
-    "jwk",
-    data.ephemeral_public_key as JsonWebKey,
-    { name: "ECDH", namedCurve: "P-256" },
-    false,
-    [],
-  );
-  const wrappingKey = await deriveWrappingKey(identity.privateKey, ephemeralPublicKey, conversationId);
-  const rawRoomKey = await crypto.subtle.decrypt(
-    { name: "AES-GCM", iv: base64ToBytes(data.nonce) },
-    wrappingKey,
-    base64ToBytes(data.ciphertext),
-  );
-  return crypto.subtle.importKey("raw", rawRoomKey, { name: "AES-GCM" }, true, ["encrypt", "decrypt"]);
+// Recovery slots identify key material, not the message epoch (legacy messages stay at epoch 0).
+async function recoveryKeyId(key: CryptoKey) {
+  const hash = new Uint8Array(await crypto.subtle.digest("SHA-256", await crypto.subtle.exportKey("raw", key)));
+  return parseInt([...hash.slice(0, 6)].map(byte => byte.toString(16).padStart(2, "0")).join(""), 16) + 1;
 }
 
 export async function requestConversationKey(conversationId: string, identity: DeviceIdentity) {
@@ -244,24 +278,22 @@ export async function fulfillPendingKeyRequests(
   identity: DeviceIdentity,
 ) {
   if (!supabase) throw new Error("Supabase non è configurato");
-  const { data: requests, error: requestError } = await supabase
-    .from("conversation_key_requests")
-    .select("requester_device_id")
-    .eq("conversation_id", conversationId);
-  if (requestError) throw requestError;
-  const deviceIds = (requests ?? []).map((request) => request.requester_device_id as string);
-  if (deviceIds.length === 0) return 0;
-
-  const { data: devices, error: deviceError } = await supabase
-    .from("devices")
-    .select("id, user_id, hpke_public_key")
-    .in("id", deviceIds)
-    .is("revoked_at", null);
-  if (deviceError) throw deviceError;
-  const envelopes = await Promise.all(
-    ((devices ?? []) as PublicDevice[]).map((device) => wrapRoomKey(conversationId, roomKey, device, identity.id)),
-  );
-  if (envelopes.length === 0) return 0;
+  const keys = await Promise.all(roomKeyCandidates(roomKey).map(async key => ({ key, id: await recoveryKeyId(key) })));
+  keys.push({ key: roomKey, id: 0 }); // Continue serving clients using the original envelope slot.
+  // Only wrap missing slots: no repeated ECDH work for devices already synchronized.
+  const { data: missing, error: missingError } = await supabase.rpc("missing_conversation_key_envelopes", {
+    p_conversation_id: conversationId, p_key_ids: keys.map(item => item.id),
+  });
+  if (missingError) throw missingError;
+  if (!missing?.length) return 0;
+  const devices = await devicesForConversation(conversationId);
+  const envelopes: KeyEnvelope[] = [];
+  for (const slot of missing as { recipient_device_id: string; key_epoch: number }[]) {
+    const device = devices.find(item => item.id === slot.recipient_device_id);
+    const source = keys.find(item => item.id === Number(slot.key_epoch));
+    if (device && source) envelopes.push(await wrapRoomKey(conversationId, source.key, device, identity.id, source.id));
+  }
+  if (!envelopes.length) return 0;
   const { error } = await supabase.rpc("store_conversation_key_envelopes", { p_envelopes: envelopes });
   if (error) throw error;
   return envelopes.length;

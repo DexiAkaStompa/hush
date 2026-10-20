@@ -1,5 +1,26 @@
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
+const roomKeyRings = new WeakMap<CryptoKey, CryptoKey[]>();
+const roomKeySignatures = new WeakMap<CryptoKey, string>();
+
+// Historical keys stay local and are only exchanged in device-encrypted envelopes.
+export function registerRoomKeyRing(primary: CryptoKey, keys: CryptoKey[], signature: string) {
+  roomKeyRings.set(primary, [primary, ...keys.filter(key => key !== primary)]);
+  roomKeySignatures.set(primary, signature);
+  return primary;
+}
+
+export function roomKeyCandidates(key: CryptoKey) { return roomKeyRings.get(key) ?? [key]; }
+export function roomKeySignature(key: CryptoKey) { return roomKeySignatures.get(key) ?? ""; }
+
+async function decryptWithRoomKeys(key: CryptoKey, algorithm: AesGcmParams, ciphertext: BufferSource) {
+  let failure: unknown;
+  for (const candidate of roomKeyCandidates(key)) {
+    try { return await crypto.subtle.decrypt(algorithm, candidate, ciphertext); }
+    catch (error) { failure = error; }
+  }
+  throw failure;
+}
 
 export type EncryptedPayload = {
   v: 1;
@@ -56,14 +77,13 @@ export async function decryptText(
 ) {
   if (payload.v !== 1) throw new Error("Versione del messaggio non supportata");
 
-  const plaintext = await crypto.subtle.decrypt(
+  const plaintext = await decryptWithRoomKeys(key,
     {
       name: "AES-GCM",
       iv: base64ToBytes(payload.iv),
       additionalData: encoder.encode(context),
       tagLength: 128,
     },
-    key,
     base64ToBytes(payload.ciphertext),
   );
 
@@ -99,14 +119,13 @@ export async function decryptBinary(
   key: CryptoKey,
   context: string,
 ): Promise<ArrayBuffer> {
-  return crypto.subtle.decrypt(
+  return decryptWithRoomKeys(key,
     {
       name: "AES-GCM",
       iv: base64ToBytes(iv),
       additionalData: encoder.encode(context),
       tagLength: 128,
     },
-    key,
     ciphertext,
   );
 }

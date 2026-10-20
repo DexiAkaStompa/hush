@@ -65,7 +65,7 @@ import {
   uploadEncryptedChatFile,
   validateChatFile,
 } from "./lib/chat-media";
-import { decryptText, encryptText, getKeyFingerprint } from "./lib/crypto";
+import { decryptText, encryptText, getKeyFingerprint, roomKeySignature } from "./lib/crypto";
 import {
   ensureDeviceIdentity,
   fulfillPendingKeyRequests,
@@ -1046,8 +1046,17 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
       });
       if (!current) { void unsubscribeFromConversation(channel); return; }
       activeChannelRef.current = channel;
+      let synchronizingKeys = false;
       const requestTimer = window.setInterval(() => {
-        void fulfillPendingKeyRequests(activeConversation.id, key, identity).catch(() => undefined);
+        if (synchronizingKeys) return;
+        synchronizingKeys = true;
+        void (async () => {
+          await fulfillPendingKeyRequests(activeConversation.id, key, identity);
+          const refreshed = await loadConversationKey(activeConversation.id, identity);
+          if (current && refreshed && roomKeySignature(refreshed) !== roomKeySignature(key)) {
+            setKeyRetry(value => value + 1);
+          }
+        })().catch(() => undefined).finally(() => { synchronizingKeys = false; });
       }, 5000);
       cleanupRealtime = () => {
         window.clearInterval(requestTimer);

@@ -6,9 +6,26 @@ import {
   encryptBinary,
   encryptText,
   getKeyFingerprint,
+  registerRoomKeyRing,
 } from "./crypto";
 
 describe("room encryption", () => {
+  it("recovers text and attachments from both sides of a historical device split", async () => {
+    const pc = await createRoomKey(), phone = await createRoomKey(), stranger = await createRoomKey();
+    const pcMessage = await encryptText("dal PC", pc, "chat:split");
+    const phoneMessage = await encryptText("dal telefono", phone, "chat:split");
+    const bytes = new Uint8Array([1, 2, 3, 255]);
+    const file = await encryptBinary(bytes.buffer, phone, "file:split");
+    registerRoomKeyRing(pc, [pc, phone], "pc,phone");
+    registerRoomKeyRing(phone, [pc, phone], "pc,phone");
+    await expect(decryptText(pcMessage, phone, "chat:split")).resolves.toBe("dal PC");
+    await expect(decryptText(phoneMessage, pc, "chat:split")).resolves.toBe("dal telefono");
+    expect(new Uint8Array(await decryptBinary(file.ciphertext, file.iv, pc, "file:split"))).toEqual(bytes);
+    await expect(decryptText(phoneMessage, pc, "other-chat")).rejects.toThrow();
+    await expect(decryptText(phoneMessage, stranger, "chat:split")).rejects.toThrow();
+    const fresh = await encryptText("nuovo", pc, "chat:split");
+    await expect(decryptText(fresh, phone, "chat:split")).resolves.toBe("nuovo");
+  });
   it("round-trips unicode text", async () => {
     const key = await createRoomKey();
     const payload = await encryptText("Ciao, ci vediamo alle 21? 🔒", key, "room:general");
