@@ -15,11 +15,13 @@ import { initialsFor, readableError } from "../lib/workspace";
 import { ProfileImage } from "./ProfileImage";
 import { ChatAttachment } from "./ChatAttachment";
 import { MessageText } from "./MessageText";
+import { LinkEmbeds } from "./LinkEmbeds";
 import { EmojiPicker } from "./EmojiPicker";
 import { copyText } from "../lib/clipboard";
 import { Modal } from "./Modal";
 import type { MessageMention, MentionTarget } from "../lib/mentions";
 import "../message-layout.css";
+import { messageTimestamp } from "../lib/message-dates";
 export type Reaction = { message_id: string; user_id: string; emoji: string };
 export function ChatMessage({
   message,
@@ -46,6 +48,9 @@ export function ChatMessage({
   canManageMessages = false,
   canEdit = true,
   continuation = false,
+  onHushLink,
+  replySender,
+  onJumpToReply,
 }: {
   mentions?: MessageMention[];
   mentionTargets?: MentionTarget[];
@@ -56,6 +61,9 @@ export function ChatMessage({
   canManageMessages?: boolean;
   canEdit?: boolean;
   continuation?: boolean;
+  onHushLink?: (url: string) => Promise<void>;
+  replySender?: Profile;
+  onJumpToReply?: () => void;
   message: DecryptedMessage & {
     replyId?: string | null;
     editedAt?: string | null;
@@ -154,7 +162,7 @@ export function ChatMessage({
       menuRef.current?.querySelector<HTMLButtonElement>("button")?.focus();
   }, [menu]);
   const grouped = [...new Set(reactions.map((reaction) => reaction.emoji))];
-  const compact = continuation && !pinned && !message.editedAt;
+  const compact = continuation && !pinned;
   return (
     <article
       ref={articleRef}
@@ -220,12 +228,8 @@ export function ChatMessage({
               dateTime={message.createdAt}
               title={new Date(message.createdAt).toLocaleString("it")}
             >
-              {new Date(message.createdAt).toLocaleTimeString("it", {
-                hour: "2-digit",
-                minute: "2-digit",
-              })}
+              {messageTimestamp(message.createdAt)}
             </time>
-            {message.editedAt && <small>modificato</small>}
             {pinned && <Pin size={12} aria-label="Messaggio fissato" />}
           </div>
         )}
@@ -233,16 +237,28 @@ export function ChatMessage({
           <button
             className="message-reply"
             onClick={() =>
-              document
-                .getElementById(`message-${message.replyId}`)
-                ?.scrollIntoView({ block: "center" })
+              onJumpToReply
+                ? onJumpToReply()
+                : document
+                    .getElementById(`message-${message.replyId}`)
+                    ?.scrollIntoView({ block: "center" })
             }
           >
             <CornerUpLeft size={12} />
+            <span className="message-reply-avatar">
+              {initialsFor(reply?.author ?? "?")}
+              <ProfileImage path={replySender?.avatar_path} alt="" />
+            </span>
+            <strong>
+              {reply ? `@${reply.author}` : "Messaggio precedente"}
+            </strong>
             <span>
-              {reply
-                ? `${reply.author}: ${reply.body || "Allegato"}`
-                : "Risposta a un messaggio precedente"}
+              {reply?.body ||
+                (reply?.attachment
+                  ? "Allegato"
+                  : reply
+                    ? "Messaggio senza testo"
+                    : "Apri il messaggio originale")}
             </span>
           </button>
         )}
@@ -277,10 +293,25 @@ export function ChatMessage({
         ) : message.body ? (
           <MessageText
             text={message.body}
+            edited={!!message.editedAt}
+            onHushLink={
+              onHushLink
+                ? async (url) => {
+                    try {
+                      await onHushLink(url);
+                    } catch (error) {
+                      onToast(readableError(error));
+                    }
+                  }
+                : undefined
+            }
             mentions={mentions}
             targets={mentionTargets}
           />
         ) : null}
+        {message.body && !editing && (
+          <LinkEmbeds text={message.body} onHushLink={onHushLink} />
+        )}
         {message.attachment && (
           <ChatAttachment
             attachment={message.attachment}

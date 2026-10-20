@@ -28,7 +28,7 @@ test("keeps different or unavailable senders separate", () => {
   ).toBe(false);
 });
 test("does not group replies, date boundaries or invalid/reversed times", () => {
-  expect(isMessageContinuation({ ...first, replyId: "r" }, first)).toBe(false);
+  expect(isMessageContinuation({ ...first, replyId: "r" }, first)).toBe(true);
   expect(isMessageContinuation(first, { ...first, replyId: "r" })).toBe(false);
   expect(
     isMessageContinuation(

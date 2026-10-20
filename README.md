@@ -252,3 +252,18 @@ participants; only the recipient can accept it. An unordered unique pair blocks
 duplicate and crossed requests, and outgoing pending requests are capped at 100.
 The client refreshes via Realtime, on focus and with a visible-page fallback poll.
 Removing a friendship preserves existing conversations and messages.
+
+Message links now include lazy Open Graph previews with titles, descriptions and
+proxied raster images. The authenticated `link-preview` Edge Function receives
+only the URL, without message text or conversation IDs, and does not persist it.
+Outbound connections use validated public IPs with HTTPS hostname verification,
+including every redirect; response bytes, image dimensions and request rates are
+bounded. The client limits concurrent downloads, caches metadata per account and
+releases image object URLs outside the viewport. Wrap a URL in `<...>` to suppress
+its preview, or dismiss an individual card locally.
+
+Hush invite cards show server identity to valid invite holders and join on an
+explicit click. Voice-channel links use `hush://channel/CHANNEL_UUID`; the voice
+header has a copy-link action. Visible voice cards observe authorized presence
+without tracking the viewer as a participant. Discord invite cards open Discord;
+private Discord voice participants are not exposed by Hush.

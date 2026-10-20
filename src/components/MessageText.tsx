@@ -5,6 +5,8 @@ type Props = {
   mentions?: MessageMention[];
   targets?: MentionTarget[];
   offset?: number;
+  edited?: boolean;
+  onHushLink?: (url: string) => Promise<void>;
 };
 function Plain({ text, offset = 0, mentions = [], targets = [] }: Props) {
   const nodes: ReactNode[] = [];
@@ -47,7 +49,7 @@ function Inline({ text, offset = 0, ...props }: Props) {
     <>
       {text
         .split(
-          /(`[^`\n]+`|\*\*[^*\n]+\*\*|~~[^~\n]+~~|\*[^*\n]+\*|https?:\/\/[^\s<>]+)/g,
+          /(`[^`\n]+`|\*\*[^*\n]+\*\*|~~[^~\n]+~~|\*[^*\n]+\*|(?:https?:\/\/|hush:\/\/)[^\s<>]+)/g,
         )
         .map((part, index) => {
           const start = cursor;
@@ -65,6 +67,19 @@ function Inline({ text, offset = 0, ...props }: Props) {
                 <del>{inner(2)}</del>
               ) : part.startsWith("*") ? (
                 <em>{inner(1)}</em>
+              ) : props.onHushLink &&
+                /^hush:\/\/(?:invite\/[a-f0-9]{48}|channel\/[a-f0-9-]{36})$/i.test(
+                  part,
+                ) ? (
+                <a
+                  href={part}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    void props.onHushLink?.(part);
+                  }}
+                >
+                  {part}
+                </a>
               ) : /^https?:\/\//.test(part) ? (
                 <a href={part} target="_blank" rel="noopener noreferrer">
                   {part}
@@ -78,7 +93,7 @@ function Inline({ text, offset = 0, ...props }: Props) {
     </>
   );
 }
-export function MessageText({ text, ...props }: Props) {
+export function MessageText({ text, edited, ...props }: Props) {
   let cursor = 0;
   return (
     <div className="message-text">
@@ -107,6 +122,7 @@ export function MessageText({ text, ...props }: Props) {
           );
         });
       })}
+      {edited && <small className="message-edited-label"> (modificato)</small>}
     </div>
   );
 }

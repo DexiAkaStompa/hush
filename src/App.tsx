@@ -1,6 +1,7 @@
 import { UserProfile } from "./components/UserProfile";
 import { MessageSearch } from "./components/MessageSearch";
 import { isMessageContinuation } from "./lib/message-layout";
+import { messageDayLabel } from "./lib/message-dates";
 import { FriendsPanel, FriendActions } from "./components/Friends";
 import { useFriendships } from "./lib/use-friendships";
 import "./navigation-rail.css";
@@ -254,6 +255,7 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
   const [manageSpace, setManageSpace] = useState(false);
   const messagesRef = useRef<HTMLDivElement>(null);
   const olderScrollAnchor = useRef<{conversationId:string; anchor:ChatScrollAnchor} | null>(null);
+  const replyJump = useRef<{conversationId:string; messageId:string}|null>(null);
   const activeChannelRef = useRef<RealtimeChannel | null>(null);
   const activeIdRef = useRef<string | null>(null);
   const typingSentRef = useRef(0);
@@ -449,6 +451,7 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
     clearPendingFile(); setSearch("");
   }, [activeConversationId]);
   const filteredMessages = useMemo(() => (historyResults ?? messages).filter(message => matchesMessage(message, search) && (!showPins || extras.pins.some(pin => pin.message_id === message.id))), [messages, historyResults, search, showPins, extras.pins]);
+  const messageLookup = useMemo(()=>new Map(messages.map(message=>[message.id,message])),[messages]);
   const refreshExtras = async (id: string) => {
     const next = await loadMessageExtras(id);
     if (activeIdRef.current === id) setExtras(next);
@@ -501,6 +504,17 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
     searchGenerationRef.current++;
     setShowSearch(false);setSearch("");setHistoryResults(null);setHistoryNotice("");setSearchingHistory(false);
   }, []);
+  const revealMessage = (id:string) => {
+    const element=document.getElementById(`message-${id}`);if(!element)return false;
+    element.scrollIntoView({block:'center',behavior:'instant'});element.classList.add('is-jump-target');setTimeout(()=>element.classList.remove('is-jump-target'),1800);return true;
+  };
+  const jumpToMessage = async (id:string) => {
+    if(!activeConversationId||!roomKey)return;const roomId=activeConversationId;
+    closeMessageSearch();setShowPins(false);
+    if(!search&&!showPins&&revealMessage(id))return;
+    try{const rows=messageLookup.has(id)?[]:await loadAndDecryptMessages(roomId,roomKey,members,{ids:[id]});if(activeIdRef.current!==roomId)return;if(!messageLookup.has(id)&&!rows.length){setToast('Il messaggio originale non è più disponibile.');return;}replyJump.current={conversationId:roomId,messageId:id};setAwayFromBottom(true);setMessages(current=>mergeMessages(current,rows));}
+    catch(error){setToast(readableError(error));}
+  };
   useEffect(() => {
     if (!activeSpaceId || !supabase) {setCategories([]); setMySpaceRole("member"); return;}
     setMySpaceRole("member");
@@ -575,7 +589,7 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
   };
   const latestCipher = messages.at(-1)?.encrypted;
 
-  const startCall = async (conversation: Conversation | null, video: boolean) => {
+  const startCall = async (conversation: Conversation | null, video: boolean, callMembers:Profile[]=members) => {
     if (!conversation) return;
     try {const permissions=await loadChannelPermissions([conversation.id]);if(!permissions[conversation.id]?.includes("connect")){setToast("Non hai il permesso di entrare in voce in questo canale.");return;}}catch(error){setToast(readableError(error));return;}
     void playCallSound("join");
@@ -585,7 +599,7 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
       video,
       conversationId: conversation.id,
       roomName: conversation.name,
-      memberNames: Object.fromEntries(members.map((member) => [member.id, member.display_name])),
+      memberNames: Object.fromEntries(callMembers.map((member) => [member.id, member.display_name])),
     });
 
     // Broadcast incoming call to other members of this conversation
@@ -1066,6 +1080,8 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
     if (pending && pending.conversationId === activeConversationId && messagesRef.current) {
       restoreChatScrollAnchor(messagesRef.current, pending.anchor);
     }
+    const jump=replyJump.current;
+    if(jump){if(jump.conversationId!==activeConversationId||revealMessage(jump.messageId))replyJump.current=null;}
   }, [messages, activeConversationId]);
 
   useEffect(() => {
@@ -1301,6 +1317,27 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
     }
   };
 
+  const openHushLink = async (value:string) => {
+    if(!supabase)throw Error('not_configured');
+    const url=new URL(value);
+    if(url.protocol!=='hush:')throw Error('invalid_link');
+    if(url.hostname==='invite'){
+      const token=url.pathname.slice(1);
+      const preview=await supabase.rpc('get_space_invite_preview',{p_token:token});if(preview.error)throw preview.error;
+      if(!preview.data)throw Error('invalid_or_expired_invite');
+      let spaceId=preview.data.id;
+      if(!preview.data.is_member){const joined=await supabase.rpc('join_space_with_invite',{p_token:token});if(joined.error)throw joined.error;spaceId=joined.data;}
+      await refreshWorkspace(spaceId);setActiveConversationId(null);await refreshChannels(spaceId);setSidebarOpen(false);return;
+    }
+    if(url.hostname==='channel'){
+      const {data,error}=await supabase.from('conversations').select('*').eq('id',url.pathname.slice(1)).maybeSingle();if(error)throw error;if(!data)throw Error('channel_not_accessible');
+      const room=data as Conversation;
+      if(room.kind==='voice_channel'){const people=await loadConversationMembers(room.id);await startCall(room,false,people);}
+      else {setActiveSpaceId(room.space_id);setActiveConversationId(room.id);setSidebarOpen(false);}
+      return;
+    }
+    throw Error('invalid_link');
+  };
   const selectSpace = (spaceId: string) => {
     setActiveSpaceId(spaceId);
     setActiveConversationId(null);
@@ -1549,7 +1586,7 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
               <button onClick={() => startCall(activeConversation, false)} aria-label="Avvia chiamata"><Phone size={18} /></button>
               <button onClick={() => startCall(activeConversation, true)} aria-label="Avvia videochiamata"><Video size={19} /></button>
               <button onClick={()=>setIdentityTarget({kind:"conversation",id:activeConversation.id,value:activeConversation,readOnly:!!activeConversation.space_id&&!canManageSpace})} aria-label={activeConversation.kind==="group_dm"?"Personalizza gruppo":"Informazioni e aspetto del canale"} title="Nome, descrizione e aspetto"><Settings size={17}/></button>
-              {activeSpace ? <button onClick={createInvite} aria-label="Copia invito"><UserPlus size={19} /></button> : null}
+              {activeConversation.kind === "voice_channel" && <button onClick={()=>void copyText(`hush://channel/${activeConversation.id}`).then(()=>setToast("Link del canale copiato")).catch(()=>setToast("Impossibile copiare il link."))} aria-label="Copia link del canale" title="Condividi questo canale"><Copy size={17}/></button>}{activeSpace ? <button onClick={createInvite} aria-label="Copia invito"><UserPlus size={19} /></button> : null}
               {["channel", "voice_channel"].includes(activeConversation.kind) && activeSpace?.owner_id === session.user.id ? <button onClick={deleteChannel} aria-label="Elimina canale"><Trash2 size={17} /></button> : null}
               {activeConversation.kind !== "voice_channel" ? <button className="message-search-trigger" onClick={openMessageSearch} aria-label="Cerca nei messaggi" aria-expanded={showSearch} aria-controls={showSearch?"message-search":undefined} title="Cerca nei messaggi · Ctrl+K"><Search size={17} /></button> : null}
             </div>
@@ -1613,8 +1650,8 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
                   const sender: Profile = members.find(member => member.id === message.senderId) ?? {id: message.senderId || message.author, username: message.author, display_name: message.author, avatar_color: "#73b7ff"};
                   const date = new Date(message.createdAt).toLocaleDateString("it");
                   return <div key={message.id}>
-                    {(index === 0 || new Date(filteredMessages[index-1].createdAt).toLocaleDateString("it") !== date) && <div className="message-date">{date}</div>}
-                    <ChatMessage continuation={!search&&!showPins&&isMessageContinuation(filteredMessages[index-1],message)} canEdit={canWrite} mentions={resolveMentions(message.body,message.mentions,targetsForSender(message.senderId??""))} mentionTargets={targetsForSender(message.senderId??"")} highlighted={mentionsRecipient(resolveMentions(message.body,message.mentions,targetsForSender(message.senderId??"")),session.user.id,myRoleIds,userStatus!=="invisible")} senderRole={rolesForUser(roleContext,message.senderId??"")[0]} canReact={activePermissions.includes("add_reactions")} canPin={activePermissions.includes("pin_messages")} canManageMessages={activePermissions.includes("manage_messages")} message={message} sender={sender} selfId={session.user.id} roomKey={roomKey} conversationId={activeConversation.id} reply={messages.find(item => item.id === message.replyId)} reactions={extras.reactions.filter(item => item.message_id === message.id)} pinned={extras.pins.some(item => item.message_id === message.id)} onReply={() => {setReplyingTo(message); messageInputRef.current?.focus();}} onEdit={text => editMessage(message, text)} onDelete={async () => {await deleteEncryptedMessage(message.id); if(activeIdRef.current === activeConversation.id) setMessages(prev => prev.filter(item => item.id !== message.id));}} onReact={async emoji => {await toggleMessageReaction(message.id, emoji); await refreshExtras(activeConversation.id);}} onPin={async () => {await toggleMessagePin(message.id); await refreshExtras(activeConversation.id);}} onProfile={anchor=>openUserProfile(sender,anchor)} onToast={setToast} />
+                    {(index === 0 || new Date(filteredMessages[index-1].createdAt).toLocaleDateString("it") !== date) && <div className="message-date">{messageDayLabel(message.createdAt)}</div>}
+                    <ChatMessage onHushLink={openHushLink} onJumpToReply={()=>void jumpToMessage(message.replyId!)} replySender={memberProfilesMap[messageLookup.get(message.replyId??"")?.senderId??""]} continuation={!search&&!showPins&&isMessageContinuation(filteredMessages[index-1],message)} canEdit={canWrite} mentions={resolveMentions(message.body,message.mentions,targetsForSender(message.senderId??""))} mentionTargets={targetsForSender(message.senderId??"")} highlighted={mentionsRecipient(resolveMentions(message.body,message.mentions,targetsForSender(message.senderId??"")),session.user.id,myRoleIds,userStatus!=="invisible")||(message.senderId!==session.user.id&&!!message.replyId&&messageLookup.get(message.replyId)?.senderId===session.user.id)} senderRole={rolesForUser(roleContext,message.senderId??"")[0]} canReact={activePermissions.includes("add_reactions")} canPin={activePermissions.includes("pin_messages")} canManageMessages={activePermissions.includes("manage_messages")} message={message} sender={sender} selfId={session.user.id} roomKey={roomKey} conversationId={activeConversation.id} reply={messageLookup.get(message.replyId??"")} reactions={extras.reactions.filter(item => item.message_id === message.id)} pinned={extras.pins.some(item => item.message_id === message.id)} onReply={() => {setReplyingTo(message); messageInputRef.current?.focus();}} onEdit={text => editMessage(message, text)} onDelete={async () => {await deleteEncryptedMessage(message.id); if(activeIdRef.current === activeConversation.id) setMessages(prev => prev.filter(item => item.id !== message.id));}} onReact={async emoji => {await toggleMessageReaction(message.id, emoji); await refreshExtras(activeConversation.id);}} onPin={async () => {await toggleMessagePin(message.id); await refreshExtras(activeConversation.id);}} onProfile={anchor=>openUserProfile(sender,anchor)} onToast={setToast} />
                   </div>;
                 })}
                 <div ref={messageEnd} />

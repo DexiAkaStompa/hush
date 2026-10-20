@@ -11,7 +11,6 @@ export function isMessageContinuation(
   if (
     !previous?.senderId ||
     previous.senderId !== current.senderId ||
-    previous.replyId ||
     current.replyId
   )
     return false;
