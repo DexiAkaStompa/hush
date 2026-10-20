@@ -1,10 +1,11 @@
 /**
  * Incoming call ringtone manager.
  * Supports custom audio files (MP3, WAV, OGG, M4A) stored in IndexedDB,
- * with graceful fallback to a Web Audio API synthesized harmonic chime loop.
+ * with bundled call audio as the default and a synthesized fallback.
  */
 
 import { useSyncExternalStore } from "react";
+import { configureSoundOutput, soundPackUrl } from "./sound-pack";
 
 export type CustomRingtoneRecord = {
   id: "active";
@@ -272,7 +273,7 @@ export type RingtoneOptions = {
 
 /**
  * Starts the incoming call ringtone.
- * Plays the custom MP3 file if configured, otherwise falls back to melodic chimes.
+ * Plays the custom MP3 file if configured, otherwise the bundled ringtone.
  * Returns a function to cancel/stop the ringtone immediately.
  */
 export function startIncomingCallRingtone(options?: RingtoneOptions): () => void {
@@ -283,38 +284,27 @@ export function startIncomingCallRingtone(options?: RingtoneOptions): () => void
   const interval = options?.intervalMs ?? 2200;
   const volMult = options?.volumeMultiplier ?? 1.0;
 
-  if (cachedCustomRingtone && typeof window !== "undefined" && typeof Audio !== "undefined") {
+  if (typeof Audio !== "undefined") {
     try {
-      const url = URL.createObjectURL(cachedCustomRingtone.data);
-      const audio = new Audio(url);
+      const url = cachedCustomRingtone ? URL.createObjectURL(cachedCustomRingtone.data) : null;
+      const audio = new Audio(url ?? soundPackUrl("call_ringing"));
       audio.loop = true;
 
-      // Apply output volume & routing from media settings
-      try {
-        const mediaRaw = localStorage.getItem("hush:media:v1");
-        if (mediaRaw) {
-          const parsed = JSON.parse(mediaRaw);
-          if (typeof parsed.outputVolume === "number") {
-            audio.volume = Math.min(1, Math.max(0, (parsed.outputVolume / 100) * volMult));
-          }
-          if (parsed.outputId && "setSinkId" in audio) {
-            void (audio as any).setSinkId(parsed.outputId).catch(() => {});
-          }
-        } else {
-          audio.volume = Math.min(1, Math.max(0, 0.75 * volMult));
-        }
-      } catch {
-        audio.volume = Math.min(1, Math.max(0, 0.75 * volMult));
-      }
+      configureSoundOutput(audio, 0.75 * volMult);
 
       activeAudioElement = audio;
       activeAudioUrl = url;
 
+      let failed = false;
+      const onFailure = () => {
+        if (failed || activeAudioElement !== audio) return;
+        failed = true;
+        fallbackToSynth(interval, volMult);
+      };
+      audio.onerror = onFailure;
       const playPromise = audio.play();
       if (playPromise) {
-        playPromise.catch(() => {
-          fallbackToSynth(interval, volMult);
-        });
+        playPromise.catch(onFailure);
       }
     } catch {
       fallbackToSynth(interval, volMult);

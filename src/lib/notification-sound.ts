@@ -1,10 +1,11 @@
 /**
  * Notification sound manager.
  * Supports custom audio files (MP3, WAV, OGG) stored in IndexedDB,
- * with graceful fallback to a Web Audio API synthesized notification chime.
+ * with bundled notification audio as the default.
  */
 
 import { useSyncExternalStore } from "react";
+import { configureSoundOutput, soundPackUrl } from "./sound-pack";
 
 export type CustomNotificationRecord = {
   id: "active";
@@ -168,108 +169,25 @@ export function useCustomNotificationSound(): CustomNotificationRecord | null {
   return useSyncExternalStore(subscribeCustomNotificationSound, () => cachedCustomSound);
 }
 
-// Web Audio API Synthesizer (Default chime)
-let audioContext: AudioContext | null = null;
-
-function getContext(): AudioContext | null {
-  if (typeof window === "undefined") return null;
-  const AudioCtx =
-    window.AudioContext ||
-    (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-  if (!AudioCtx) return null;
-
-  if (!audioContext || audioContext.state === "closed") {
-    try {
-      audioContext = new AudioCtx();
-    } catch {
-      return null;
-    }
-  }
-
-  if (audioContext.state === "suspended") {
-    void audioContext.resume().catch(() => {});
-  }
-
-  return audioContext;
-}
-
-function playDefaultChime() {
-  const ctx = getContext();
-  if (!ctx) return;
-  try {
-    const now = ctx.currentTime;
-
-    // Note 1: 659.25 Hz (E5)
-    const osc1 = ctx.createOscillator();
-    const gain1 = ctx.createGain();
-    osc1.type = "sine";
-    osc1.frequency.setValueAtTime(659.25, now);
-    gain1.gain.setValueAtTime(0, now);
-    gain1.gain.linearRampToValueAtTime(0.18, now + 0.02);
-    gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
-    osc1.connect(gain1);
-    gain1.connect(ctx.destination);
-    osc1.start(now);
-    osc1.stop(now + 0.4);
-
-    // Note 2: 880 Hz (A5)
-    const osc2 = ctx.createOscillator();
-    const gain2 = ctx.createGain();
-    osc2.type = "sine";
-    osc2.frequency.setValueAtTime(880, now + 0.08);
-    gain2.gain.setValueAtTime(0, now + 0.08);
-    gain2.gain.linearRampToValueAtTime(0.22, now + 0.1);
-    gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
-    osc2.connect(gain2);
-    gain2.connect(ctx.destination);
-    osc2.start(now + 0.08);
-    osc2.stop(now + 0.55);
-  } catch {}
-}
-
 let activePreviewAudio: HTMLAudioElement | null = null;
 let activePreviewUrl: string | null = null;
 
+function createNotificationAudio(): { audio: HTMLAudioElement; url: string | null } {
+  const url = cachedCustomSound ? URL.createObjectURL(cachedCustomSound.data) : null;
+  const audio = new Audio(url ?? soundPackUrl("message1"));
+  configureSoundOutput(audio);
+  return { audio, url };
+}
+
 export function playMessageNotificationSound(): void {
-  if (cachedCustomSound && typeof window !== "undefined" && typeof Audio !== "undefined") {
-    try {
-      const url = URL.createObjectURL(cachedCustomSound.data);
-      const audio = new Audio(url);
-
-      try {
-        const mediaRaw = localStorage.getItem("hush:media:v1");
-        if (mediaRaw) {
-          const parsed = JSON.parse(mediaRaw);
-          if (typeof parsed.outputVolume === "number") {
-            audio.volume = Math.min(1, Math.max(0, parsed.outputVolume / 100));
-          }
-          if (parsed.outputId && "setSinkId" in audio) {
-            void (audio as any).setSinkId(parsed.outputId).catch(() => {});
-          }
-        }
-      } catch {}
-
-      audio.onended = () => {
-        URL.revokeObjectURL(url);
-      };
-      audio.onerror = () => {
-        URL.revokeObjectURL(url);
-        playDefaultChime();
-      };
-
-      const playPromise = audio.play();
-      if (playPromise) {
-        playPromise.catch(() => {
-          URL.revokeObjectURL(url);
-          playDefaultChime();
-        });
-      }
-    } catch {
-      playDefaultChime();
-    }
-  } else {
-    playDefaultChime();
-  }
+  if (typeof Audio === "undefined") return;
+  try {
+    const { audio, url } = createNotificationAudio();
+    const cleanup = () => { if (url) URL.revokeObjectURL(url); };
+    audio.onended = cleanup;
+    audio.onerror = cleanup;
+    void audio.play().catch(cleanup);
+  } catch {}
 }
 
 export function stopNotificationPreview(): void {
@@ -290,24 +208,16 @@ export function stopNotificationPreview(): void {
 
 export function previewNotificationSound(): () => void {
   stopNotificationPreview();
-  if (cachedCustomSound && typeof window !== "undefined" && typeof Audio !== "undefined") {
+  if (typeof Audio !== "undefined") {
     try {
-      const url = URL.createObjectURL(cachedCustomSound.data);
-      const audio = new Audio(url);
+      const { audio, url } = createNotificationAudio();
       activePreviewAudio = audio;
       activePreviewUrl = url;
-      audio.onended = () => {
-        stopNotificationPreview();
-      };
-      void audio.play().catch(() => {
-        stopNotificationPreview();
-        playDefaultChime();
-      });
-    } catch {
-      playDefaultChime();
-    }
-  } else {
-    playDefaultChime();
+      const cleanup = () => { if (activePreviewAudio === audio) stopNotificationPreview(); };
+      audio.onended = cleanup;
+      audio.onerror = cleanup;
+      void audio.play().catch(cleanup);
+    } catch {}
   }
   return stopNotificationPreview;
 }

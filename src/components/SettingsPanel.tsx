@@ -154,7 +154,7 @@ function RingtoneSettings() {
                 ({(customRingtone.size / (1024 * 1024)).toFixed(2)} MB)
               </>
             ) : (
-              "Predefinita · Sintetizzatore melodico Hush"
+              "Predefinita · Pacchetto suoni Hush"
             )}
           </span>
         </div>
@@ -303,7 +303,7 @@ function NotificationSoundSettings() {
                 ({(customSound.size / (1024 * 1024)).toFixed(2)} MB)
               </>
             ) : (
-              "Predefinito · Chime melodico Hush"
+              "Predefinito · Pacchetto suoni Hush"
             )}
           </span>
         </div>

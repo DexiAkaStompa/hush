@@ -716,7 +716,7 @@ export function MediaStage({
     setDeafened(next);
     const track = localStreamRef.current?.getAudioTracks()[0];
     if (track) { track.enabled = !next && micEnabled.current; setMic(track.enabled); }
-    void playCallSound(next ? "disabled" : "enabled");
+    void playCallSound(next ? "deafen" : "undeafen");
   };
 
   const toggleCamera = async () => {
@@ -725,7 +725,7 @@ export function MediaStage({
     if (videoTrack?.enabled && videoTrack.readyState === "live") {
       videoTrack.enabled = !videoTrack.enabled;
       setCamera(videoTrack.enabled);
-      void playCallSound(videoTrack.enabled ? "enabled" : "disabled");
+      void playCallSound(videoTrack.enabled ? "cameraOn" : "cameraOff");
       return;
     }
     try {
@@ -752,7 +752,7 @@ export function MediaStage({
       setLocalStream(new MediaStream(nextStream.getTracks()));
       setCamera(true);
       await renegotiatePeers();
-      void playCallSound("enabled");
+      void playCallSound("cameraOn");
     } catch {
       setNotice("Permesso videocamera non concesso.");
     }
@@ -788,7 +788,7 @@ export function MediaStage({
       void channelRef.current?.track({ userId, inCall: true, sharing: false, joinedAt: new Date().toISOString() });
       setLocalStream(localStreamRef.current ? new MediaStream(localStreamRef.current.getTracks()) : null);
       await renegotiatePeers();
-      void playCallSound("disabled");
+      void playCallSound("shareEnd");
       return;
     }
     try {
@@ -853,6 +853,7 @@ export function MediaStage({
         void channelRef.current?.track({ userId, inCall: true, sharing: false, joinedAt: new Date().toISOString() });
         setLocalStream(localStreamRef.current ? new MediaStream(localStreamRef.current.getTracks()) : null);
         void renegotiatePeers();
+        void playCallSound("shareEnd");
       }, { once: true });
 
       await renegotiatePeers();
