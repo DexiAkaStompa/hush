@@ -858,7 +858,7 @@ export function MediaStage({
       <div className="call-controls">
         <button className={mic ? "control mic active" : "control mic"} onClick={() => { void toggleMic(); }} aria-pressed={mic} aria-label={mic ? "Disattiva microfono" : "Attiva microfono"}>{mic ? <Mic size={19} /> : <MicOff size={19} />}</button>
         <button className={camera ? "control camera active" : "control camera"} onClick={() => { void toggleCamera(); }} disabled={sharing} aria-pressed={camera} aria-label={camera ? "Disattiva videocamera" : "Attiva videocamera"}>{camera ? <Video size={19} /> : <VideoOff size={19} />}</button>
-        <button className={sharing ? "control share active" : "control share"} onClick={() => { void toggleShare(); }} aria-pressed={sharing}><MonitorUp size={19} /><span>{sharing ? "Interrompi" : "Condividi"}</span></button>
+        {typeof navigator.mediaDevices?.getDisplayMedia === 'function' && <button className={sharing ? "control share active" : "control share"} onClick={() => { void toggleShare(); }} aria-pressed={sharing}><MonitorUp size={19} /><span>{sharing ? "Interrompi" : "Condividi"}</span></button>}
         <button className="control hangup" onClick={onClose} aria-label="Lascia chiamata"><PhoneOff size={19} /></button>
       </div>
     </section>

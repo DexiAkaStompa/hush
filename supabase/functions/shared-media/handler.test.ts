@@ -1,5 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { MAX_MEDIA_BYTES, createHandler, resetTokenCacheForTests, type SharedMediaConfig } from "./handler";
+import { MAX_MEDIA_BYTES, createHandler, resetTokenCacheForTests, configFromEnv, type SharedMediaConfig } from "./handler";
+
+it('allows the bundled Android origin while preserving the configured desktop origins', async () => {
+  const configured = configFromEnv({ SHARED_MEDIA_ALLOWED_ORIGINS: 'hush://app,https://gethush.live' });
+  expect(configured.allowedOrigins.has('https://localhost')).toBe(true);
+  expect(configured.allowedOrigins.has('hush://app')).toBe(true);
+  const handler = createHandler({ ...config, allowedOrigins: configured.allowedOrigins });
+  const response = await handler(new Request('https://functions.example/shared-media', { method: 'OPTIONS', headers: {origin:'https://localhost'} }));
+  expect(response.headers.get('Access-Control-Allow-Origin')).toBe('https://localhost');
+});
 
 const userId = "11111111-1111-4111-8111-111111111111";
 const conversationId = "22222222-2222-4222-8222-222222222222";

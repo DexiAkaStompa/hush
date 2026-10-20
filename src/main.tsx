@@ -7,6 +7,13 @@ import "./styles.css";
 import "./ambient-light.css";
 import "./apple-polish.css";
 import "./chat-experience.css";
+import "./mobile.css";
+import { Capacitor } from '@capacitor/core';
+
+if (Capacitor.isNativePlatform()) {
+  document.documentElement.classList.add('native-app');
+  void import('./lib/native-runtime').then(({ initNativeRuntime }) => initNativeRuntime()).catch(() => console.error('Avvio integrazione mobile non riuscito.'));
+}
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

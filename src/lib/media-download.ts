@@ -1,5 +1,6 @@
 import { downloadChunkedMedia, type TransferOptions } from "./chunked-media";
 import { downloadAndDecryptChatImage, releaseChatMediaCacheEntry, type ChatAttachmentMeta } from "./chat-media";
+import { Capacitor } from '@capacitor/core';
 
 type DiskWriter = { write: (bytes: Uint8Array<ArrayBuffer>) => Promise<void>; close: () => Promise<void>; abort: () => Promise<void> };
 type SavePickerWindow = Window & { showSaveFilePicker?: (options: { suggestedName: string }) => Promise<{ createWritable: () => Promise<DiskWriter> }> };
@@ -8,6 +9,11 @@ export async function saveChatAttachment(attachment: ChatAttachmentMeta, convers
   if (attachment.encryption !== "chunked-v1") {
     const url = await downloadAndDecryptChatImage(attachment, conversationId, key);
     if (options.signal?.aborted) {releaseChatMediaCacheEntry(attachment.path, url); options.signal.throwIfAborted();}
+    if (Capacitor.isNativePlatform()) {
+      try { const { exportNativeBlob } = await import('./native-files'); await exportNativeBlob(await (await fetch(url)).blob(), attachment.name); options.onProgress?.(1); }
+      finally { releaseChatMediaCacheEntry(attachment.path, url); }
+      return;
+    }
     const anchor = document.createElement("a"); anchor.href = url; anchor.download = attachment.name; anchor.click();
     setTimeout(() => releaseChatMediaCacheEntry(attachment.path, url), 30_000);
     options.onProgress?.(1);
@@ -15,7 +21,10 @@ export async function saveChatAttachment(attachment: ChatAttachmentMeta, convers
   }
   const desktop = window.hushWindow;
   let writer: DiskWriter | null = null;
-  if (desktop?.beginAttachmentSave && desktop.writeAttachmentSave && desktop.finishAttachmentSave && desktop.abortAttachmentSave) {
+  if (Capacitor.isNativePlatform()) {
+    const { nativeFileWriter } = await import('./native-files');
+    writer = await nativeFileWriter(attachment.name);
+  } else if (desktop?.beginAttachmentSave && desktop.writeAttachmentSave && desktop.finishAttachmentSave && desktop.abortAttachmentSave) {
     const token = await desktop.beginAttachmentSave(attachment.name);
     if (!token) return;
     let index = 0;

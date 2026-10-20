@@ -267,3 +267,36 @@ explicit click. Voice-channel links use `hush://channel/CHANNEL_UUID`; the voice
 header has a copy-link action. Visible voice cards observe authorized presence
 without tracking the viewer as a participant. Discord invite cards open Discord;
 private Discord voice participants are not exposed by Hush.
+
+## Android APK distribution
+
+The Android app bundles the same encrypted Hush client with Capacitor. Android 7+
+with WebView 119+ is required. Run `npm run android:sync`, then
+`npm run android:open` to use Android Studio (Java 21, SDK 36). The application ID
+is `app.hush.mobile`; its version and monotonic version code come from package.json.
+
+Version tags build a signed release APK and SHA-256 checksum alongside desktop
+installers. The reusable `android.yml` workflow can also build any branch manually;
+it checks the release signature and boots the bundled login in an Android emulator,
+including a check that secure WebCrypto is available. GitHub Secrets contain
+ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS and
+ANDROID_KEY_PASSWORD. The signing key must be preserved for future updates.
+A local backup is kept in the ignored `.mobile-signing.local/` directory: back up
+that directory privately, never commit or publish it. The workflow fails if no key
+is available rather than silently replacing the signing identity.
+
+Download the APK from GitHub Releases or the website, allow installation by the
+browser/file manager when Android asks, and install it. Future APKs signed with the
+same key install over the existing app and retain its account and local data.
+Updating is currently manual; the mobile Settings screen links to downloads.
+
+The initial Android client supports foreground use. Native push notifications,
+background calling/foreground services and initiating screen sharing are not yet
+implemented. Microphone/camera permissions are requested when used; the app can
+receive calls/media while active. Attachment export decrypts into bounded native
+cache writes and opens Android's share/save sheet. Temporary exports are cleaned
+up on a subsequent launch after 24 hours. Device cloud backup is disabled.
+
+The shared-media and link-preview functions explicitly allow the bundled Android
+origin https://localhost, preserving configured web/desktop origins and all
+existing authentication and conversation membership checks.

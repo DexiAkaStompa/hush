@@ -1,0 +1,106 @@
+name: Build and verify Android APK
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        type: string
+        required: true
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch or version to build
+        default: main
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  BUILD_REF: ${{ inputs.ref }}
+
+jobs:
+  build:
+    name: Android signed APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Install dependencies and test
+        run: |
+          npm ci
+          npm test
+          if [[ "$BUILD_REF" == v* ]]; then
+            test "${BUILD_REF#v}" = "$(node -p "require('./package.json').version")"
+          fi
+      - name: Build bundled Android app
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
+          VITE_MUSIC_BRIDGE_URL: ${{ secrets.VITE_MUSIC_BRIDGE_URL }}
+          VITE_SHARED_MEDIA_URL: ${{ vars.VITE_SHARED_MEDIA_URL }}
+        run: |
+          node scripts/build-android-icons.mjs
+          npm run android:sync
+      - name: Build and verify release signature
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          set -euo pipefail
+          test -n "$ANDROID_KEYSTORE_BASE64"
+          export ANDROID_KEYSTORE_PATH="$RUNNER_TEMP/hush-release.jks"
+          trap 'rm -f "$ANDROID_KEYSTORE_PATH"' EXIT
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$ANDROID_KEYSTORE_PATH"
+          chmod 600 "$ANDROID_KEYSTORE_PATH"
+          chmod +x android/gradlew
+          (cd android && ./gradlew assembleRelease --no-daemon)
+          mkdir -p release
+          version="$(node -p "require('./package.json').version")"
+          apk="release/Hush-${version}-android.apk"
+          cp android/app/build/outputs/apk/release/app-release.apk "$apk"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$apk"
+          sha256sum "$apk" > "$apk.sha256"
+      - name: Enable emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Verify app launch and encryption support on Android
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          script: cd android && ./gradlew connectedDebugAndroidTest --no-daemon
+      - name: Upload Android test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-test-report
+          path: android/app/build/reports/androidTests/connected/
+          if-no-files-found: ignore
+      - name: Upload Android artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-release
+          path: |
+            release/*.apk
+            release/*.apk.sha256
+          if-no-files-found: error

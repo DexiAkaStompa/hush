@@ -1,4 +1,11 @@
+import { Capacitor } from '@capacitor/core';
+
 export async function copyText(text: string): Promise<void> {
+  if (Capacitor.isNativePlatform()) {
+    const { Clipboard } = await import('@capacitor/clipboard');
+    await Clipboard.write({ string: text });
+    return;
+  }
   if (window.hushWindow) {
     await window.hushWindow.copyText(text);
     return;

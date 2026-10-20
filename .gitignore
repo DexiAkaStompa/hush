@@ -13,3 +13,20 @@ build/icon.png
 build/icon.ico
 build/icon-mac.png
 gdrive-config.json
+
+# Native build output and local signing material
+android/.gradle/
+android/**/build/
+android/local.properties
+android/app/src/main/assets/public/
+android/app/src/main/assets/capacitor*.json
+android/capacitor-cordova-android-plugins/
+ios/App/App/public/
+ios/App/App/capacitor.config.json
+ios/App/Pods/
+ios/App/build/
+ios/**/xcuserdata/
+*.keystore
+*.jks
+*.p12
+*.mobileprovision

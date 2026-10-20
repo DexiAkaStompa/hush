@@ -15,6 +15,8 @@ const origins = new Set(
     .split(",")
     .map((v) => v.trim()),
 );
+// Capacitor serves bundled, trusted Android assets from this secure origin.
+origins.add("https://localhost");
 const rates = new Map<string, { count: number; until: number }>();
 let active = 0;
 Deno.serve(async (request) => {

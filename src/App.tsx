@@ -1338,6 +1338,38 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
     }
     throw Error('invalid_link');
   };
+  useEffect(() => {
+    const receive = () => {
+      const url = sessionStorage.getItem('hush:pending-link');
+      if (!url) return;
+      sessionStorage.removeItem('hush:pending-link');
+      if (url.startsWith('hush://invite/')) {
+        setSpaceMode('join'); setFormPrimary(url); setFormError(null); setModal('space');
+      } else void openHushLink(url).catch(() => setToast('Questo canale non è accessibile.'));
+    };
+    const failure = (event: Event) => setToast((event as CustomEvent<string>).detail);
+    document.addEventListener('hush:link', receive);
+    document.addEventListener('hush:native-error', failure);
+    receive();
+    return () => { document.removeEventListener('hush:link', receive); document.removeEventListener('hush:native-error', failure); };
+  }, [session.user.id]);
+  useEffect(() => {
+    const back = (event: Event) => {
+      if (confirmAction) setConfirmAction(null);
+      else if (identityTarget) setIdentityTarget(null);
+      else if (viewedProfile) setViewedProfile(null);
+      else if (manageSpace) setManageSpace(false);
+      else if (modal) setModal(null);
+      else if (showEmojiPicker) setShowEmojiPicker(false);
+      else if (showSearch) closeMessageSearch();
+      else if (sidebarOpen) setSidebarOpen(false);
+      else if (activeConversationId) { setActiveConversationId(null); setSidebarOpen(true); }
+      else return;
+      event.preventDefault();
+    };
+    document.addEventListener('hush:back', back);
+    return () => document.removeEventListener('hush:back', back);
+  }, [confirmAction, identityTarget, viewedProfile, manageSpace, modal, showEmojiPicker, showSearch, sidebarOpen, activeConversationId]);
   const selectSpace = (spaceId: string) => {
     setActiveSpaceId(spaceId);
     setActiveConversationId(null);

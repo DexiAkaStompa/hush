@@ -1,4 +1,4 @@
-name: Build and publish desktop release
+name: Build and publish Hush release
 
 on:
   push:
@@ -158,9 +158,16 @@ jobs:
             release/latest-mac*.yml
           if-no-files-found: error
 
+  android:
+    name: Android
+    uses: ./.github/workflows/android.yml
+    with:
+      ref: ${{ inputs.release_tag || github.ref_name }}
+    secrets: inherit
+
   publish:
     name: Create GitHub Release
-    needs: [windows, linux, macos]
+    needs: [windows, linux, macos, android]
     runs-on: ubuntu-latest
     steps:
       - name: Download Windows artifacts
@@ -181,11 +188,17 @@ jobs:
           name: macos-release
           path: release-assets/macos
 
+      - name: Download Android artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: android-release
+          path: release-assets/android
+
       - name: Publish release and artifacts
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          mapfile -t files < <(find release-assets -type f \( -name '*.exe' -o -name '*.deb' -o -name '*.AppImage' -o -name '*.dmg' -o -name '*.zip' -o -name '*.blockmap' -o -name 'latest*.yml' \) -print)
+          mapfile -t files < <(find release-assets -type f \( -name '*.exe' -o -name '*.deb' -o -name '*.AppImage' -o -name '*.dmg' -o -name '*.zip' -o -name '*.apk' -o -name '*.apk.sha256' -o -name '*.blockmap' -o -name 'latest*.yml' \) -print)
           if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "Release $RELEASE_TAG already exists; updating its assets."
           else

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
+import { Capacitor } from '@capacitor/core';
 import {
   Bell,
   Check,
@@ -496,6 +497,7 @@ function UpdateSettings({ inCall }: { inCall: boolean }) {
     available: "Nuova versione disponibile", current: "Hush è aggiornato", downloading: "Download in corso…",
     downloaded: "Aggiornamento pronto da installare", error: "Aggiornamento non riuscito",
   };
+  if (Capacitor.isNativePlatform()) return <div className="modal-form settings-form"><h3>Aggiornamenti Android</h3><p className="settings-hint">Scarica l’ultimo APK e installalo sopra Hush per conservare account e dati. Android ti chiederà di confermare l’installazione.</p><a className="modal-primary" href="https://gethush.live/#download" target="_blank" rel="noopener noreferrer">Scarica l’ultima versione</a></div>;
   return <div className="modal-form settings-form"><h3>Sempre all’ultima versione</h3>
     <p className="settings-hint">Hush cerca nuove versioni all’avvio e ogni quattro ore e le scarica in background da DexiAkaStompa/hush su GitHub.</p>
     <div className="update-card" role="status"><Download size={28} /><strong>{status ? labels[status.status] : window.hushWindow ? "Caricamento…" : "Disponibile nell’app desktop"}</strong>
