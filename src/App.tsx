@@ -53,6 +53,10 @@ import { Modal } from "./components/Modal";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { ProfileImage } from "./components/ProfileImage";
 import { UserContextMenu, type ContextMenuTarget } from "./components/UserContextMenu";
+import { WorkspaceContextMenu, type WorkspaceMenuItem } from "./components/WorkspaceContextMenu";
+import { GroupInvite } from "./components/GroupInvite";
+import { readWorkspacePreferences, saveWorkspacePreferences, sortWorkspaceItems, togglePreference } from "./lib/workspace-preferences";
+import { assignSpaceChannel, createSpaceCategory } from "./lib/space-management";
 import { IncomingCallDialog } from "./components/IncomingCallDialog";
 import { EmojiPicker } from "./components/EmojiPicker";
 import { ChatMessage } from "./components/ChatMessage";
@@ -93,6 +97,7 @@ import {
   useUserStatus,
   isChatMuted,
   toggleChatMute,
+  setChatMuted,
   useMutedChats,
   showDesktopNotification,
   type UserStatus,
@@ -119,7 +124,7 @@ import {
   type Space,
 } from "./lib/workspace";
 
-type ModalKind = "space" | "channel" | "voice" | "dm" | "settings" | "server" | null;
+type ModalKind = "space" | "channel" | "voice" | "dm" | "category" | "settings" | "server" | null;
 type KeyStatus = "idle" | "loading" | "ready" | "waiting" | "error";
 type CallStage = {
   open: boolean;
@@ -292,6 +297,10 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
   const [toast, setToast] = useState<string | null>(null);
   const [stage, setStage] = useState<CallStage>(EMPTY_CALL_STAGE);
   const [contextMenu, setContextMenu] = useState<ContextMenuTarget | null>(null);
+  const [workspaceMenu, setWorkspaceMenu] = useState<{ x: number; y: number; space?: Space; conversation?: Conversation; canManage?: boolean } | null>(null);
+  const [inviteGroup, setInviteGroup] = useState<{ conversation: Conversation; members: Profile[] } | null>(null);
+  const [workspacePreferences, setWorkspacePreferences] = useState(() => readWorkspacePreferences(session.user.id));
+  useEffect(() => { saveWorkspacePreferences(session.user.id, workspacePreferences); }, [session.user.id, workspacePreferences]);
   const [dmDetails, setDmDetails] = useState<Record<string, { recipient: Profile | null; lastMessage?: string | null }>>({});
   const [incomingCall, setIncomingCall] = useState<IncomingCallPayload | null>(null);
   const userStatus = useUserStatus();
@@ -771,6 +780,27 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
     return data;
   }, [identity, session, updateDmDetails]);
 
+  useEffect(() => {
+    if (!supabase) return;
+    let active = true;
+    const client = supabase;
+    const refresh = () => {
+      if (document.hidden) return;
+      void loadWorkspace(session.user.id).then(data => {
+        if (active) setDirectMessages(current => JSON.stringify(current) === JSON.stringify(data.directMessages) ? current : data.directMessages);
+      }).catch(() => undefined);
+      if (activeConversationId) void loadConversationMembers(activeConversationId).then(rows => {
+        if (active) setMembers(current => JSON.stringify(current) === JSON.stringify(rows) ? current : rows);
+      }).catch(() => undefined);
+    };
+    const subscription = client.channel(`workspace-members:${session.user.id}:${activeConversationId ?? "home"}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "conversation_members", filter: `user_id=eq.${session.user.id}` }, refresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "conversation_members", filter: `conversation_id=eq.${activeConversationId ?? "00000000-0000-0000-0000-000000000000"}` }, refresh)
+      .subscribe();
+    window.addEventListener("focus", refresh);
+    return () => { active = false; window.removeEventListener("focus", refresh); void client.removeChannel(subscription); };
+  }, [session.user.id, activeConversationId]);
+
   const refreshChannels = useCallback(async (spaceId: string, preferredConversationId?: string) => {
     const nextChannels = await loadChannels(spaceId);
     setChannels(nextChannels);
@@ -968,7 +998,7 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
         onStatuses: statuses => {if(current) setRemoteStatuses(statuses);},
         onExtrasChanged: () => {if(current) void refreshExtras(activeConversation.id).catch(() => undefined);},
         onTyping: ({userId, isTyping}) => {
-          if (current && nextMembers.some(member => member.id === userId)) setTypingUsers(prev => ({...prev, [userId]: isTyping ? Date.now() + 7000 : 0}));
+          if (current && mentionContextRef.current.members.some(member => member.id === userId)) setTypingUsers(prev => ({...prev, [userId]: isTyping ? Date.now() + 7000 : 0}));
         },
         onMessageDeleted: row => { if (current) setMessages(prev => prev.filter(message => message.id !== row.id)); },
         onMessageChanged: async row => {
@@ -981,7 +1011,13 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
         onMessage: async (row) => {
           if (!current) return;
           const isOwn = row.sender_id === session.user.id;
-          const sender = nextMembers.find((member) => member.id === row.sender_id);
+          let sender = mentionContextRef.current.members.find(member => member.id === row.sender_id);
+          if (!sender && row.sender_id) {
+            const updatedMembers = await loadConversationMembers(activeConversation.id).catch(() => nextMembers);
+            if (!current) return;
+            setMembers(updatedMembers);
+            sender = updatedMembers.find(member => member.id === row.sender_id);
+          }
           const encrypted = { v: 1 as const, iv: row.nonce, ciphertext: row.ciphertext };
           let body = "Messaggio non decifrabile con la chiave corrente.";
           let replyId: string | null = null;
@@ -1376,7 +1412,9 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
   }, [session.user.id]);
   useEffect(() => {
     const back = (event: Event) => {
-      if (showStatusMenu) setShowStatusMenu(false);
+      if (workspaceMenu) setWorkspaceMenu(null);
+      else if (inviteGroup) setInviteGroup(null);
+      else if (showStatusMenu) setShowStatusMenu(false);
       else if (contextMenu) setContextMenu(null);
       else if (confirmAction) setConfirmAction(null);
       else if (identityTarget) setIdentityTarget(null);
@@ -1395,7 +1433,7 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
     };
     document.addEventListener('hush:back', back);
     return () => document.removeEventListener('hush:back', back);
-  }, [confirmAction, identityTarget, viewedProfile, manageSpace, modal, showEmojiPicker, showSearch, sidebarOpen, activeConversationId, isMobile, mobileBrowsing, mobileActions, showStatusMenu, contextMenu, stage.open, stage.expanded]);
+  }, [workspaceMenu, inviteGroup, confirmAction, identityTarget, viewedProfile, manageSpace, modal, showEmojiPicker, showSearch, sidebarOpen, activeConversationId, isMobile, mobileBrowsing, mobileActions, showStatusMenu, contextMenu, stage.open, stage.expanded]);
   useEffect(() => { if (isMobile && stage.open && stage.expanded) setMobileBrowsing(false); }, [isMobile, stage.open, stage.expanded]);
   const selectSpace = (spaceId: string) => {
     setActiveSpaceId(spaceId);
@@ -1404,6 +1442,95 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
   };
 
   const togglePinnedMessages = () => { if (!activeConversation) return; setShowPins(!showPins); if(!showPins && roomKey && extras.pins.length) void loadAndDecryptMessages(activeConversation.id, roomKey, members, {ids: extras.pins.map(pin => pin.message_id)}).then(rows => {if(activeIdRef.current === activeConversation.id) setMessages(prev => mergeMessages(prev, rows));}).catch(error => setToast(readableError(error)));};
+  const contextAction = (action: () => Promise<unknown>) => { void action().catch(error => setToast(readableError(error))); };
+  const openServerMenu = (event: React.MouseEvent, space: Space) => {
+    event.preventDefault(); setContextMenu(null); setWorkspaceMenu({ x: event.clientX, y: event.clientY, space });
+    void supabase?.rpc("is_space_admin", { requested_space: space.id }).then(({ data, error }) => {
+      if (!error) setWorkspaceMenu(current => current?.space?.id === space.id ? { ...current, canManage: data === true } : current);
+    });
+  };
+  const openGroupInvite = (conversation: Conversation) => contextAction(async () => {
+    const rows = await loadConversationMembers(conversation.id);
+    if (!rows.some(member => member.id === session.user.id)) throw new Error("Non fai più parte di questo gruppo.");
+    setInviteGroup({ conversation, members: rows });
+  });
+  const markRoomsRead = async (ids: string[]) => {
+    await Promise.all(ids.map(id => markConversationRead(id)));
+    setUnreads(current => { const next = { ...current }; for (const id of ids) next[id] = { conversation_id: id, unread_count: 0, last_read_at: new Date().toISOString() }; return next; });
+    setToast("Segnato come già letto");
+  };
+  const copyId = (id: string) => contextAction(async () => { await copyText(id); setToast("ID copiato"); });
+  const preference = (field: "pinned" | "favorites" | "hiddenMuted", id: string) => setWorkspacePreferences(current => ({ ...current, [field]: togglePreference(current[field], id) }));
+  const leaveGroup = (conversation: Conversation) => setConfirmAction({ title: `Lasciare “${conversation.name}”?`, description: "Perderai accesso al gruppo. Un membro dovrà aggiungerti di nuovo per rientrare.", label: "Lascia gruppo", action: async () => {
+    const { error } = await supabase!.rpc("leave_group_dm", { p_conversation_id: conversation.id }); if (error) throw error;
+    if (stage.conversationId === conversation.id) setStage(EMPTY_CALL_STAGE);
+    setDirectMessages(current => current.filter(room => room.id !== conversation.id));
+    if (activeConversationId === conversation.id) setActiveConversationId(null);
+    setToast("Hai lasciato il gruppo");
+  } });
+  const workspaceMenuItems = (): WorkspaceMenuItem[] => {
+    const space = workspaceMenu?.space, conversation = workspaceMenu?.conversation;
+    if (space) {
+      const canManage = workspaceMenu?.canManage ?? (space.owner_id === session.user.id || (space.id === activeSpaceId && canManageSpace));
+      const manage = () => { if (space.id !== activeSpaceId) selectSpace(space.id); setManageSpace(true); };
+      const openCreation = (kind: Exclude<ModalKind, null>) => { if (space.id !== activeSpaceId) selectSpace(space.id); openModal(kind); };
+      return [
+        { label: "Apri server", action: () => selectSpace(space.id) },
+        { label: "Segna come già letto", action: () => contextAction(async () => { const channels = await loadChannels(space.id); await markRoomsRead(channels.filter(room => room.kind !== "voice_channel").map(room => room.id)); }) },
+        { label: "Invita al server", separator: true, disabled: !canManage, action: () => contextAction(async () => {
+          const { data, error } = await supabase!.rpc("create_space_invite", { p_space_id: space.id }); if (error) throw error;
+          const link = `hush://invite/${data}`; setInviteLink(link); try { await copyText(link); setInviteNotice("Invito copiato: scade tra 7 giorni"); } catch { setInviteNotice("Copia il link per invitare i tuoi amici."); }
+        }) },
+        { label: "Notifiche del server", items: [
+          { label: "Silenzia tutti i canali", action: () => contextAction(async () => { for (const room of await loadChannels(space.id)) setChatMuted(room.id, true); setToast("Notifiche del server silenziate"); }) },
+          { label: "Riattiva tutti i canali", action: () => contextAction(async () => { for (const room of await loadChannels(space.id)) setChatMuted(room.id, false); setToast("Notifiche del server riattivate"); }) },
+        ] },
+        { label: "Nascondi canali silenziati", checked: workspacePreferences.hiddenMuted.includes(space.id), action: () => preference("hiddenMuted", space.id) },
+        { label: canManage ? "Personalizza server" : "Informazioni sul server", separator: true, action: () => setIdentityTarget({ kind: "space", id: space.id, value: space, readOnly: !canManage }) },
+        ...(canManage ? [
+          { label: "Impostazioni del server", action: manage },
+          { label: "Crea canale di testo", action: () => openCreation("channel") },
+          { label: "Crea canale vocale", action: () => openCreation("voice") },
+          { label: "Crea categoria", action: () => openCreation("category") },
+        ] : []),
+        { label: "Sposta server", items: ["In cima", "In fondo"].map((label, index) => ({ label, action: () => setWorkspacePreferences(current => { const order = sortWorkspaceItems(spaces, current.serverOrder).map(item => item.id).filter(id => id !== space.id); return { ...current, serverOrder: index ? [...order, space.id] : [space.id, ...order] }; }) })) },
+        ...(space.owner_id !== session.user.id ? [{ label: "Lascia server", separator: true, danger: true, action: () => setConfirmAction({ title: `Lasciare “${space.name}”?`, description: "Perderai accesso ai canali del server. Per rientrare servirà un nuovo invito.", label: "Lascia server", action: async () => {
+          const rooms = await loadChannels(space.id);
+          const { error } = await supabase!.rpc("leave_space", { p_space_id: space.id }); if (error) throw error;
+          setSpaces(current => current.filter(item => item.id !== space.id)); if (activeSpaceId === space.id) { setActiveSpaceId(null); setActiveConversationId(null); }
+          if (stage.conversationId && rooms.some(room => room.id === stage.conversationId)) setStage(EMPTY_CALL_STAGE);
+        } }) }] : []),
+        { label: "Copia ID server", separator: true, action: () => copyId(space.id) },
+      ];
+    }
+    if (!conversation) return [];
+    const isDm = conversation.kind === "group_dm";
+    const isGroup = isDm && (!!conversation.identity_customized || !dmDetails[conversation.id]?.recipient);
+    return [
+      { label: "Segna come già letto", disabled: conversation.kind === "voice_channel", action: () => contextAction(() => markRoomsRead([conversation.id])) },
+      ...(isDm ? [
+        { label: workspacePreferences.pinned.includes(conversation.id) ? "Non fissare più" : "Fissa in alto", separator: true, action: () => preference("pinned", conversation.id) },
+        { label: workspacePreferences.favorites.includes(conversation.id) ? "Rimuovi dai preferiti" : "Aggiungi ai preferiti", action: () => preference("favorites", conversation.id) },
+        ...(isGroup ? [
+          { label: "Invita al gruppo", separator: true, action: () => openGroupInvite(conversation) },
+          { label: "Modifica gruppo", action: () => setIdentityTarget({ kind: "conversation", id: conversation.id, value: conversation, readOnly: false }) },
+        ] : [{ label: "Crea un gruppo", separator: true, action: () => { openModal("dm"); setFormPrimary("Nuovo gruppo"); setFormSecondary(dmDetails[conversation.id]?.recipient?.username ?? ""); } },
+          ...(dmDetails[conversation.id]?.recipient ? [{ label: "Visualizza profilo", action: () => openUserProfile(dmDetails[conversation.id].recipient!) }] : [])]),
+      ] : []),
+      { label: isChatMuted(conversation.id) ? "Riattiva notifiche" : "Silenzia conversazione", separator: true, action: () => { const muted = toggleChatMute(conversation.id); setToast(muted ? "Notifiche silenziate" : "Notifiche riattivate"); } },
+      ...(!isDm ? [
+        { label: canManageSpace ? "Modifica canale" : "Informazioni sul canale", action: () => setIdentityTarget({ kind: "conversation", id: conversation.id, value: conversation, readOnly: !canManageSpace }) },
+        { label: "Copia link del canale", action: () => contextAction(async () => { await copyText(`hush://channel/${conversation.id}`); setToast("Link copiato"); }) },
+        ...(canManageSpace ? [
+          { label: "Sposta nella categoria", items: [{ id: null, name: "Senza categoria" }, ...categories].map(category => ({ label: category.name, checked: (conversation.category_id ?? null) === category.id, action: () => contextAction(async () => { await assignSpaceChannel(conversation.id, category.id, conversation.position ?? 0); await refreshChannels(conversation.space_id!); }) })) },
+          { label: "Permessi e ordine dei canali", action: () => setManageSpace(true) },
+          { label: "Elimina canale", danger: true, separator: true, action: () => setConfirmAction({ title: `Eliminare #${conversation.name}?`, description: "Il canale e i suoi messaggi verranno eliminati per tutti. L’operazione non può essere annullata.", label: "Elimina canale", action: async () => { const { error } = await supabase!.rpc("delete_space_channel", { p_conversation_id: conversation.id }); if (error) throw error; if (activeConversationId === conversation.id) setActiveConversationId(null); if (stage.conversationId === conversation.id) setStage(EMPTY_CALL_STAGE); await refreshChannels(conversation.space_id!); } }) },
+        ] : []),
+      ] : []),
+      ...(isGroup ? [{ label: "Lascia gruppo", separator: true, danger: true, action: () => leaveGroup(conversation) }] : []),
+      { label: "Copia ID canale", separator: true, action: () => copyId(conversation.id) },
+    ];
+  };
   const conversationActions = activeConversation ? (<div className="header-actions">
               <button
                 type="button"
@@ -1420,6 +1547,7 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
               <button onClick={() => startCall(activeConversation, false)} aria-label="Avvia chiamata"><Phone size={18} /></button>
               <button onClick={() => startCall(activeConversation, true)} aria-label="Avvia videochiamata"><Video size={19} /></button>
               <button onClick={()=>setIdentityTarget({kind:"conversation",id:activeConversation.id,value:activeConversation,readOnly:!!activeConversation.space_id&&!canManageSpace})} aria-label={activeConversation.kind==="group_dm"?"Personalizza gruppo":"Informazioni e aspetto del canale"} title="Nome, descrizione e aspetto"><Settings size={17}/></button>
+              {activeConversation.kind === "group_dm" && (activeConversation.identity_customized || members.length > 2) && <button onClick={() => openGroupInvite(activeConversation)} aria-label="Invita al gruppo" title="Invita al gruppo"><UserPlus size={19}/></button>}
               {activeConversation.kind === "voice_channel" && <button onClick={()=>void copyText(`hush://channel/${activeConversation.id}`).then(()=>setToast("Link del canale copiato")).catch(()=>setToast("Impossibile copiare il link."))} aria-label="Copia link del canale" title="Condividi questo canale"><Copy size={17}/></button>}{activeSpace ? <button onClick={createInvite} aria-label="Copia invito"><UserPlus size={19} /></button> : null}
               {["channel", "voice_channel"].includes(activeConversation.kind) && activeSpace?.owner_id === session.user.id ? <button onClick={deleteChannel} aria-label="Elimina canale"><Trash2 size={17} /></button> : null}
               {activeConversation.kind !== "voice_channel" ? <button className="message-search-trigger" onClick={openMessageSearch} aria-label="Cerca nei messaggi" aria-expanded={showSearch} aria-controls={showSearch?"message-search":undefined} title="Cerca nei messaggi · Ctrl+K"><Search size={17} /></button> : null}
@@ -1431,8 +1559,8 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
       <aside className="server-rail" aria-label="Server" onClickCapture={() => { setMobileBrowsing(true); setSidebarOpen(false); }}>
         <div className={`rail-item ${activeSpaceId === null ? "is-selected" : ""}`}><button className={`brand-mark ${activeSpaceId === null ? "selected" : ""}`} aria-current={activeSpaceId===null?"page":undefined} onClick={() => { setActiveSpaceId(null); setActiveConversationId(null); setStage((current) => current.open ? { ...current, expanded: false } : current); }} aria-label={`Messaggi diretti e amici${incomingFriendRequests ? `, ${incomingFriendRequests} richieste ricevute` : ""}`} title="Messaggi diretti e amici"><BrandMark size={28} />{incomingFriendRequests>0&&<span className="friends-rail-badge">{incomingFriendRequests}</span>}</button></div>
         <div className="rail-rule" />
-        {spaces.map((space) => (
-          <div className={`rail-item ${activeSpaceId===space.id?"is-selected":""}`} key={space.id}><button className={`server-icon ${activeSpaceId === space.id ? "selected" : ""}`} aria-current={activeSpaceId===space.id?"page":undefined} onClick={() => selectSpace(space.id)} aria-label={space.name} title={space.name}>{safeCommunityImage(space.icon_data)?<img className="community-icon-img" src={space.icon_data!} alt=""/>:initialsFor(space.name)}{allTextConversations.some(conv=>conv.space_id===space.id && (unreads[conv.id]?.unread_count??0)>0) && <i className="server-unread-dot"/>}</button></div>
+        {sortWorkspaceItems(spaces, workspacePreferences.serverOrder).map((space) => (
+          <div className={`rail-item ${activeSpaceId===space.id?"is-selected":""}`} key={space.id}><button className={`server-icon ${activeSpaceId === space.id ? "selected" : ""}`} aria-current={activeSpaceId===space.id?"page":undefined} onClick={() => selectSpace(space.id)} aria-label={space.name} title={space.name} onContextMenu={event => openServerMenu(event, space)}>{safeCommunityImage(space.icon_data)?<img className="community-icon-img" src={space.icon_data!} alt=""/>:initialsFor(space.name)}{allTextConversations.some(conv=>conv.space_id===space.id && (unreads[conv.id]?.unread_count??0)>0) && <i className="server-unread-dot"/>}</button></div>
         ))}
         <button className="server-icon add-server" onClick={() => openModal("space")} aria-label="Crea o unisciti a un server"><Plus size={20} /></button>
       </aside>
@@ -1462,13 +1590,13 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
                       onDragEnd={()=>setDragChannelId(null)}
                       onDragOver={e=>{if(dragChannelId)e.preventDefault();}}
                       onDrop={e=>{e.preventDefault();void dropChannel(channel.id);}}
-                      hidden={!!channel.category_id&&collapsedCategories.has(channel.category_id)}
+                      hidden={(!!channel.category_id&&collapsedCategories.has(channel.category_id)) || (!!activeSpaceId && workspacePreferences.hiddenMuted.includes(activeSpaceId) && isChatMuted(channel.id))}
                       className={`channel-row ${activeConversationId === channel.id ? "active" : ""}`}
                       onClick={() => { setActiveConversationId(channel.id); setSidebarOpen(false); setStage((current) => current.open ? { ...current, expanded: false } : current); }}
                       onContextMenu={(e) => {
                         e.preventDefault();
-                        const next = toggleChatMute(channel.id);
-                        setToast(next ? `Notifiche silenziate per #${channel.name}` : `Notifiche riattivate per #${channel.name}`);
+                        setContextMenu(null);
+                        setWorkspaceMenu({x:e.clientX,y:e.clientY,conversation:channel});
                       }}
                     >
                       <Hash size={17} style={channel.identity_customized?{color:identityColor(channel.accent_color)}:undefined}/>
@@ -1485,7 +1613,7 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
                   <div key={channel.id}>
                   {channel.category_id&&(index===0||voiceChannels[index-1].category_id!==channel.category_id)&&<button className="category-toggle" aria-expanded={!collapsedCategories.has(channel.category_id)} onClick={()=>setCollapsedCategories(current=>{const next=new Set(current);next.has(channel.category_id!)?next.delete(channel.category_id!):next.add(channel.category_id!);return next;})}><ChevronDown size={12}/><span>{categories.find(c=>c.id===channel.category_id)?.name}</span></button>}
                   <button
-                    hidden={!!channel.category_id&&collapsedCategories.has(channel.category_id)}
+                    hidden={(!!channel.category_id&&collapsedCategories.has(channel.category_id)) || (!!activeSpaceId && workspacePreferences.hiddenMuted.includes(activeSpaceId) && isChatMuted(channel.id))}
                     draggable={canManageSpace}
                     onDragStart={e=>{setDragChannelId(channel.id);e.dataTransfer.effectAllowed="move";e.dataTransfer.setData("text/plain",channel.id);}}
                     onDragEnd={()=>setDragChannelId(null)}
@@ -1493,6 +1621,7 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
                     onDrop={e=>{e.preventDefault();void dropChannel(channel.id);}}
                     key={channel.id}
                     className={`channel-row voice-row ${activeConversationId === channel.id ? "active" : ""}`}
+                    onContextMenu={event => {event.preventDefault();setContextMenu(null);setWorkspaceMenu({x:event.clientX,y:event.clientY,conversation:channel});}}
                     onClick={() => {
                       setActiveConversationId(channel.id);
                       setSidebarOpen(false);
@@ -1508,7 +1637,7 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
           ) : (
             <div className="channel-section">
               <div className="section-label"><span>messaggi diretti</span><button onClick={() => openModal("dm")} aria-label="Nuovo gruppo DM"><Plus size={14} /></button></div>
-              {directMessages.filter(conversation => !dmQuery.trim() || `${conversation.name} ${dmDetails[conversation.id]?.recipient?.display_name ?? ""} ${dmDetails[conversation.id]?.recipient?.username ?? ""}`.toLocaleLowerCase().includes(dmQuery.trim().toLocaleLowerCase())).map((conversation) => {
+              {sortWorkspaceItems(directMessages, [...workspacePreferences.pinned, ...workspacePreferences.favorites.filter(id => !workspacePreferences.pinned.includes(id))]).filter(conversation => !dmQuery.trim() || `${conversation.name} ${dmDetails[conversation.id]?.recipient?.display_name ?? ""} ${dmDetails[conversation.id]?.recipient?.username ?? ""}`.toLocaleLowerCase().includes(dmQuery.trim().toLocaleLowerCase())).map((conversation) => {
                 const details = dmDetails[conversation.id];
                 const partner = details?.recipient;
                 const isGroup=!!conversation.identity_customized||!!conversation.icon_data||!!conversation.description;
@@ -1526,18 +1655,7 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
                       setSidebarOpen(false);
                       setStage((current) => (current.open ? { ...current, expanded: false } : current));
                     }}
-                    onContextMenu={(e) => {
-                      if (partner) {
-                        e.preventDefault();
-                        setContextMenu({
-                          x: e.clientX,
-                          y: e.clientY,
-                          user: partner,
-                          inCall: stage.open,
-                          conversationId: conversation.id,
-                        });
-                      }
-                    }}
+                    onContextMenu={event => { event.preventDefault(); setContextMenu(null); setWorkspaceMenu({x:event.clientX,y:event.clientY,conversation}); }}
                   >
                     {safeCommunityImage(conversation.banner_data) && <img className="conversation-banner-image" src={conversation.banner_data!} alt="" aria-hidden="true" />}
                     <span className="dm-avatar" style={{ backgroundColor: avatarColor }}>
@@ -1551,7 +1669,7 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
                     </span>
                     {partner && <i className={`dm-presence status-${onlineUserIds.includes(partner.id) ? (remoteStatuses[partner.id] === "dnd" ? "dnd" : "online") : "invisible"}`} aria-label={onlineUserIds.includes(partner.id) ? "Online" : "Offline"}/>}
                     <span className="dm-copy">
-                      <strong className="dm-name">{displayName}{!!unreads[conversation.id]?.unread_count && <span className="unread-badge">{unreads[conversation.id].unread_count}</span>}{isChatMuted(conversation.id) ? <BellOff size={12} className="sidebar-mute-icon" /> : null}</strong>
+                      <strong className="dm-name">{displayName}{workspacePreferences.pinned.includes(conversation.id) && <span className="workspace-row-marker" title="Conversazione fissata">◆</span>}{workspacePreferences.favorites.includes(conversation.id) && <span className="workspace-row-marker" title="Preferiti">★</span>}{!!unreads[conversation.id]?.unread_count && <span className="unread-badge">{unreads[conversation.id].unread_count}</span>}{isChatMuted(conversation.id) ? <BellOff size={12} className="sidebar-mute-icon" /> : null}</strong>
                       <small className="dm-snippet">{snippet}</small>
                     </span>
                   </button>
@@ -1845,6 +1963,7 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
             ><span className="member-avatar"><Avatar profile={member} /><i className={`status ${member.id === session.user.id ? (userStatus === "invisible" ? "status-away" : userStatus === "dnd" ? "status-dnd" : "status-online") : (remoteStatuses[member.id] === "dnd" ? "status-dnd" : onlineUserIds.includes(member.id) ? "status-online" : "status-away")}`} /></span><span><strong style={{color:rolesForUser(roleContext,member.id)[0]?.color}}>{member.display_name}</strong><small>{rolesForUser(roleContext,member.id)[0]?.name??`@${member.username}`}</small></span></button>
           ))}
         </div>
+        {activeConversation?.kind === "group_dm" && (activeConversation.identity_customized || members.length > 2) && <button className="invite-group-button" onClick={() => openGroupInvite(activeConversation)}><UserPlus size={17}/> Invita al gruppo</button>}
         <div className="privacy-note"><ShieldCheck size={16} /><p><strong>{keyStatus === "ready" ? "Chiave verificata" : "Supabase connesso"}</strong><span>{identity ? `Dispositivo ${identity.id.slice(0, 8)}` : "Registrazione dispositivo…"}</span></p><i className={`backend-light backend-${keyStatus === "error" ? "degraded" : "ready"}`} /></div>
       </aside>
 
@@ -1866,6 +1985,25 @@ function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; the
 
       {modal === "voice" ? <Modal title="Nuovo canale vocale" description={`Crea una stanza vocale persistente in ${activeSpace?.name ?? "questo server"}.`} onClose={() => setModal(null)}><form className="modal-form" onSubmit={submitVoiceChannel}><label>Nome del canale<input autoFocus required maxLength={80} value={formPrimary} onChange={(event) => setFormPrimary(event.target.value)} placeholder="Lounge" /></label>{formError ? <div className="auth-error">{formError}</div> : null}<button className="modal-primary" disabled={busy || !formPrimary.trim()}>{busy ? "Creazione…" : "Crea canale vocale"}</button></form></Modal> : null}
 
+      {workspaceMenu && <WorkspaceContextMenu x={workspaceMenu.x} y={workspaceMenu.y} title={workspaceMenu.space?.name ?? workspaceMenu.conversation?.name ?? "Gestisci"} items={workspaceMenuItems()} onClose={() => setWorkspaceMenu(null)}/>}
+      {modal === "category" && activeSpace && <Modal title="Nuova categoria" description={`Organizza i canali di ${activeSpace.name}.`} onClose={() => setModal(null)}><form className="modal-form" onSubmit={event => { event.preventDefault(); void runAction(async () => { await createSpaceCategory(activeSpace.id, formPrimary); const { data, error } = await supabase!.from("space_categories").select("id,name,position").eq("space_id",activeSpace.id).order("position"); if (error) throw error; setCategories(data ?? []); setModal(null); setToast("Categoria creata"); }); }}><label>Nome della categoria<input autoFocus required maxLength={80} value={formPrimary} onChange={event => setFormPrimary(event.target.value)} placeholder="La nostra community"/></label>{formError && <p className="auth-error" role="alert">{formError}</p>}<button className="modal-primary" disabled={busy || !formPrimary.trim()}>{busy ? "Creazione…" : "Crea categoria"}</button></form></Modal>}
+      {inviteGroup && <GroupInvite conversation={inviteGroup.conversation} members={inviteGroup.members} friends={friendships.entries.filter(friend => friend.status === "accepted").map(friend => friend.user)} onClose={() => setInviteGroup(null)} onInvite={async usernames => {
+        if (!identity || !supabase) throw new Error("Attendi che il dispositivo sia pronto.");
+        const conversation = inviteGroup.conversation;
+        const key = await loadConversationKey(conversation.id, identity);
+        if (!key) throw new Error("Apri il gruppo e attendi il caricamento della chiave prima di invitare persone.");
+        const { data, error } = await supabase.rpc("add_group_members", { p_conversation_id: conversation.id, p_usernames: usernames });
+        if (error) throw error;
+        // Membership is committed before envelopes can be sent to the new devices.
+        // Pending key requests also allow another online member to complete delivery.
+        try { await fulfillPendingKeyRequests(conversation.id, key, identity); }
+        catch { setToast("Persone aggiunte. Sincronizzazione delle chiavi in corso…"); }
+        const rows = await loadConversationMembers(conversation.id);
+        if (activeConversationId === conversation.id) setMembers(rows);
+        if (stage.conversationId === conversation.id) setStage(current => ({ ...current, memberNames: Object.fromEntries(rows.map(row => [row.id,row.display_name])) }));
+        if (Number(data) > 0) setToast(`${data} ${Number(data) === 1 ? "persona aggiunta" : "persone aggiunte"} al gruppo`);
+        else setToast("Queste persone fanno già parte del gruppo");
+      }}/>}
       {contextMenu ? (
         <UserContextMenu
           target={contextMenu}

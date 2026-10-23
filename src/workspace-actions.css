@@ -1,0 +1,16 @@
+.workspace-context-menu { position:fixed; z-index:2200; width:250px; min-width:210px; padding:7px; max-width:calc(100vw - 16px); max-height:calc(100dvh - 16px); overflow:auto; animation:none; transform:none; }
+:root .user-context-menu.workspace-context-menu { animation:none; transform:none; }
+.workspace-menu-title { padding:8px 9px; color:var(--text-muted,#aaa); font-size:11px; font-weight:650; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.workspace-context-menu .user-context-item { width:100%; justify-content:space-between; gap:12px; min-height:35px; border-radius:6px; }
+.workspace-context-menu .user-context-item:focus-visible { background:rgba(255,255,255,.09); outline:1px solid rgba(255,255,255,.35); outline-offset:-1px; }
+.workspace-context-menu .user-context-item:disabled { opacity:.4; cursor:default; }
+.workspace-context-menu .workspace-menu-danger { color:#ef7777; }
+.group-invite-list { display:grid; gap:4px; max-height:280px; overflow:auto; }
+.group-invite .group-invite-person { display:flex; align-items:center; gap:10px; padding:9px; border-radius:8px; background:rgba(128,128,128,.06); cursor:pointer; }
+.group-invite-person > span:nth-child(2) { display:grid; gap:2px; flex:1; min-width:0; }
+.group-invite-person small { opacity:.6; font-size:12px; }
+.group-invite .group-invite-person input { width:18px; height:18px; }
+.group-invite-selected { display:flex; flex-wrap:wrap; gap:6px; }
+.group-invite-selected button { padding:5px 8px; border:1px solid rgba(128,128,128,.2); border-radius:6px; background:rgba(128,128,128,.1); color:inherit; }
+.invite-group-button { display:flex; align-items:center; justify-content:center; gap:8px; margin:10px 12px; padding:10px; width:calc(100% - 24px); border:1px solid rgba(128,128,128,.18); border-radius:8px; background:rgba(128,128,128,.1); color:inherit; font:inherit; font-size:12px; cursor:pointer; }
+.workspace-row-marker { opacity:.7; font-size:12px; margin-left:4px; }

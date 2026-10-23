@@ -9,5 +9,7 @@ export default defineConfig({
   },
   test: {
     environment: "node",
+    // Database suites each start a WASM Postgres instance; bound their memory use.
+    maxWorkers: 2,
   },
 });

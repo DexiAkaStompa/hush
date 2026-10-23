@@ -312,6 +312,8 @@ export function readableError(error: unknown) {
     invalid_or_expired_invite: "Questo invito non è valido oppure è scaduto.",
     owner_cannot_leave: "Il proprietario non può lasciare il server: può eliminarlo dalle impostazioni.",
     not_space_admin: "Solo proprietari e amministratori possono eseguire questa azione.",
+    not_editable_group: "Questa conversazione non è un gruppo modificabile. Crea un nuovo gruppo per aggiungere altre persone.",
+    group_member_limit: "Un gruppo può contenere al massimo 25 persone.",
     not_space_owner: "Solo il proprietario può eliminare il server.",
   };
   const key = Object.keys(translations).find((candidate) => message.includes(candidate));
