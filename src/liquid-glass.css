@@ -1,0 +1,87 @@
+/* Tahoe clear-glass calibration. Every rule is scoped; Frosted is unchanged. */
+:root[data-theme="liquid-glass"] { background:#141719; }
+:root[data-theme="liquid-glass"][data-native-glass="true"] { background:transparent; }
+:root[data-theme="liquid-glass"] .app-shell {
+  --hush-hairline:rgba(255,255,255,.13);
+  --hush-glass:rgba(255,255,255,.035);
+  --hush-glass-soft:rgba(255,255,255,.065);
+  --liquid-rim:inset 0 1px 0 rgba(255,255,255,.24),inset 0 -1px 0 rgba(255,255,255,.035),inset 1px 0 0 rgba(255,255,255,.065);
+  background:var(--app-background);
+}
+:root[data-theme="liquid-glass"] .app-shell :is(.server-rail,.channel-sidebar,.member-sidebar) {
+  backdrop-filter:blur(10px) saturate(1.15); -webkit-backdrop-filter:blur(10px) saturate(1.15);
+  box-shadow:inset -1px 0 rgba(255,255,255,.045);
+}
+:root[data-theme="liquid-glass"] .app-shell .server-rail { background:var(--rail-background); }
+:root[data-theme="liquid-glass"] .app-shell .channel-sidebar { background:var(--sidebar-background); }
+:root[data-theme="liquid-glass"] .app-shell .member-sidebar { background:rgba(30,35,40,.14); }
+:root[data-theme="liquid-glass"] .app-shell .chat-panel { background:var(--chat-background); }
+:root[data-theme="liquid-glass"] .dot-pattern { opacity:.08; }
+
+/* Clear body, soft transmitted light, and a narrow polished edge. Optical
+   displacement is reserved for small chrome; messages never get filtered. */
+:root[data-theme="liquid-glass"] .app-shell :is(.chat-header,.composer,.call-widget,.room-music,.call-dock) {
+  background:linear-gradient(145deg,rgba(255,255,255,.065),rgba(255,255,255,.012) 48%,rgba(255,255,255,.025)),rgba(25,30,35,.22);
+  border-color:rgba(255,255,255,.17);
+  box-shadow:var(--liquid-rim),0 6px 20px rgba(0,0,0,.12);
+  backdrop-filter:var(--liquid-refraction,blur(9px) saturate(1.16));
+  -webkit-backdrop-filter:var(--liquid-refraction,blur(9px) saturate(1.16));
+}
+:root[data-theme="liquid-glass"] .app-shell .chat-header { border-radius:0; background-color:rgba(20,25,30,.16); }
+:root[data-theme="liquid-glass"] .app-shell .composer { border-radius:12px; }
+:root[data-theme="liquid-glass"] .app-shell .composer:focus-within { border-color:rgba(255,255,255,.32); box-shadow:var(--liquid-rim),0 6px 20px rgba(0,0,0,.12); }
+:root[data-theme="liquid-glass"] .app-shell .user-panel { background:rgba(255,255,255,.025); box-shadow:inset 0 1px rgba(255,255,255,.13); }
+
+/* Includes portals, profile cards, context menus and call/device popovers. */
+:root[data-theme="liquid-glass"] :is(.modal-card,.user-context-menu,.user-status-menu,.emoji-picker-popover,.message-options,.message-toolbar,.music-source-form,.incoming-call-card,.lightbox-content,.hush-profile-popover,.hush-profile-role-picker,.hush-profile-full,.call-widget-popover,.toast) {
+  --overlay-filter:blur(12px) saturate(1.18);
+  background:var(--overlay-sheen),var(--overlay-background);
+  border:1px solid var(--overlay-border);
+  color:var(--frost);
+  box-shadow:var(--overlay-shadow);
+  backdrop-filter:var(--liquid-refraction,var(--overlay-filter));
+  -webkit-backdrop-filter:var(--liquid-refraction,var(--overlay-filter));
+}
+:root[data-theme="liquid-glass"] .modal-backdrop { background:var(--scrim); backdrop-filter:blur(2px); }
+:root[data-theme="liquid-glass"] :is(.settings-content,.settings-nav,.hush-profile-body,.hush-profile-details,.hush-profile-identity) { background:transparent; }
+:root[data-theme="liquid-glass"] .theme-preview[data-theme-preview="liquid-glass"] {
+  background:linear-gradient(125deg,#8e969e,#2e363d 44%,#1b2026 70%,#626c74);
+}
+:root[data-theme="liquid-glass"] .theme-preview[data-theme-preview="liquid-glass"] :is(.theme-preview-rail,.theme-preview-sidebar,.theme-preview-chat) { background:rgba(24,30,35,.25); box-shadow:inset 0 1px rgba(255,255,255,.28); }
+
+/* Controls keep Hush's existing dimensions and shared corner vocabulary. */
+:root[data-theme="liquid-glass"] :is(.header-actions>button,.composer button,.user-panel button,.modal-card button,.call-widget button,.auth-submit,.auth-input,.invite-group-button,.friends-nav) {
+  background-image:linear-gradient(155deg,rgba(255,255,255,.085),rgba(255,255,255,0) 50%,rgba(255,255,255,.025));
+  border-color:rgba(255,255,255,.16);
+  box-shadow:inset 0 1px rgba(255,255,255,.14),0 2px 5px rgba(0,0,0,.07);
+  transition:background-color 150ms ease,border-color 150ms ease,scale 140ms cubic-bezier(.22,.8,.24,1);
+}
+:root[data-theme="liquid-glass"] [data-glass-hover="true"] {
+  background-image:radial-gradient(100px circle at var(--glass-pointer-x,50%) var(--glass-pointer-y,50%),rgba(255,255,255,.09),transparent 80%),linear-gradient(155deg,rgba(255,255,255,.07),transparent 58%);
+}
+:root[data-theme="liquid-glass"] :is(.header-actions>button,.composer button,.modal-card button,.call-widget button):active:not(:disabled) { scale:.97; transition-duration:70ms; }
+:root[data-theme="liquid-glass"] .app-shell :is(.channel-row.active,.dm-row.active) {
+  background:linear-gradient(130deg,rgba(255,255,255,.115),rgba(255,255,255,.045));
+  box-shadow:inset 0 1px rgba(255,255,255,.18),inset 0 -1px rgba(255,255,255,.045);
+  border-color:rgba(255,255,255,.14);
+}
+:root[data-theme="liquid-glass"] :is(input,textarea,select):focus { outline:none; box-shadow:none; }
+:root[data-theme="liquid-glass"] .auth-screen { background:var(--app-background); }
+:root[data-theme="liquid-glass"] :is(.auth-story,.auth-panel) { background:transparent; }
+:root[data-theme="liquid-glass"] .auth-form-wrap { padding:28px; border:1px solid var(--overlay-border); border-radius:16px; background:var(--overlay-sheen),rgba(27,32,37,.32); box-shadow:var(--overlay-shadow); backdrop-filter:blur(12px); }
+
+@media (pointer:coarse) {
+  :root[data-theme="liquid-glass"] .app-shell :is(.server-rail,.channel-sidebar,.member-sidebar,.chat-header,.composer) { backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px); }
+}
+@media (prefers-reduced-motion:reduce) {
+  :root[data-theme="liquid-glass"] :is(button,.composer,.auth-input) { transition:none; }
+  :root[data-theme="liquid-glass"] :is(button,.composer):active { scale:1; transform:none; }
+}
+@media (prefers-reduced-transparency:reduce), (prefers-contrast:more) {
+  :root[data-theme="liquid-glass"] { --app-background:#141719; --overlay-background:#262b30; --overlay-filter:none; --overlay-sheen:linear-gradient(transparent,transparent); --line:#778089; --rail-background:#171b1f; --sidebar-background:#20262b; --chat-background:#171c20; }
+  :root[data-theme="liquid-glass"] .app-shell :is(.server-rail,.channel-sidebar,.member-sidebar,.chat-panel,.chat-header,.composer,.user-panel,.call-widget,.call-dock,.room-music),
+  :root[data-theme="liquid-glass"] :is(.modal-card,.user-context-menu,.user-status-menu,.emoji-picker-popover,.message-options,.message-toolbar,.music-source-form,.incoming-call-card,.lightbox-content,.hush-profile-popover,.hush-profile-role-picker,.hush-profile-full,.call-widget-popover,.toast,.auth-form-wrap) { background:var(--panel); backdrop-filter:none; -webkit-backdrop-filter:none; border-color:#778089; }
+}
+@supports not (backdrop-filter:blur(1px)) {
+  :root[data-theme="liquid-glass"] { --overlay-background:#262b30; }
+}

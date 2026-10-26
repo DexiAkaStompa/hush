@@ -1,4 +1,4 @@
-document.documentElement.dataset.theme = new URLSearchParams(window.location.search).get("theme") || "hush-void";
+document.documentElement.dataset.theme = new URLSearchParams(window.location.search).get("theme") || "liquid-glass";
 const sourcesRoot = document.getElementById("sources");
 const cancelButton = document.getElementById("cancel");
 

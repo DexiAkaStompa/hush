@@ -4,6 +4,22 @@ import { createRequire } from "node:module";
 const { supportsAcrylic } = createRequire(import.meta.url)("../../electron/window-material.cjs");
 afterEach(() => { vi.unstubAllGlobals(); vi.resetModules(); });
 
+test("Liquid Glass is first and the default; Hush Void is last", async () => {
+  vi.stubGlobal("window", { localStorage: { getItem: () => null } });
+  const { THEMES, readTheme } = await import("./themes");
+  expect(THEMES[0].id).toBe("liquid-glass");
+  expect(THEMES.at(-1)?.id).toBe("hush-void");
+  expect(readTheme()).toBe("liquid-glass");
+});
+test("saved Frosted and opaque theme choices remain selected", async () => {
+  let saved = "frosted-glass";
+  vi.stubGlobal("window", { localStorage: { getItem: () => saved } });
+  const { readTheme } = await import("./themes");
+  expect(readTheme()).toBe("frosted-glass");
+  saved = "hush-void"; expect(readTheme()).toBe("hush-void");
+  saved = "invalid"; expect(readTheme()).toBe("liquid-glass");
+});
+
 function harness(setMaterial?: (enabled: boolean) => Promise<boolean>, reduced = false) {
   const dataset: Record<string, string> = {};
   const listeners: Array<() => void> = [];

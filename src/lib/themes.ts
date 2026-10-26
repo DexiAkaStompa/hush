@@ -8,19 +8,21 @@ export type Theme = {
 };
 
 export const THEMES: readonly Theme[] = [
-  { id: "hush-void", name: "Hush Void", description: "Nero quieto, dettagli freddi", swatches: ["#090b0e", "#171c22", "#a9b4c2"] },
+  { id: "liquid-glass", name: "Liquid Glass", description: "Vetro limpido, bordi rifrangenti e riflessi di luce", swatches: ["#171a1d", "#72777c", "#f5f6f7"] },
   { id: "midnight", name: "Midnight", description: "AMOLED profondo, indaco tenue", swatches: ["#000000", "#0d101a", "#8998ff"] },
   { id: "tokyo-night", name: "Tokyo Night", description: "Blu notte e insegne soffuse", swatches: ["#1a1b26", "#24283b", "#7aa2f7"] },
   { id: "nord", name: "Nord", description: "Ardesia nordica, gelo e pino", swatches: ["#2e3440", "#3b4252", "#88c0d0"] },
   { id: "frosted-glass", name: "Frosted Glass", description: "Vetro fumé neutro, finitura satinata", swatches: ["#17181a", "#333538", "#e8e9eb"] },
-  { id: "liquid-glass", name: "Liquid Glass", description: "Vetro neutro, trasparenza nativa nell’app desktop", swatches: ["#141517", "#414346", "#f1f2f3"] },
+  { id: "hush-void", name: "Hush Void", description: "Nero quieto, dettagli freddi", swatches: ["#090b0e", "#171c22", "#a9b4c2"] },
 ];
 
 const STORAGE_KEY = "hush-theme";
 
 export function readTheme(): ThemeId {
-  const value = window.localStorage.getItem(STORAGE_KEY);
-  return THEMES.some((theme) => theme.id === value) ? value as ThemeId : "hush-void";
+  try {
+    const value = window.localStorage.getItem(STORAGE_KEY);
+    return THEMES.some((theme) => theme.id === value) ? value as ThemeId : "liquid-glass";
+  } catch { return "liquid-glass"; }
 }
 
 let materialRevision = 0;

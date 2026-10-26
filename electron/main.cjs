@@ -547,8 +547,8 @@ function chooseDisplaySource(parent) {
       picker.show();
     });
     // The picker has a separate origin: pass only the current theme identifier.
-    const theme = await parent.webContents.executeJavaScript("document.documentElement.dataset.theme || 'hush-void'").catch(() => "hush-void");
-    const safeTheme = typeof theme === "string" && /^[a-z-]{1,32}$/.test(theme) ? theme : "hush-void";
+    const theme = await parent.webContents.executeJavaScript("document.documentElement.dataset.theme || 'liquid-glass'").catch(() => "liquid-glass");
+    const safeTheme = typeof theme === "string" && /^[a-z-]{1,32}$/.test(theme) ? theme : "liquid-glass";
     await picker.loadURL(`hush://internal/screen-picker.html?theme=${encodeURIComponent(safeTheme)}`);
   });
 }

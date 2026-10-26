@@ -171,7 +171,15 @@ export function App() {
   const [authReady, setAuthReady] = useState(!isSupabaseConfigured);
   const [theme, setTheme] = useState<ThemeId>(readTheme);
 
-  useEffect(() => { applyTheme(theme); }, [theme]);
+  useEffect(() => {
+    applyTheme(theme);
+    let active = true;
+    let dispose: (() => void) | undefined;
+    if (theme === "liquid-glass") void import("./lib/liquid-glass").then(({ installLiquidGlass }) => {
+      if (active) dispose = installLiquidGlass();
+    }).catch(() => { /* The CSS material remains available without optical filters. */ });
+    return () => { active = false; dispose?.(); };
+  }, [theme]);
 
   useEffect(() => {
     const updateVisibility = () => { document.documentElement.dataset.pageHidden = String(document.hidden); };
