@@ -104,7 +104,8 @@ an operating-system kill or crash can leave a `.hush-*.part` temporary file.
 
 Release builds check the separate `rust-preview/rust-latest.json` GitHub release
 channel after initial startup and periodically afterward. Debug builds report
-updates disabled. Downloads use a restricted GitHub origin and bounded temporary
+updates disabled; an explicit debug-only verification mode can download the
+current signed package but cannot install it, including on quit. Downloads use a restricted GitHub origin and bounded temporary
 file, and the updater verifies both the package signature and signed version
 before accepting an installer. The application contains the public verification
 key; the private signing key belongs only in the build secrets. Electron's
@@ -115,6 +116,15 @@ of corrupted bytes and a substituted version. Publishing artifacts is separate
 from exercising a complete installed N-to-N+1 update. Installation, interruption
 during calls and rollback still require that end-to-end acceptance check before
 the preview can replace the stable desktop client.
+
+The published-channel verification has also passed through the real packaged
+origin: check, streamed download and signature verification reached `downloaded`;
+native installation was refused while the call-active guard was set. The debug
+verification mode refused installation again after clearing that guard and
+closed normally without launching an installer. This does not substitute for
+an installed N-to-N+1 upgrade test. CI checks the public installer URL before
+publishing its update manifest and uses stable ASCII asset names so GitHub
+cannot silently transform a filename containing spaces.
 
 ## Windows evidence and remaining parity checks
 
@@ -131,10 +141,23 @@ were verified. These checks did not exercise physical headsets or the release
 installer's packaged origin. Capture automation selected a uniquely titled test
 window through debug-only flags; it did not verify the product source-picker UI.
 
+A separate RNNoise check ran on the actual packaged `https://tauri.localhost`
+origin: the bundled worklet and SIMD WASM loaded under the production CSP,
+processed locally generated synthetic speech at 48 kHz and produced nonzero
+filtered PCM without processor errors. Output gain was zero and no physical
+microphone was used. Native YouTube/Spotify searches returned valid results;
+both provider frames initialized without an explicit player error. This does
+not establish full DRM playback or synchronized music playback.
+
+Custom notification/ringtone samples survived IndexedDB reload unchanged,
+decoded and played through the synthetic muted output pipeline; volume,
+ringtone timeout, DND and muted-chat suppression passed. The native notification
+command was accepted, but OS toast visibility and activation remain unverified.
+
 | Area | Remaining evidence before replacing Electron |
 | --- | --- |
 | Existing accounts and encrypted history | Verify the distributed bridge-to-Rust installer sequence with a retained real installation and rollback. The isolated Windows account handoff has passed; never delete or overwrite the source profile. |
-| Calls | Physical microphones/cameras/headsets, RNNoise, output device selection, direct connectivity and the installed packaged release. The verified synthetic-media forced-TURN test does not cover these. |
+| Calls | Physical microphones/cameras/headsets, output device selection, direct connectivity and the installed packaged release. The synthetic-media forced-TURN and packaged RNNoise tests do not cover these. |
 | Screen sharing | User-controlled monitor/window selection, the product chooser UI and full Hush picker parity. The verified window/system-audio capture does not establish those interactions. |
 | Attachments | Broader media/file combinations, save-dialog interaction and interrupted-download behavior in the installed app. One verified legacy encrypted roundtrip does not cover every historical attachment. |
 | Music | Real YouTube/Spotify playback and synchronized playback, including embedded-player origin/referrer behavior. |

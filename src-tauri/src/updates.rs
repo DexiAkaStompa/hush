@@ -103,7 +103,13 @@ impl UpdateManager {
             return self.status();
         }
         self.publish(app, "checking", None, None, None);
-        if self.download(app).await.is_err() {
+        if let Err(error) = self.download(app).await {
+            // All errors returned by this module are fixed diagnostics, with
+            // no request credentials, URLs or downloaded contents attached.
+            #[cfg(debug_assertions)]
+            eprintln!("Verifica aggiornamenti Rust: {error}");
+            #[cfg(not(debug_assertions))]
+            let _ = error;
             self.publish(
                 app,
                 "error",

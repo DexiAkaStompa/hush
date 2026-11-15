@@ -130,4 +130,17 @@ jobs:
             gh release edit rust-preview --title "Hush Rust for Windows" --prerelease --latest=false --notes-file docs/RUST_RELEASE_NOTES.md
           fi
           gh release upload rust-preview rust-artifacts/*.exe rust-artifacts/*.sig --clobber
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          import { setTimeout } from 'node:timers/promises';
+          const manifest = JSON.parse(fs.readFileSync('rust-artifacts/rust-latest.json', 'utf8'));
+          const url = manifest.platforms['windows-x86_64'].url;
+          let reachable = false;
+          for (let attempt = 0; attempt < 6; attempt++) {
+            const response = await fetch(url, { method: 'HEAD', signal: AbortSignal.timeout(15000) });
+            if (response.ok && Number(response.headers.get('content-length')) > 0) { reachable = true; break; }
+            await setTimeout(5000);
+          }
+          if (!reachable) throw new Error('The published installer URL is unavailable; update manifest not published');
+          NODE
           gh release upload rust-preview rust-artifacts/rust-latest.json --clobber

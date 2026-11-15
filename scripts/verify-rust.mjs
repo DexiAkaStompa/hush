@@ -266,7 +266,7 @@ try {
       const unsubscribe = window.hushWindow.onUpdateStatus(status => phases.push(status.status));
       try {
         const status = await window.hushWindow.checkForUpdates();
-        if (status.status !== 'downloaded' || status.version !== ${JSON.stringify(version)}) throw new Error('Signed update was not downloaded and verified: ' + status.status);
+        if (status.status !== 'downloaded' || status.version !== ${JSON.stringify(version)}) throw new Error('Signed update was not downloaded and verified: ' + status.status + '; phases: ' + phases.join(', '));
         await window.hushWindow.setCallActive(true);
         let activeCallRejected = false;
         try { await window.hushWindow.installUpdate(); } catch (error) { activeCallRejected = String(error).includes('Termina la chiamata'); }
