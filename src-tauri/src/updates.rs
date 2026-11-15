@@ -219,13 +219,20 @@ impl UpdateManager {
             .verify(&bytes)
             .map_err(|_| "Firma aggiornamento non valida.")?;
         drop(bytes);
-        *self
-            .ready
-            .lock()
-            .map_err(|_| "Aggiornamento non disponibile.")? = Some(ReadyUpdate {
-            update,
-            file: temporary,
-        });
+        // Verification builds can never install. Drop their temporary package
+        // now: Tauri exits directly and does not run managed-state destructors.
+        #[cfg(debug_assertions)]
+        drop(temporary);
+        #[cfg(not(debug_assertions))]
+        {
+            *self
+                .ready
+                .lock()
+                .map_err(|_| "Aggiornamento non disponibile.")? = Some(ReadyUpdate {
+                update,
+                file: temporary,
+            });
+        }
         self.publish(app, "downloaded", Some(version), Some(100.0), None);
         Ok(())
     }
