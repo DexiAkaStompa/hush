@@ -86,7 +86,11 @@ it("migrates an authenticated account, preferences, both chunked custom sounds a
   expect([...test.sourceStorage.values]).toEqual(before);
   for (let index = 0; index < 2; index++) {
     expect(test.savedSounds[index].name).toBe(test.sounds[index].name);
-    expect(new Uint8Array(await test.savedSounds[index].data.arrayBuffer())).toEqual(new Uint8Array(await test.sounds[index].data.arrayBuffer()));
+    // Hash the complete blobs instead of deep-comparing a million individual
+    // entries in the test runner. Both fixtures still span multiple IPC frames.
+    const hashes = await Promise.all([test.savedSounds[index].data, test.sounds[index].data].map(async blob =>
+      new Uint8Array(await crypto.subtle.digest("SHA-256", await blob.arrayBuffer()))));
+    expect(hashes[0]).toEqual(hashes[1]);
   }
   expect(test.source.shareKeyRing).toHaveBeenCalledTimes(2);
   expect(test.target.verifyKeyRing).toHaveBeenCalledTimes(2);
