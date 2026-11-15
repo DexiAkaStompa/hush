@@ -33,7 +33,7 @@ export function configFromEnv(env: Record<string, string | undefined> = readEnv(
     googleClientSecret: env.GDRIVE_CLIENT_SECRET || "",
     googleRefreshToken: env.GDRIVE_REFRESH_TOKEN || "",
     googleFolderId: env.GDRIVE_FOLDER_ID || "",
-    allowedOrigins: new Set([...allowed, "https://localhost"]),
+    allowedOrigins: new Set([...allowed, "https://localhost", "https://tauri.localhost", "tauri://localhost"]),
   };
 }
 

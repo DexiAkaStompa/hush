@@ -12,6 +12,7 @@ interface HushWindowControls {
   isMaximized: () => Promise<boolean>;
   setMaterial?: (enabled: boolean) => Promise<boolean>;
   onMaximizedChange: (listener: (maximized: boolean) => void) => () => void;
+  requestCallRelay?: (accessToken: string, conversationId: string) => Promise<unknown>;
   searchMusic: (query: string, provider?: "youtube" | "spotify") => Promise<Array<{
     title: string;
     author: string;

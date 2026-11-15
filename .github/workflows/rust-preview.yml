@@ -1,0 +1,78 @@
+name: Verify Hush Rust preview
+
+on:
+  push:
+    branches: [codex/rust-desktop]
+  pull_request:
+    paths:
+      - src-tauri/**
+      - src/**
+      - scripts/verify-rust.mjs
+      - package*.json
+      - .github/workflows/rust-preview.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rust-preview-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    name: Windows Rust parity preview
+    runs-on: windows-latest
+    timeout-minutes: 45
+    env:
+      VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+      VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
+      VITE_MUSIC_BRIDGE_URL: ${{ secrets.VITE_MUSIC_BRIDGE_URL }}
+      VITE_SHARED_MEDIA_URL: ${{ vars.VITE_SHARED_MEDIA_URL }}
+      VITE_TURN_URL: ${{ vars.VITE_TURN_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.100.0
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+      - name: Install client dependencies
+        run: npm ci
+      - name: Test shared application and desktop adapter
+        run: npm test
+      - name: Build shared interface and icons
+        run: |
+          npm run icons:build
+          npm run build
+      - name: Check Rust formatting
+        run: cargo fmt --manifest-path src-tauri/Cargo.toml --check
+      - name: Test Rust native operations
+        run: cargo test --manifest-path src-tauri/Cargo.toml --locked
+      - name: Lint Rust native operations
+        run: cargo clippy --manifest-path src-tauri/Cargo.toml --locked --all-targets -- -D warnings
+      - name: Build packaged debug runtime for verification
+        run: cargo build --manifest-path src-tauri/Cargo.toml --features custom-protocol --locked
+      - name: Start and verify real WebView2 app
+        run: node scripts/verify-rust.mjs
+      - name: Build isolated preview installer
+        run: npx tauri build --ci -- --locked
+      - name: Upload preview installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: hush-rust-windows-preview
+          path: src-tauri/target/release/bundle/nsis/*.exe
+          if-no-files-found: error
+      - name: Upload verification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hush-rust-verification
+          path: release-rust-check/
+          if-no-files-found: ignore

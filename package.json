@@ -30,7 +30,11 @@
     "test:watch": "vitest",
     "desktop:mac": "electron-builder --mac dmg zip --x64 --arm64",
     "android:sync": "npm run build && cap sync android",
-    "android:open": "cap open android"
+    "android:open": "cap open android",
+    "rust:dev": "tauri dev",
+    "rust:build": "npm run icons:build && tauri build",
+    "rust:check": "cargo check --manifest-path src-tauri/Cargo.toml --locked",
+    "rust:test": "cargo test --manifest-path src-tauri/Cargo.toml --locked"
   },
   "dependencies": {
     "@capacitor/android": "^8.5.3",
@@ -42,6 +46,7 @@
     "@capacitor/share": "^8.0.3",
     "@sapphi-red/web-noise-suppressor": "0.4.0",
     "@supabase/supabase-js": "latest",
+    "@tauri-apps/api": "2.12.4",
     "@vitejs/plugin-react": "latest",
     "electron-updater": "^6.8.9",
     "lucide-react": "latest",
@@ -53,6 +58,7 @@
   "devDependencies": {
     "@capacitor/cli": "^8.5.3",
     "@electric-sql/pglite": "^0.5.5",
+    "@tauri-apps/cli": "2.12.4",
     "@types/react": "latest",
     "@types/react-dom": "latest",
     "concurrently": "latest",

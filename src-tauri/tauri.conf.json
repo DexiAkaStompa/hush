@@ -1,0 +1,56 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Hush Rust Preview",
+  "version": "../package.json",
+  "identifier": "app.hush.rust.preview",
+  "build": {
+    "beforeDevCommand": "npm run dev -- --strictPort",
+    "devUrl": "http://127.0.0.1:5173",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [{
+      "label": "main",
+      "title": "Hush",
+      "width": 1440,
+      "height": 900,
+      "minWidth": 900,
+      "minHeight": 620,
+      "decorations": false,
+      "transparent": true,
+      "backgroundColor": "#00000000",
+      "useHttpsScheme": true,
+      "dragDropEnabled": false,
+      "create": false
+    }],
+    "security": {
+      "capabilities": ["main-window"],
+      "csp": {
+        "default-src": "'self'",
+        "script-src": "'self' 'wasm-unsafe-eval'",
+        "worker-src": "'self' blob:",
+        "style-src": "'self' 'unsafe-inline'",
+        "connect-src": "'self' ipc: http://ipc.localhost https://ipc.localhost https://*.supabase.co wss://*.supabase.co https://hush-turn-credentials.mattiapalermo317.workers.dev https://music.hush.contact https://*.youtube.com https://*.googlevideo.com https://open.spotify.com https://*.googleapis.com https://drive.usercontent.google.com https://*.google.com",
+        "img-src": "'self' data: blob: https:",
+        "media-src": "'self' blob: https:",
+        "frame-src": "https://www.youtube-nocookie.com https://www.youtube.com https://open.spotify.com",
+        "font-src": "'self'",
+        "object-src": "'none'",
+        "base-uri": "'none'",
+        "frame-ancestors": "'none'"
+      }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "icon": ["../build/icon.png", "../build/icon.ico"],
+    "publisher": "Hush contributors",
+    "shortDescription": "Isolated Rust runtime preview for Hush",
+    "windows": {
+      "webviewInstallMode": { "type": "downloadBootstrapper", "silent": true },
+      "nsis": { "installMode": "currentUser", "displayLanguageSelector": false, "languages": ["Italian", "English"] }
+    }
+  }
+}

@@ -32,12 +32,21 @@ export async function loadCallIceConfig(conversationId: string, signal?: AbortSi
     const cacheKey = `${data.session.user.id}:${conversationId}`;
     const previous = cached.get(cacheKey);
     if (!refresh && previous && previous.expiresAt > Date.now() + 120000) return previous;
-    const response = await fetch(url, {
-      method: "POST", headers: { Authorization: `Bearer ${data.session.access_token}`, "Content-Type": "application/json" }, body: JSON.stringify({ conversationId }),
-      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(15000)]) : AbortSignal.timeout(15000),
-    });
-    if (!response.ok) { await response.body?.cancel(); return previous && previous.expiresAt > Date.now() + 60000 ? previous : fallback; }
-    const config = parseCallIceConfig(await response.json());
+    let payload: unknown;
+    const nativeRelay = typeof window !== "undefined" ? window.hushWindow?.requestCallRelay : undefined;
+    if (nativeRelay) {
+      signal?.throwIfAborted();
+      payload = await nativeRelay(data.session.access_token, conversationId);
+      signal?.throwIfAborted();
+    } else {
+      const response = await fetch(url, {
+        method: "POST", headers: { Authorization: `Bearer ${data.session.access_token}`, "Content-Type": "application/json" }, body: JSON.stringify({ conversationId }),
+        signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(15000)]) : AbortSignal.timeout(15000),
+      });
+      if (!response.ok) { await response.body?.cancel(); return previous && previous.expiresAt > Date.now() + 60000 ? previous : fallback; }
+      payload = await response.json();
+    }
+    const config = parseCallIceConfig(payload);
     // Keep credentials in memory only; never persist them with chat or account data.
     for (const [key, item] of cached) if (item.expiresAt <= Date.now()) cached.delete(key);
     if (cached.size >= 64) cached.delete(cached.keys().next().value!);

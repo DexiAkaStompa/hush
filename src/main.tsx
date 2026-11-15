@@ -12,6 +12,13 @@ import "./mobile.css";
 import "./liquid-glass.css";
 import { Capacitor } from '@capacitor/core';
 
+// Install the Rust bridge before any component captures window.hushWindow.
+// Electron and Android keep their existing native integration.
+if ('__TAURI_INTERNALS__' in window) {
+  const { initTauriRuntime } = await import('./lib/tauri-runtime');
+  await initTauriRuntime();
+}
+
 // Apply the saved palette before React's first paint, without changing that choice.
 document.documentElement.dataset.theme = readTheme();
 
