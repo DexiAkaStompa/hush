@@ -41,7 +41,7 @@ beforeEach(() => {
   native.callbacks.clear();
   native.unlisteners.length = 0;
   native.isTauri.mockReturnValue(true);
-  native.invoke.mockImplementation(async (command: string) => command === "native_version" ? "0.5.65" : command === "attachment_save_begin" ? "save-token" : null);
+  native.invoke.mockImplementation(async (command: string) => command === "native_version" ? "0.5.65" : command === "attachment_save_begin" ? "save-token" : command === "native_updates_check" || command === "native_updates_get_status" ? { status: "idle", currentVersion: "0.5.65" } : null);
   native.window.minimize.mockResolvedValue(undefined);
   native.window.toggleMaximize.mockResolvedValue(undefined);
   native.window.close.mockResolvedValue(undefined);
@@ -108,8 +108,10 @@ test("the desktop contract sends raw attachment bytes and never forwards UI even
   native.invoke.mockResolvedValueOnce(credentials);
   expect(await api.requestCallRelay!("session-token", conversationId)).toBe(credentials);
   expect(native.invoke).toHaveBeenCalledWith("native_call_relay", { accessToken: "session-token", conversationId });
-  expect(await api.checkForUpdates()).toMatchObject({ status: "disabled", currentVersion: "0.5.65" });
-  await expect(api.installUpdate()).rejects.toThrow("canale firmato");
+  expect(await api.checkForUpdates()).toMatchObject({ status: "idle", currentVersion: "0.5.65" });
+  expect(native.invoke).toHaveBeenCalledWith("native_updates_check");
+  await api.installUpdate();
+  expect(native.invoke).toHaveBeenCalledWith("native_updates_install");
 });
 
 test("dragging preserves text and controls in interactive regions and supports header double-click", async () => {
@@ -179,7 +181,7 @@ test("resizing coalesces native queries and all subscriptions are released on sh
   expect(callback).toHaveBeenCalledTimes(1);
   dispose!();
   expect(window.hushWindow).toBeUndefined();
-  expect(native.unlisteners).toHaveLength(3);
+  expect(native.unlisteners).toHaveLength(5);
   for (const unlisten of native.unlisteners) expect(unlisten).toHaveBeenCalledTimes(1);
   dispatchMouse("mousedown", new TestElement("header", "chat-header"));
   expect(native.window.startDragging).not.toHaveBeenCalled();

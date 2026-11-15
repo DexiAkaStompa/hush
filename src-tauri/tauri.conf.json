@@ -10,22 +10,26 @@
     "frontendDist": "../dist"
   },
   "app": {
-    "windows": [{
-      "label": "main",
-      "title": "Hush",
-      "width": 1440,
-      "height": 900,
-      "minWidth": 900,
-      "minHeight": 620,
-      "decorations": false,
-      "transparent": true,
-      "backgroundColor": "#00000000",
-      "useHttpsScheme": true,
-      "dragDropEnabled": false,
-      "create": false
-    }],
+    "windows": [
+      {
+        "label": "main",
+        "title": "Hush",
+        "width": 1440,
+        "height": 900,
+        "minWidth": 900,
+        "minHeight": 620,
+        "decorations": false,
+        "transparent": true,
+        "backgroundColor": "#00000000",
+        "useHttpsScheme": true,
+        "dragDropEnabled": false,
+        "create": false
+      }
+    ],
     "security": {
-      "capabilities": ["main-window"],
+      "capabilities": [
+        "main-window"
+      ],
       "csp": {
         "default-src": "'self'",
         "script-src": "'self' 'wasm-unsafe-eval'",
@@ -44,13 +48,41 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis"],
-    "icon": ["../build/icon.png", "../build/icon.ico"],
+    "targets": [
+      "nsis"
+    ],
+    "icon": [
+      "../build/icon.png",
+      "../build/icon.ico"
+    ],
     "publisher": "Hush contributors",
     "shortDescription": "Isolated Rust runtime preview for Hush",
     "windows": {
-      "webviewInstallMode": { "type": "downloadBootstrapper", "silent": true },
-      "nsis": { "installMode": "currentUser", "displayLanguageSelector": false, "languages": ["Italian", "English"] }
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper",
+        "silent": true
+      },
+      "nsis": {
+        "installMode": "currentUser",
+        "displayLanguageSelector": false,
+        "languages": [
+          "Italian",
+          "English"
+        ]
+      }
+    },
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDI4N0JERTQzMjlFRDAxQjAKUldTd0FlMHBROTU3S0s5Rm1ZZEErWTlLdnFZY3RlTFUvTnBMZGhJK1BTaG9sa3BtQTd5RjBZb1cK",
+      "endpoints": [
+        "https://github.com/DexiAkaStompa/hush/releases/download/rust-preview/rust-latest.json"
+      ],
+      "requireSignedVersion": true,
+      "windows": {
+        "installMode": "passive"
+      }
     }
   }
 }

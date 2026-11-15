@@ -1,0 +1,2004 @@
+import { useMobileLayout } from "./lib/use-mobile-layout";
+import { mapConcurrent } from "./lib/async-pool";
+import { UserProfile } from "./components/UserProfile";
+import { MessageSearch } from "./components/MessageSearch";
+import { isMessageContinuation } from "./lib/message-layout";
+import { messageDayLabel } from "./lib/message-dates";
+import { FriendsPanel, FriendActions } from "./components/Friends";
+import { useFriendships } from "./lib/use-friendships";
+import "./navigation-rail.css";
+import type { ProfileAnchor } from "./lib/profile-details";
+import { EMPTY_ROLE_CONTEXT, loadServerRoles, loadChannelPermissions, rolesForUser, canMassMention, reorderChannels, setMemberRoles, type ServerRoleContext, type ServerPermission } from "./lib/server-roles";
+import { extractMentions, resolveMentions, mentionsRecipient, mentionQuery, type MentionTarget, type MessageMention } from "./lib/mentions";
+import { type FormEvent, lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { captureChatScrollAnchor, restoreChatScrollAnchor, type ChatScrollAnchor } from "./lib/chat-scroll";
+import type { Session, RealtimeChannel } from "@supabase/supabase-js";
+import {
+  ArrowLeft,
+  MoreHorizontal,
+  Bell,
+  BellOff,
+  ChevronDown,
+  Copy,
+  Hash,
+  ImagePlus,
+  Loader2,
+  LockKeyhole,
+  LogOut,
+  Menu,
+  MessageCircleMore,
+  Phone,
+  PhoneOff,
+  PanelTopOpen,
+  Plus,
+  Search,
+  Send,
+  Settings,
+  ShieldCheck,
+  Smile,
+  Trash2,
+  UserPlus,
+  UserRound,
+  Video,
+  Volume2,
+  X,
+} from "lucide-react";
+import { CommunityIdentityEditor } from "./components/CommunityIdentityEditor";
+import {identityColor,safeCommunityImage,saveCommunityIdentity,type CommunityIdentity} from "./lib/community-identity";
+import { BrandMark } from "./components/BrandMark";
+import { DotPattern } from "./components/DotPattern";
+import { EncryptedLabel } from "./components/EncryptedLabel";
+import { MediaStage } from "./components/MediaStage";
+import { Modal } from "./components/Modal";
+import { ProfileImage } from "./components/ProfileImage";
+import { UserContextMenu, type ContextMenuTarget } from "./components/UserContextMenu";
+import { WorkspaceContextMenu, type WorkspaceMenuItem } from "./components/WorkspaceContextMenu";
+import { readWorkspacePreferences, saveWorkspacePreferences, sortWorkspaceItems, togglePreference } from "./lib/workspace-preferences";
+import { assignSpaceChannel, createSpaceCategory } from "./lib/space-management";
+import { IncomingCallDialog } from "./components/IncomingCallDialog";
+import { EmojiPicker } from "./components/EmojiPicker";
+import { ChatMessage } from "./components/ChatMessage";
+import { SpaceManagement } from "./components/SpaceManagement";
+import { matchesMessage, mergeMessages } from "./lib/chat-experience";
+import { loadMessageExtras, toggleMessageReaction, toggleMessagePin, updateEncryptedMessage, deleteEncryptedMessage, markConversationRead, getConversationUnreads, type MessageExtras, type ConversationUnread } from "./lib/message-actions";
+import { copyText } from "./lib/clipboard";
+import {
+  type ChatAttachmentMeta,
+  clearChatMediaCache,
+  uploadEncryptedChatFile,
+  validateChatFile,
+} from "./lib/chat-media";
+import { decryptText, encryptText, getKeyFingerprint, roomKeySignature } from "./lib/crypto";
+import {
+  ensureDeviceIdentity,
+  fulfillPendingKeyRequests,
+  initializeConversationKey,
+  loadConversationKey,
+  requestConversationKey,
+  type DeviceIdentity,
+} from "./lib/device-crypto";
+import {
+  broadcastTyping,
+  broadcastCallCancelled,
+  broadcastIncomingCall,
+  persistEncryptedMessage,
+  subscribeToConversation,
+  subscribeToIncomingCalls,
+  subscribeToBackgroundMessages,
+  unsubscribeFromConversation,
+  type EncryptedMessageRow,
+  type IncomingCallPayload,
+} from "./lib/realtime";
+import { startIncomingCallRingtone, stopIncomingCallRingtone } from "./lib/ringtone";
+import {
+  getUserStatus,
+  setUserStatus,
+  useUserStatus,
+  isChatMuted,
+  toggleChatMute,
+  setChatMuted,
+  useMutedChats,
+  showDesktopNotification,
+  type UserStatus,
+} from "./lib/desktop-notifications";
+import { playMessageNotificationSound } from "./lib/notification-sound";
+import { supabase } from "./lib/supabase";
+import type { ThemeId } from "./lib/themes";
+import { playCallSound, playChatSound } from "./lib/interaction-sound";
+import {
+  decryptMessageSnippet,
+  initialsFor,
+  loadAndDecryptMessages,
+  loadChannels,
+  loadConversationMembers,
+  loadDmRecipients,
+  loadLatestEncryptedMessages,
+  loadWorkspace,
+  packMessageContent,
+  readableError,
+  unpackMessageContent,
+  type Conversation,
+  type DecryptedMessage,
+  type Profile,
+  type Space,
+} from "./lib/workspace";
+
+// Closed panels keep their code and subscriptions out of the active workspace.
+
+
+const SettingsPanel = lazy(() => import("./components/SettingsPanel").then(module => ({ default: module.SettingsPanel })));
+const GroupInvite = lazy(() => import("./components/GroupInvite").then(module => ({ default: module.GroupInvite })));
+
+
+type ModalKind = "space" | "channel" | "voice" | "dm" | "category" | "settings" | "server" | null;
+type KeyStatus = "idle" | "loading" | "ready" | "waiting" | "error";
+type CallStage = {
+  open: boolean;
+  expanded: boolean;
+  video: boolean;
+  conversationId: string | null;
+  roomName: string;
+  memberNames: Record<string, string>;
+};
+
+const EMPTY_CALL_STAGE: CallStage = {
+  open: false,
+  expanded: false,
+  video: false,
+  conversationId: null,
+  roomName: "Chiamata",
+  memberNames: {},
+};
+
+function Avatar({ profile, size = "normal" }: { profile: Pick<Profile, "display_name" | "avatar_color" | "avatar_path">; size?: "normal" | "small" }) {
+  return (
+    <span
+      className={`avatar ${size === "small" ? "avatar-small" : ""}`}
+      style={{ backgroundColor: profile.avatar_color }}
+    >
+      {initialsFor(profile.display_name)}<ProfileImage path={profile.avatar_path} alt="" />
+    </span>
+  );
+}
+
+function profileFromSession(session: Session): Profile {
+  const metadata = session.user.user_metadata;
+  const username = typeof metadata.username === "string" ? metadata.username : session.user.email?.split("@")[0] ?? "utente";
+  return {
+    id: session.user.id,
+    username,
+    display_name: typeof metadata.display_name === "string" ? metadata.display_name : username,
+    avatar_color: "#ff7a66",
+  };
+}
+
+export function WorkspaceApp({ session, theme, onThemeChange }: { session: Session; theme: ThemeId; onThemeChange: (theme: ThemeId) => void }) {
+  // Decrypted blobs are useful while browsing, but must not retain up to the
+  // cache budget after signing out or changing the authenticated account.
+  useEffect(() => () => clearChatMediaCache(), [session.user.id]);
+  const friendships = useFriendships(session.user.id);
+  const incomingFriendRequests = friendships.entries.filter(row=>row.status==="pending"&&row.recipient_id===session.user.id).length;
+  const [profile, setProfile] = useState(() => profileFromSession(session));
+  const [inviteLink, setInviteLink] = useState<string | null>(null);
+  const [inviteNotice, setInviteNotice] = useState("");
+  const [viewedProfile,setViewedProfile]=useState<Profile|null>(null);
+  const profileAnchorElement=useRef<HTMLElement|null>(null);
+  const [profileAnchor,setProfileAnchor]=useState<ProfileAnchor>({left:100,right:140,top:100,bottom:140});
+  const [profileExpanded,setProfileExpanded]=useState(false);
+  const openUserProfile=(user:Profile,anchor?:HTMLElement,expanded=false)=>{
+    if(!/^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(user.id)){setToast("Questo profilo non è più disponibile.");return;}
+    profileAnchorElement.current=anchor??null;
+    const rect=anchor?.getBoundingClientRect();setProfileAnchor(rect?{left:rect.left,right:rect.right,top:rect.top,bottom:rect.bottom}:{left:window.innerWidth/2-160,right:window.innerWidth/2-120,top:100,bottom:140});
+    setProfileExpanded(expanded);setViewedProfile(user);
+  };
+  const [identity, setIdentity] = useState<DeviceIdentity | null>(null);
+  const [spaces, setSpaces] = useState<Space[]>([]);
+  const [channels, setChannels] = useState<Conversation[]>([]);
+  const [directMessages, setDirectMessages] = useState<Conversation[]>([]);
+  const [members, setMembers] = useState<Profile[]>([]);
+  const [onlineUserIds, setOnlineUserIds] = useState<string[]>([]);
+  const [messages, setMessages] = useState<DecryptedMessage[]>([]);
+  const [extras, setExtras] = useState<MessageExtras>({ reactions: [], pins: [] });
+  const [replyingTo, setReplyingTo] = useState<DecryptedMessage | null>(null);
+  const [hasOlder, setHasOlder] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const [historyResults, setHistoryResults] = useState<DecryptedMessage[] | null>(null);
+  const [searchingHistory, setSearchingHistory] = useState(false);
+  const [historyNotice, setHistoryNotice] = useState("");
+  const searchGenerationRef = useRef(0);
+  const [allTextConversations, setAllTextConversations] = useState<Conversation[]>([]);
+  const [categories, setCategories] = useState<Array<{id:string;name:string;position:number}>>([]);
+  const [roleContext,setRoleContext]=useState<ServerRoleContext>(EMPTY_ROLE_CONTEXT);
+  const [channelPermissions,setChannelPermissions]=useState<Record<string,ServerPermission[]>>({});
+  const [dragChannelId,setDragChannelId]=useState<string|null>(null);
+  const [mentionCursor,setMentionCursor]=useState<number|null>(null);
+  const [mentionIndex,setMentionIndex]=useState(0);
+  const [mentionDismissed,setMentionDismissed]=useState(false);
+  const mentionContextRef=useRef({roles:EMPTY_ROLE_CONTEXT,members:[] as Profile[],online:[] as string[],conversationId:"",spaceId:""});
+  const [mySpaceRole, setMySpaceRole] = useState("member");
+  const [collapsedCategories,setCollapsedCategories]=useState<Set<string>>(new Set());
+  const [confirmAction,setConfirmAction]=useState<{title:string;description:string;label:string;action:()=>Promise<void>}|null>(null);
+  const [identityTarget,setIdentityTarget]=useState<{kind:"space"|"conversation";id:string;value:CommunityIdentity;readOnly:boolean}|null>(null);
+  const [showPins, setShowPins] = useState(false);
+  const [remoteStatuses, setRemoteStatuses] = useState<Record<string, string>>({});
+  const [typingUsers, setTypingUsers] = useState<Record<string, number>>({});
+  const [unreads, setUnreads] = useState<Record<string, ConversationUnread>>({});
+  const [awayFromBottom, setAwayFromBottom] = useState(false);
+  const [manageSpace, setManageSpace] = useState(false);
+  const messagesRef = useRef<HTMLDivElement>(null);
+  const olderScrollAnchor = useRef<{conversationId:string; anchor:ChatScrollAnchor} | null>(null);
+  const replyJump = useRef<{conversationId:string; messageId:string}|null>(null);
+  const activeChannelRef = useRef<RealtimeChannel | null>(null);
+  const activeIdRef = useRef<string | null>(null);
+  const typingSentRef = useRef(0);
+  const draftByRoom = useRef(new Map<string,string>());
+  const previousDraftRoom = useRef<string|null>(null);
+  const draftValueRef = useRef("");
+  const [activeSpaceId, setActiveSpaceId] = useState<string | null>(null);
+  const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
+  const [roomKey, setRoomKey] = useState<CryptoKey | null>(null);
+  const [keyStatus, setKeyStatus] = useState<KeyStatus>("idle");
+  const [keyRetry, setKeyRetry] = useState(0);
+  const [fingerprint, setFingerprint] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [draft, setDraft] = useState("");
+  const [search, setSearch] = useState("");
+  const [showSearch, setShowSearch] = useState(false);
+  const [showCipher, setShowCipher] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const isMobile = useMobileLayout();
+  const [mobileBrowsing, setMobileBrowsing] = useState(true);
+  const [mobileActions, setMobileActions] = useState(false);
+  const [dmQuery, setDmQuery] = useState("");
+  useEffect(() => { setMobileActions(false); }, [activeConversationId]);
+
+  const [modal, setModal] = useState<ModalKind>(null);
+  const [spaceMode, setSpaceMode] = useState<"create" | "join">("create");
+  const [formPrimary, setFormPrimary] = useState("");
+  const [formSecondary, setFormSecondary] = useState("");
+  const [formError, setFormError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
+  const [stage, setStage] = useState<CallStage>(EMPTY_CALL_STAGE);
+  useEffect(() => {
+    const desktop = window.hushWindow;
+    if (!desktop?.setCallActive) return;
+    // Folding the call into its widget changes expanded, never the call guard.
+    void desktop.setCallActive(stage.open).catch(() => undefined);
+    return () => {
+      if (stage.open) void desktop.setCallActive?.(false).catch(() => undefined);
+    };
+  }, [stage.open]);
+  const [contextMenu, setContextMenu] = useState<ContextMenuTarget | null>(null);
+  const [workspaceMenu, setWorkspaceMenu] = useState<{ x: number; y: number; space?: Space; conversation?: Conversation; canManage?: boolean } | null>(null);
+  const [inviteGroup, setInviteGroup] = useState<{ conversation: Conversation; members: Profile[] } | null>(null);
+  const [workspacePreferences, setWorkspacePreferences] = useState(() => readWorkspacePreferences(session.user.id));
+  useEffect(() => { saveWorkspacePreferences(session.user.id, workspacePreferences); }, [session.user.id, workspacePreferences]);
+  const [dmDetails, setDmDetails] = useState<Record<string, { recipient: Profile | null; lastMessage?: string | null }>>({});
+  const [incomingCall, setIncomingCall] = useState<IncomingCallPayload | null>(null);
+  const userStatus = useUserStatus();
+  const mutedChatIds = useMutedChats();
+  const [showStatusMenu, setShowStatusMenu] = useState(false);
+  const statusMenuRef = useRef<HTMLDivElement>(null);
+  const [desktopCallTarget, setDesktopCallTarget] = useState<HTMLDivElement | null>(null);
+  const ringtoneStopRef = useRef<(() => void) | null>(null);
+  const initialLoadedRef = useRef(false);
+  const dmDetailsRef = useRef(dmDetails);
+  dmDetailsRef.current = dmDetails;
+
+  // Close status menu when clicking outside
+  useEffect(() => {
+    if (!showStatusMenu) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (statusMenuRef.current && !statusMenuRef.current.contains(e.target as Node)) {
+        setShowStatusMenu(false);
+      }
+    };
+    window.addEventListener("mousedown", handleClickOutside);
+    return () => window.removeEventListener("mousedown", handleClickOutside);
+  }, [showStatusMenu]);
+
+  const updateDmDetails = useCallback(async (dms: Conversation[], devIdentity?: DeviceIdentity | null) => {
+    const dmIds = dms.map((d) => d.id);
+    if (dmIds.length === 0) {
+      setDmDetails({});
+      return;
+    }
+    try {
+      const [recipients, latestMessages] = await Promise.all([
+        loadDmRecipients(dmIds, session.user.id),
+        loadLatestEncryptedMessages(dmIds),
+      ]);
+      const entries = await mapConcurrent(dms, 4, async dm => {
+        const recipient = recipients[dm.id]?.recipient ?? null;
+        let lastMessage: string | null = null;
+        const latestRow = latestMessages[dm.id];
+        if (latestRow && devIdentity) {
+          try {
+            const key = await loadConversationKey(dm.id, devIdentity);
+            if (key) {
+              lastMessage = await decryptMessageSnippet(latestRow, key);
+            }
+          } catch {
+            // Key not yet available
+          }
+        }
+        return [dm.id, { recipient, lastMessage }] as const;
+      });
+      const details = Object.fromEntries(entries);
+      setDmDetails((prev) => ({ ...prev, ...details }));
+    } catch {
+      // Ignore background fetch error
+    }
+  }, [session.user.id]);
+
+
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [pendingPreview, setPendingPreview] = useState<string | null>(null);
+  const [uploadingMedia, setUploadingMedia] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const uploadController = useRef<AbortController | null>(null);
+  useEffect(() => () => uploadController.current?.abort(), []);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const messageEnd = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const messageInputRef = useRef<HTMLTextAreaElement>(null);
+
+  const handleInsertEmoji = useCallback((emoji: string) => {
+    const input = messageInputRef.current;
+    if (input) {
+      const start = input.selectionStart ?? draft.length;
+      const end = input.selectionEnd ?? draft.length;
+      const next = draft.slice(0, start) + emoji + draft.slice(end);
+      setDraft(next);
+      requestAnimationFrame(() => {
+        input.focus();
+        const newPos = start + emoji.length;
+        input.setSelectionRange(newPos, newPos);
+      });
+    } else {
+      setDraft((current) => `${current}${emoji}`);
+    }
+    void playChatSound("reaction");
+  }, [draft]);
+
+  const selectFile = useCallback((file: File) => {
+    try {
+      validateChatFile(file);
+    } catch (err) {
+      setToast(err instanceof Error ? err.message : "Immagine non valida");
+      return;
+    }
+    setPendingPreview((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return URL.createObjectURL(file);
+    });
+    setPendingFile(file);
+  }, []);
+
+  const clearPendingFile = useCallback(() => {
+    setPendingPreview((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return null;
+    });
+    setPendingFile(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  }, []);
+
+  const handlePaste = useCallback((event: React.ClipboardEvent) => {
+    const items = event.clipboardData?.items;
+    if (!items) return;
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.type.startsWith("image/")) {
+        const file = item.getAsFile();
+        if (file) {
+          event.preventDefault();
+          selectFile(file);
+          break;
+        }
+      }
+    }
+  }, [selectFile]);
+
+  useEffect(() => {
+    return () => {
+      if (pendingPreview) URL.revokeObjectURL(pendingPreview);
+    };
+  }, [pendingPreview]);
+
+  useEffect(() => {
+    clearPendingFile();
+  }, [activeConversationId, clearPendingFile]);
+
+  const memberProfilesMap = useMemo(() => {
+    const map: Record<string, Profile> = { [profile.id]: profile };
+    for (const member of members) {
+      map[member.id] = member;
+    }
+    return map;
+  }, [members, profile]);
+
+  const activeSpace = useMemo(() => spaces.find((space) => space.id === activeSpaceId) ?? null, [activeSpaceId, spaces]);
+  const conversations = useMemo(() => [...channels, ...directMessages], [channels, directMessages]);
+  const textChannels = useMemo(() => channels.filter((channel) => channel.kind === "channel").sort((a,b) => (categories.findIndex(c=>c.id===a.category_id)-categories.findIndex(c=>c.id===b.category_id)) || ((a.position??0)-(b.position??0))), [channels, categories]);
+  const voiceChannels = useMemo(() => channels.filter((channel) => channel.kind === "voice_channel").sort((a,b)=>(categories.findIndex(c=>c.id===a.category_id)-categories.findIndex(c=>c.id===b.category_id))||((a.position??0)-(b.position??0))), [channels,categories]);
+  const activeConversation = useMemo(
+    () => conversations.find((conversation) => conversation.id === activeConversationId) ?? null,
+    [activeConversationId, conversations],
+  );
+  activeIdRef.current = activeConversationId;
+  draftValueRef.current = draft;
+  useEffect(() => {
+    const previous = previousDraftRoom.current;
+    if (previous) {
+      if(draftValueRef.current) draftByRoom.current.set(previous,draftValueRef.current);
+      else draftByRoom.current.delete(previous);
+      if(draftByRoom.current.size > 50) draftByRoom.current.delete(draftByRoom.current.keys().next().value!);
+    }
+    previousDraftRoom.current = activeConversationId;
+    setDraft(activeConversationId ? draftByRoom.current.get(activeConversationId) ?? "" : "");
+    clearPendingFile(); setSearch("");
+  }, [activeConversationId]);
+  const filteredMessages = useMemo(() => (historyResults ?? messages).filter(message => matchesMessage(message, search) && (!showPins || extras.pins.some(pin => pin.message_id === message.id))), [messages, historyResults, search, showPins, extras.pins]);
+  const messageLookup = useMemo(()=>new Map(messages.map(message=>[message.id,message])),[messages]);
+  const refreshExtras = async (id: string) => {
+    const next = await loadMessageExtras(id);
+    if (activeIdRef.current === id) setExtras(next);
+  };
+  const loadOlder = async () => {
+    if (!activeConversationId || !roomKey || !messages.length || loadingOlder) return;
+    const id = activeConversationId;
+    setLoadingOlder(true);
+    try {
+      const first = messages[0];
+      const older = await loadAndDecryptMessages(id, roomKey, members, { before: { createdAt: first.createdAt, id: first.id } });
+      if (activeIdRef.current !== id) return;
+      const element = messagesRef.current;
+      const anchor = element ? captureChatScrollAnchor(element) : null;
+      olderScrollAnchor.current = anchor ? {conversationId:id, anchor} : null;
+      setMessages(current => mergeMessages(current, older)); setHasOlder(older.length === 200);
+    } catch (error) { setToast(readableError(error)); } finally { setLoadingOlder(false); }
+  };
+  const searchHistory = async () => {
+    if (!roomKey || !activeConversationId || !search.trim()) return;
+    const generation = ++searchGenerationRef.current; const id = activeConversationId; const query = search;
+    setSearchingHistory(true); setHistoryNotice("");
+    let results: DecryptedMessage[] = []; let before: {createdAt:string;id:string} | undefined; let scanned=0;
+    try {
+      while (scanned < 10000 && results.length < 200) {
+        const page = await loadAndDecryptMessages(id, roomKey, members, {before});
+        if (generation !== searchGenerationRef.current || activeIdRef.current !== id) return;
+        scanned += page.length; results = mergeMessages(results, page.filter(message => matchesMessage(message, query))).slice(0,200);
+        setHistoryResults(results);
+        if (page.length < 200) {setHistoryNotice(`${results.length} risultati nella cronologia completa`); break;}
+        before = {createdAt:page[0].createdAt,id:page[0].id};
+        setHistoryNotice(`${scanned} messaggi esaminati · ${results.length} risultati`);
+      }
+      if (scanned >= 10000 || results.length >= 200) setHistoryNotice("Limite ricerca raggiunto: restringi i filtri (massimo 10.000 messaggi / 200 risultati).");
+    } catch(error) {if(generation === searchGenerationRef.current) setToast(readableError(error));}
+    finally {if(generation === searchGenerationRef.current) setSearchingHistory(false);}
+  };
+  useEffect(() => {searchGenerationRef.current++; setSearchingHistory(false); setHistoryResults(null); setHistoryNotice("");}, [search, activeConversationId]);
+  const openMessageSearch = useCallback(() => {
+    if (!activeConversation || activeConversation.kind === "voice_channel") {
+      setToast("Apri una chat per cercare nei messaggi.");
+      return;
+    }
+    setShowSearch(true);setShowPins(false);setSidebarOpen(false);
+    setStage(current=>current.open?{...current,expanded:false}:current);
+    document.querySelector<HTMLInputElement>("#message-search input")?.focus();
+  }, [activeConversation]);
+  const closeMessageSearch = useCallback(() => {
+    if (document.querySelector("#message-search")) document.querySelector<HTMLButtonElement>(".message-search-trigger")?.focus();
+    searchGenerationRef.current++;
+    setShowSearch(false);setSearch("");setHistoryResults(null);setHistoryNotice("");setSearchingHistory(false);
+  }, []);
+  const revealMessage = (id:string) => {
+    const element=document.getElementById(`message-${id}`);if(!element)return false;
+    element.scrollIntoView({block:'center',behavior:'instant'});element.classList.add('is-jump-target');setTimeout(()=>element.classList.remove('is-jump-target'),1800);return true;
+  };
+  const jumpToMessage = async (id:string) => {
+    if(!activeConversationId||!roomKey)return;const roomId=activeConversationId;
+    closeMessageSearch();setShowPins(false);
+    if(!search&&!showPins&&revealMessage(id))return;
+    try{const rows=messageLookup.has(id)?[]:await loadAndDecryptMessages(roomId,roomKey,members,{ids:[id]});if(activeIdRef.current!==roomId)return;if(!messageLookup.has(id)&&!rows.length){setToast('Il messaggio originale non è più disponibile.');return;}replyJump.current={conversationId:roomId,messageId:id};setAwayFromBottom(true);setMessages(current=>mergeMessages(current,rows));}
+    catch(error){setToast(readableError(error));}
+  };
+  useEffect(() => {
+    if (!activeSpaceId || !supabase) {setCategories([]); setMySpaceRole("member"); return;}
+    setMySpaceRole("member");
+    let current=true;
+    void Promise.all([
+      supabase.from("space_categories").select("id,name,position").eq("space_id",activeSpaceId).order("position"),
+      supabase.from("space_members").select("role").eq("space_id",activeSpaceId).eq("user_id",session.user.id).maybeSingle(),
+    ]).then(([cats,membership])=>{if(current) {setCategories(cats.data??[]);setMySpaceRole(membership.data?.role??"member");}});
+    return ()=>{current=false;};
+  }, [activeSpaceId, channels, session.user.id]);
+  useEffect(() => {
+    if (!supabase) return;
+    let current=true;
+    void supabase.from("conversations").select("id,space_id,kind,name,created_by").eq("kind","channel").limit(500).then(({data})=>{if(current) setAllTextConversations((data??[]) as Conversation[]);});
+    return ()=>{current=false;};
+  }, [spaces, channels]);
+  const canManageSpace = activeSpace?.owner_id===session.user.id || ["owner","admin"].includes(mySpaceRole);
+  const activePermissions=channelPermissions[activeConversationId??""]??[];
+  const canWrite=activePermissions.includes("send_messages");
+  mentionContextRef.current={roles:roleContext,members,online:onlineUserIds,conversationId:activeConversationId??"",spaceId:activeConversation?.space_id??""};
+  function targetsForSender(senderId:string):MentionTarget[] {
+    const context=mentionContextRef.current, mass=!context.spaceId||canMassMention(context.roles,senderId,context.conversationId);
+    return [...context.members.map(m=>({kind:"user" as const,id:m.id,label:m.username,name:m.display_name})),...context.roles.roles.filter(r=>!r.is_default).map(r=>({kind:"role" as const,id:r.id,label:r.name,name:"Ruolo",color:r.color,allowed:r.mentionable||mass})),{kind:"everyone",id:context.spaceId||context.conversationId,label:"everyone",name:"Tutti i membri",allowed:mass},{kind:"here",id:context.spaceId||context.conversationId,label:"here",name:"Membri online",allowed:mass}];
+  }
+  const myRoleIds=rolesForUser(roleContext,session.user.id).map(r=>r.id);
+  const mentionSearch=mentionDismissed?null:mentionQuery(draft,mentionCursor??draft.length);
+  const mentionOptions=mentionSearch?targetsForSender(session.user.id).filter(t=>t.allowed!==false&&(t.label.toLocaleLowerCase("it").startsWith(mentionSearch.query)||t.name.toLocaleLowerCase("it").includes(mentionSearch.query))).slice(0,8):[];
+  const insertMention=(target:MentionTarget)=>{
+    if(!mentionSearch)return;
+    const next=draft.slice(0,mentionSearch.start)+"@"+target.label+" "+draft.slice(mentionSearch.end),cursor=mentionSearch.start+target.label.length+2;
+    setDraft(next);setMentionCursor(cursor);setMentionIndex(0);setMentionDismissed(true);
+    requestAnimationFrame(()=>{messageInputRef.current?.focus();messageInputRef.current?.setSelectionRange(cursor,cursor);});
+  };
+  useEffect(()=>{setMentionCursor(null);setMentionIndex(0);setMentionDismissed(false);},[activeConversationId]);
+  useEffect(()=>{
+    let current=true,loading=false;
+    setRoleContext(EMPTY_ROLE_CONTEXT);setChannelPermissions({});
+    const refresh=async()=>{
+      if(loading||document.hidden)return;loading=true;
+      try {
+        const [roles,permissions]=await Promise.all([activeSpaceId?loadServerRoles(activeSpaceId):Promise.resolve(EMPTY_ROLE_CONTEXT),loadChannelPermissions([...new Set([...channels.map(c=>c.id),...(activeConversationId?[activeConversationId]:[]),...(stage.conversationId?[stage.conversationId]:[])])])]);
+        if(current){setRoleContext(roles);setChannelPermissions(permissions);}
+      }catch(error){if(current)setToast(readableError(error));}finally{loading=false;}
+    };
+    void refresh();const timer=window.setInterval(()=>void refresh(),20000);const focus=()=>void refresh();window.addEventListener("focus",focus);
+    return ()=>{current=false;clearInterval(timer);window.removeEventListener("focus",focus);};
+  },[activeSpaceId,activeConversationId,channels,stage.conversationId]);
+  useEffect(()=>{
+    if(!supabase)return;
+    const channel=supabase.channel(`community-identity:${session.user.id}`)
+      .on("postgres_changes",{event:"UPDATE",schema:"public",table:"spaces"},payload=>setSpaces(current=>current.map(space=>space.id===payload.new.id?{...space,...payload.new}:space)))
+      .on("postgres_changes",{event:"UPDATE",schema:"public",table:"conversations"},payload=>{
+        setChannels(current=>current.map(room=>room.id===payload.new.id?{...room,...payload.new}:room));
+        setDirectMessages(current=>current.map(room=>room.id===payload.new.id?{...room,...payload.new}:room));
+      }).subscribe();
+    return ()=>{void supabase?.removeChannel(channel);};
+  },[session.user.id]);
+  const editMessage = async (message: DecryptedMessage, text: string) => {
+    if (!roomKey || !activeConversationId) return;
+    const id = activeConversationId;
+    const context = `hush:conversation:${id}:epoch:0`;
+    const mentions=extractMentions(text.trim(),targetsForSender(session.user.id));
+    const encrypted = await encryptText(packMessageContent(text.trim(), message.attachment, message.replyId,mentions), roomKey, context);
+    await updateEncryptedMessage(message.id, { nonce: encrypted.iv, ciphertext: encrypted.ciphertext, aad_json: {version: 1, context} });
+    if (activeIdRef.current === id) setMessages(current => current.map(item => item.id === message.id ? {...item, body: text.trim(), mentions, encrypted, editedAt: new Date().toISOString()} : item));
+  };
+  const dropChannel=async(targetId:string)=>{
+    if(!canManageSpace||!activeSpaceId||!dragChannelId||targetId===dragChannelId)return;
+    const ids=[...channels].sort((a,b)=>(a.position??0)-(b.position??0)||a.id.localeCompare(b.id)).map(c=>c.id),from=ids.indexOf(dragChannelId),to=ids.indexOf(targetId);
+    setDragChannelId(null);if(from<0||to<0)return;ids.splice(from,1);ids.splice(to,0,dragChannelId);
+    try {await reorderChannels(activeSpaceId,ids);await refreshChannels(activeSpaceId);}catch(error){setToast(readableError(error));}
+  };
+  const latestCipher = messages.at(-1)?.encrypted;
+
+  const startCall = async (conversation: Conversation | null, video: boolean, callMembers:Profile[]=members) => {
+    if (!conversation) return;
+    try {const permissions=await loadChannelPermissions([conversation.id]);if(!permissions[conversation.id]?.includes("connect")){setToast("Non hai il permesso di entrare in voce in questo canale.");return;}}catch(error){setToast(readableError(error));return;}
+    void playCallSound("join");
+    setStage({
+      open: true,
+      expanded: true,
+      video,
+      conversationId: conversation.id,
+      roomName: conversation.name,
+      memberNames: Object.fromEntries(callMembers.map((member) => [member.id, member.display_name])),
+    });
+
+    // Broadcast incoming call to other members of this conversation
+    void broadcastIncomingCall({
+      conversationId: conversation.id,
+      conversationName: conversation.name,
+      caller: {
+        id: session.user.id,
+        display_name: profile.display_name,
+        username: profile.username,
+        avatar_color: profile.avatar_color,
+        avatar_path: profile.avatar_path,
+      },
+      isVideo: video,
+      timestamp: Date.now(),
+    });
+  };
+
+  const leaveCall = () => {
+    void playCallSound("leave");
+    if (stage.conversationId) {
+      void broadcastCallCancelled(stage.conversationId);
+    }
+    setStage(EMPTY_CALL_STAGE);
+  };
+
+  useEffect(()=>{
+    if(stage.open&&stage.conversationId&&channelPermissions[stage.conversationId]&&!channelPermissions[stage.conversationId].includes("connect")){
+      leaveCall();setToast("Il permesso di accesso alla voce è stato rimosso.");
+    }
+  },[channelPermissions,stage.open,stage.conversationId]);
+
+  const handleAcceptCall = () => {
+    if (!incomingCall) return;
+    ringtoneStopRef.current?.();
+    ringtoneStopRef.current = null;
+    const conv = conversations.find((c) => c.id === incomingCall.conversationId) ?? null;
+    const isVideo = incomingCall.isVideo;
+    setIncomingCall(null);
+    if (conv) {
+      if (stage.open && stage.conversationId) {
+        void broadcastCallCancelled(stage.conversationId);
+        setStage(EMPTY_CALL_STAGE);
+      }
+      setActiveSpaceId(conv.space_id);
+      setActiveConversationId(conv.id);
+      startCall(conv, isVideo);
+    }
+  };
+
+  const handleDeclineCall = () => {
+    ringtoneStopRef.current?.();
+    ringtoneStopRef.current = null;
+    setIncomingCall(null);
+  };
+
+  // Listen for incoming messages on all non-active conversations
+  useEffect(() => {
+    if (!session.user.id) return;
+    const allOtherConvIds = [
+      ...directMessages.map((d) => d.id),
+      ...allTextConversations.map((c) => c.id),
+    ].filter((id) => id !== activeConversationId);
+
+    if (allOtherConvIds.length === 0) return;
+
+    const unsubscribe = subscribeToBackgroundMessages(
+      allOtherConvIds,
+      session.user.id,
+      (row: EncryptedMessageRow) => {
+        setUnreads(prev => ({...prev, [row.conversation_id]: {conversation_id:row.conversation_id, unread_count:(prev[row.conversation_id]?.unread_count ?? 0)+1, last_read_at:prev[row.conversation_id]?.last_read_at ?? null}}));
+        if (getUserStatus() === "dnd" || isChatMuted(row.conversation_id)) {
+          return;
+        }
+
+        const dm = directMessages.find((d) => d.id === row.conversation_id);
+        const chan = allTextConversations.find((c) => c.id === row.conversation_id);
+        const convName = dm
+          ? (dm.identity_customized?dm.name:(dmDetailsRef.current[dm.id]?.recipient?.display_name || dm.name))
+          : (chan ? `#${chan.name}` : "Hush");
+
+        playMessageNotificationSound();
+
+        void showDesktopNotification({
+          title: convName,
+          body: "Nuovo messaggio ricevuto",
+          chatId: row.conversation_id,
+          onClick: () => {
+            try {
+              window.focus();
+            } catch {}
+            if (dm) {
+              setActiveSpaceId(null);
+              setActiveConversationId(dm.id);
+            } else if (chan) {
+              setActiveConversationId(chan.id);
+            }
+          },
+        });
+      }
+    );
+
+    return () => {
+      unsubscribe();
+    };
+  }, [directMessages, channels, activeConversationId, session.user.id]);
+
+  // Listen for incoming calls on all DM conversations
+  useEffect(() => {
+    if (!directMessages.length || !session.user.id) return;
+    const dmIds = directMessages.map((dm) => dm.id);
+
+    const unsubscribe = subscribeToIncomingCalls(
+      dmIds,
+      session.user.id,
+      (call) => {
+        if (getUserStatus() === "dnd") return;
+        // Don't trigger incoming call prompt for the call we are already currently in
+        if (stage.open && stage.conversationId === call.conversationId) return;
+
+        ringtoneStopRef.current?.();
+        ringtoneStopRef.current = startIncomingCallRingtone({
+          durationMs: 30000,
+          volumeMultiplier: stage.open ? 0.35 : 1.0,
+          onEnd: () => {
+            setIncomingCall((curr) => (curr?.conversationId === call.conversationId ? null : curr));
+          },
+        });
+
+        setIncomingCall(call);
+      },
+      (cancelledConvId) => {
+        setIncomingCall((curr) => {
+          if (curr?.conversationId === cancelledConvId) {
+            ringtoneStopRef.current?.();
+            ringtoneStopRef.current = null;
+            return null;
+          }
+          return curr;
+        });
+      }
+    );
+
+    return () => {
+      unsubscribe();
+      ringtoneStopRef.current?.();
+      ringtoneStopRef.current = null;
+    };
+  }, [directMessages, session.user.id, stage.open, stage.conversationId]);
+
+  const refreshWorkspace = useCallback(async (preferredSpaceId?: string, preferredConversationId?: string) => {
+    const data = await loadWorkspace(session.user.id, profileFromSession(session));
+    setProfile(data.profile);
+    setSpaces(data.spaces);
+    setDirectMessages(data.directMessages);
+    setActiveSpaceId((current) => preferredSpaceId ?? current ?? data.spaces[0]?.id ?? null);
+    if (preferredConversationId) {setActiveConversationId(preferredConversationId);setMobileBrowsing(false);}
+    void updateDmDetails(data.directMessages, identity);
+    return data;
+  }, [identity, session, updateDmDetails]);
+
+  useEffect(() => {
+    if (!supabase) return;
+    let active = true;
+    const client = supabase;
+    const refresh = () => {
+      if (document.hidden) return;
+      void loadWorkspace(session.user.id).then(data => {
+        if (active) setDirectMessages(current => JSON.stringify(current) === JSON.stringify(data.directMessages) ? current : data.directMessages);
+      }).catch(() => undefined);
+      if (activeConversationId) void loadConversationMembers(activeConversationId).then(rows => {
+        if (active) setMembers(current => JSON.stringify(current) === JSON.stringify(rows) ? current : rows);
+      }).catch(() => undefined);
+    };
+    const subscription = client.channel(`workspace-members:${session.user.id}:${activeConversationId ?? "home"}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "conversation_members", filter: `user_id=eq.${session.user.id}` }, refresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "conversation_members", filter: `conversation_id=eq.${activeConversationId ?? "00000000-0000-0000-0000-000000000000"}` }, refresh)
+      .subscribe();
+    window.addEventListener("focus", refresh);
+    return () => { active = false; window.removeEventListener("focus", refresh); void client.removeChannel(subscription); };
+  }, [session.user.id, activeConversationId]);
+
+  const refreshChannels = useCallback(async (spaceId: string, preferredConversationId?: string) => {
+    const nextChannels = await loadChannels(spaceId);
+    setChannels(nextChannels);
+    setActiveConversationId((current) => {
+      if (preferredConversationId) return preferredConversationId;
+      if (current && nextChannels.some((channel) => channel.id === current)) {
+        return current;
+      }
+      const savedConvId = typeof window !== "undefined" ? localStorage.getItem(`hush:active_conv:${spaceId}`) : null;
+      if (savedConvId && nextChannels.some((channel) => channel.id === savedConvId)) {
+        return savedConvId;
+      }
+      return nextChannels[0]?.id ?? null;
+    });
+    return nextChannels;
+  }, []);
+
+  const handleOpenDm = useCallback(async (targetUser: Profile) => {
+    setMobileBrowsing(false);
+    if (!identity || !supabase) return;
+
+    // Check if 1-on-1 DM already exists with this user
+    // Match a person by membership, never by a group's editable display name.
+    let existing = directMessages.find(dm => dmDetails[dm.id]?.recipient?.id === targetUser.id);
+    if (!existing) {
+      const recipients = await loadDmRecipients(directMessages.map(dm=>dm.id), session.user.id);
+      existing = directMessages.find(dm => recipients[dm.id]?.recipient?.id === targetUser.id);
+    }
+
+    if (existing) {
+      setActiveSpaceId(null);
+      setActiveConversationId(existing.id);
+      setSidebarOpen(false);
+      setStage((current) => (current.open ? { ...current, expanded: false } : current));
+      return;
+    }
+
+    // Directly create 1-on-1 DM without modal!
+    setBusy(true);
+    try {
+      const { data, error } = await supabase.rpc("create_group_dm", {
+        p_name: targetUser.display_name,
+        p_usernames: [targetUser.username],
+      });
+      if (error) throw error;
+      const conversationId = data as string;
+      await initializeConversationKey(conversationId, identity);
+      const ws = await refreshWorkspace(undefined, conversationId);
+      setActiveSpaceId(null);
+      setActiveConversationId(conversationId);
+      setSidebarOpen(false);
+      setStage((current) => (current.open ? { ...current, expanded: false } : current));
+      setToast(`Chat aperta con ${targetUser.display_name}`);
+      void updateDmDetails(ws.directMessages, identity);
+    } catch (error) {
+      setToast(readableError(error));
+    } finally {
+      setBusy(false);
+    }
+  }, [directMessages, dmDetails, identity, refreshWorkspace, updateDmDetails, session.user.id]);
+
+  const handleMention = useCallback((targetUser: Profile) => {
+    setDraft((current) => `${current ? current.trimEnd() + " " : ""}@${targetUser.username} `);
+  }, []);
+
+  useEffect(() => {
+    let current = true;
+    setLoading(true);
+    void Promise.all([
+      ensureDeviceIdentity(session.user.id),
+      loadWorkspace(session.user.id, profileFromSession(session)),
+    ])
+      .then(([nextIdentity, data]) => {
+        if (!current) return;
+        setIdentity(nextIdentity);
+        setProfile(data.profile);
+        setSpaces(data.spaces);
+        setDirectMessages(data.directMessages);
+        if (!initialLoadedRef.current) {
+          initialLoadedRef.current = true;
+          const savedSpaceId = typeof window !== "undefined" ? localStorage.getItem("hush:active_space") : null;
+          const initialSpaceId =
+            savedSpaceId && data.spaces.some((s) => s.id === savedSpaceId)
+              ? savedSpaceId
+              : data.spaces[0]?.id ?? null;
+          setActiveSpaceId(isMobile ? null : initialSpaceId);
+        }
+        void updateDmDetails(data.directMessages, nextIdentity);
+      })
+      .catch((error) => current && setToast(readableError(error)))
+      .finally(() => current && setLoading(false));
+    return () => {
+      current = false;
+    };
+  }, [session.user.id, updateDmDetails]);
+
+  useEffect(() => {
+    if (activeSpaceId) {
+      try {
+        localStorage.setItem("hush:active_space", activeSpaceId);
+      } catch {}
+    }
+  }, [activeSpaceId]);
+
+  useEffect(() => {
+    if (activeSpaceId && activeConversationId) {
+      try {
+        localStorage.setItem(`hush:active_conv:${activeSpaceId}`, activeConversationId);
+      } catch {}
+    }
+  }, [activeSpaceId, activeConversationId]);
+
+  useEffect(() => {
+    if (!activeSpaceId) {
+      setChannels([]);
+      return;
+    }
+    let current = true;
+    void refreshChannels(activeSpaceId).catch((error) => current && setToast(readableError(error)));
+    return () => {
+      current = false;
+    };
+  }, [activeSpaceId, refreshChannels]);
+
+  useEffect(() => {
+    if (!activeConversation || !identity) {
+      setMessages([]);
+      setMembers([]);
+      setRoomKey(null);
+      setKeyStatus("idle");
+      return;
+    }
+
+    let current = true;
+    let cleanupRealtime: (() => void) | undefined;
+    setMessages([]);
+    setExtras({reactions: [], pins: []}); setReplyingTo(null); setShowPins(false); setTypingUsers({}); setHasOlder(false); setAwayFromBottom(false);
+    setMembers([]);
+    setRoomKey(null);
+    setFingerprint("");
+    setKeyStatus("loading");
+
+    if (activeConversation.kind === "voice_channel") {
+      setKeyStatus("idle");
+      setOnlineUserIds([]);
+      void loadConversationMembers(activeConversation.id)
+        .then((nextMembers) => {
+          if (current) setMembers(nextMembers);
+        })
+        .catch((error) => current && setToast(readableError(error)));
+      return () => { current = false; };
+    }
+
+    const prepareConversation = async () => {
+      let key = await loadConversationKey(activeConversation.id, identity);
+      if (!key && activeConversation.created_by === session.user.id) {
+        key = await initializeConversationKey(activeConversation.id, identity);
+      }
+      if (!key) {
+        await requestConversationKey(activeConversation.id, identity);
+        if (current) {
+          setKeyStatus("waiting");
+          const retryTimer = window.setInterval(() => {
+            void loadConversationKey(activeConversation.id, identity).then((availableKey) => {
+              if (!current || !availableKey) return;
+              window.clearInterval(retryTimer);
+              setKeyRetry((value) => value + 1);
+            }).catch(() => undefined);
+          }, 3500);
+          cleanupRealtime = () => window.clearInterval(retryTimer);
+        }
+        return;
+      }
+
+      const nextMembers = await loadConversationMembers(activeConversation.id);
+      const [nextMessages, nextFingerprint] = await Promise.all([
+        loadAndDecryptMessages(activeConversation.id, key, nextMembers),
+        getKeyFingerprint(key),
+        fulfillPendingKeyRequests(activeConversation.id, key, identity),
+      ]);
+      if (!current) return;
+      setRoomKey(key);
+      setMembers(nextMembers);
+      setMessages(nextMessages);
+      setHasOlder(nextMessages.length === 200);
+      void refreshExtras(activeConversation.id).catch(error => setToast(readableError(error)));
+      setFingerprint(nextFingerprint);
+      setKeyStatus("ready");
+
+      const channel = await subscribeToConversation({
+        conversationId: activeConversation.id,
+        userId: session.user.id,
+        skipPresence: userStatus === "invisible",
+        status: userStatus,
+        onStatuses: statuses => {if(current) setRemoteStatuses(statuses);},
+        onExtrasChanged: () => {if(current) void refreshExtras(activeConversation.id).catch(() => undefined);},
+        onTyping: ({userId, isTyping}) => {
+          if (current && mentionContextRef.current.members.some(member => member.id === userId)) setTypingUsers(prev => ({...prev, [userId]: isTyping ? Date.now() + 7000 : 0}));
+        },
+        onMessageDeleted: row => { if (current) setMessages(prev => prev.filter(message => message.id !== row.id)); },
+        onMessageChanged: async row => {
+          try {
+            const encrypted = {v: 1 as const, iv: row.nonce, ciphertext: row.ciphertext};
+            const content = unpackMessageContent(await decryptText(encrypted, key, `hush:conversation:${activeConversation.id}:epoch:0`));
+            if (current) setMessages(prev => prev.map(message => message.id === row.id ? {...message, body: content.text, attachment: content.attachment, replyId: content.replyId, mentions:content.mentions, editedAt: row.updated_at, encrypted} : message));
+          } catch { /* Keep the last decryptable version. */ }
+        },
+        onMessage: async (row) => {
+          if (!current) return;
+          const isOwn = row.sender_id === session.user.id;
+          let sender = mentionContextRef.current.members.find(member => member.id === row.sender_id);
+          if (!sender && row.sender_id) {
+            const updatedMembers = await loadConversationMembers(activeConversation.id).catch(() => nextMembers);
+            if (!current) return;
+            setMembers(updatedMembers);
+            sender = updatedMembers.find(member => member.id === row.sender_id);
+          }
+          const encrypted = { v: 1 as const, iv: row.nonce, ciphertext: row.ciphertext };
+          let body = "Messaggio non decifrabile con la chiave corrente.";
+          let replyId: string | null = null;
+          let mentions:MessageMention[]|undefined;
+          let attachment: ChatAttachmentMeta | null = null;
+          try {
+            const rawDecrypted = await decryptText(encrypted, key, `hush:conversation:${activeConversation.id}:epoch:0`);
+            const unpacked = unpackMessageContent(rawDecrypted);
+            body = unpacked.text;
+            mentions=unpacked.mentions;
+            attachment = unpacked.attachment ?? null;
+            replyId = unpacked.replyId ?? null;
+          } catch { /* explicit fallback above */ }
+          if (!current) return;
+          const context=mentionContextRef.current;
+          const mentioned = mentionsRecipient(resolveMentions(body,mentions,targetsForSender(row.sender_id??"")),session.user.id,rolesForUser(context.roles,session.user.id).map(r=>r.id),getUserStatus()!=="invisible");
+          const isDnd = getUserStatus() === "dnd";
+          const isMuted = isChatMuted(activeConversation.id);
+
+          if (!isDnd && !isMuted && !isOwn) {
+            if (!document.hasFocus()) {
+              playMessageNotificationSound();
+              void showDesktopNotification({
+                title: sender?.display_name ? `${sender.display_name} (#${activeConversation.name})` : activeConversation.name,
+                body: attachment ? (body ? `📷 ${body}` : "📷 Immagine") : body,
+                chatId: activeConversation.id,
+                onClick: () => {
+                  try {
+                    window.focus();
+                  } catch {}
+                },
+              });
+            } else {
+              void playChatSound(mentioned ? "mention" : "receive");
+            }
+          }
+          setMessages((currentMessages) => currentMessages.some((message) => message.id === row.id) ? currentMessages : [...currentMessages, {
+            id: row.id,
+            senderId: row.sender_id,
+            author: sender?.display_name ?? "Membro",
+            initials: initialsFor(sender?.display_name ?? "Membro"),
+            body,
+            createdAt: row.created_at,
+            replyId, mentions, editedAt: row.updated_at,
+            encrypted,
+            attachment,
+          }]);
+          if (activeConversation.kind === "group_dm") {
+            const preview = attachment ? (body ? `📷 ${body}` : "📷 Immagine") : body;
+            setDmDetails((prev) => ({
+              ...prev,
+              [activeConversation.id]: {
+                ...prev[activeConversation.id],
+                lastMessage: preview,
+              },
+            }));
+          }
+        },
+        onPresence: setOnlineUserIds,
+        onStatus: (status) => {
+          if (status === "error") setToast("Realtime non raggiungibile. I messaggi restano salvati e verranno ricaricati.");
+        },
+      });
+      if (!current) { void unsubscribeFromConversation(channel); return; }
+      activeChannelRef.current = channel;
+      let synchronizingKeys = false;
+      const requestTimer = window.setInterval(() => {
+        if (synchronizingKeys) return;
+        synchronizingKeys = true;
+        void (async () => {
+          await fulfillPendingKeyRequests(activeConversation.id, key, identity);
+          const refreshed = await loadConversationKey(activeConversation.id, identity);
+          if (current && refreshed && roomKeySignature(refreshed) !== roomKeySignature(key)) {
+            setKeyRetry(value => value + 1);
+          }
+        })().catch(() => undefined).finally(() => { synchronizingKeys = false; });
+      }, 5000);
+      cleanupRealtime = () => {
+        window.clearInterval(requestTimer);
+        if (activeChannelRef.current === channel) activeChannelRef.current = null;
+        void unsubscribeFromConversation(channel);
+      };
+    };
+
+    void prepareConversation().catch((error) => {
+      if (!current) return;
+      setKeyStatus("error");
+      setToast(readableError(error));
+    });
+    return () => {
+      current = false;
+      cleanupRealtime?.();
+    };
+  }, [activeConversation, identity, keyRetry, session.user.id, userStatus]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented) return;
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
+        if (document.querySelector('[aria-modal="true"]')) return;
+        event.preventDefault();
+        openMessageSearch();
+      }
+      if (event.key === "Escape") {
+        closeMessageSearch();
+        setModal(null);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [openMessageSearch, closeMessageSearch]);
+
+  useLayoutEffect(() => {
+    const pending = olderScrollAnchor.current;
+    olderScrollAnchor.current = null;
+    if (pending && pending.conversationId === activeConversationId && messagesRef.current) {
+      restoreChatScrollAnchor(messagesRef.current, pending.anchor);
+    }
+    const jump=replyJump.current;
+    if(jump){if(jump.conversationId!==activeConversationId||revealMessage(jump.messageId))replyJump.current=null;}
+  }, [messages, activeConversationId]);
+
+  useEffect(() => {
+    if (!awayFromBottom && !search && !showPins) messageEnd.current?.scrollIntoView({ behavior: "instant" });
+  }, [messages.length, awayFromBottom, search, showPins]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setTypingUsers(prev => {const entries=Object.entries(prev);const active=entries.filter(([,until])=>until>Date.now());return entries.length===active.length ? prev : Object.fromEntries(active);});
+    }, 2000);
+    return () => window.clearInterval(timer);
+  }, []);
+  useEffect(() => {
+    const ids = [...new Set([...allTextConversations, ...directMessages].map(item => item.id))];
+    let current = true;
+    const refresh = () => { if (!document.hidden) void getConversationUnreads(ids).then(rows => {if(current) setUnreads(Object.fromEntries(rows.map(row => [row.conversation_id, row])));}).catch(() => undefined); };
+    refresh(); const timer = window.setInterval(refresh, 15000);
+    window.addEventListener("focus", refresh);
+    return () => {current = false; window.clearInterval(timer); window.removeEventListener("focus", refresh);};
+  }, [allTextConversations, directMessages]);
+  useEffect(() => {
+    const read = () => { if (activeConversationId && keyStatus === "ready" && !awayFromBottom && !search && !showPins && !historyResults && !document.hidden && document.hasFocus()) {
+      void markConversationRead(activeConversationId, messages.at(-1)?.createdAt).then(() => setUnreads(prev => ({...prev, [activeConversationId]: {conversation_id: activeConversationId, unread_count: 0, last_read_at: messages.at(-1)?.createdAt ?? null}}))).catch(() => undefined);
+    }};
+    read(); window.addEventListener("focus", read);
+    return () => window.removeEventListener("focus", read);
+  }, [activeConversationId, keyStatus, messages, awayFromBottom, search, showPins, historyResults]);
+  useEffect(() => {const input = messageInputRef.current; if(input) {input.style.height = "auto"; input.style.height = `${Math.min(180, Math.max(38, input.scrollHeight))}px`; }}, [draft]);
+
+  useEffect(() => {
+    if (!activeConversationId || members.length === 0) return;
+    const nextMemberNames = Object.fromEntries(members.map((member) => [member.id, member.display_name]));
+    setStage((current) => current.open && current.conversationId === activeConversationId
+      ? { ...current, memberNames: nextMemberNames }
+      : current);
+  }, [activeConversationId, members]);
+
+  useEffect(() => {
+    if (!toast) return;
+    const timer = window.setTimeout(() => setToast(null), 3400);
+    return () => window.clearTimeout(timer);
+  }, [toast]);
+
+  const openModal = (kind: Exclude<ModalKind, null>) => {
+    setFormPrimary(kind === "settings" ? profile.display_name : "");
+    setFormSecondary("");
+    setFormError(null);
+    setSpaceMode("create");
+    setModal(kind);
+  };
+
+  const runAction = async (action: () => Promise<void>) => {
+    setBusy(true);
+    setFormError(null);
+    try { await action(); } catch (error) { setFormError(readableError(error)); } finally { setBusy(false); }
+  };
+
+  const submitSpace = (event: FormEvent) => {
+    event.preventDefault();
+    void runAction(async () => {
+      if (!supabase) return;
+      if (spaceMode === "create") {
+        const { data, error } = await supabase.rpc("create_space_with_general", { p_name: formPrimary.trim() });
+        if (error) throw error;
+        await refreshWorkspace(data as string);
+        setToast("Server creato");
+      } else {
+        const token = formPrimary.trim().split(/[/?#]/).filter(Boolean).at(-1) ?? "";
+        const { data, error } = await supabase.rpc("join_space_with_invite", { p_token: token });
+        if (error) throw error;
+        await refreshWorkspace(data as string);
+        setToast("Sei entrato nel server");
+      }
+      setModal(null);
+    });
+  };
+
+  const submitChannel = (event: FormEvent) => {
+    event.preventDefault();
+    if (!activeSpace || !identity) return;
+    void runAction(async () => {
+      if (!supabase) return;
+      const { data, error } = await supabase.rpc("create_space_channel", { p_space_id: activeSpace.id, p_name: formPrimary.trim() });
+      if (error) throw error;
+      const conversationId = data as string;
+      await initializeConversationKey(conversationId, identity);
+      await refreshChannels(activeSpace.id, conversationId);
+      setModal(null);
+      setToast("Canale creato e chiave distribuita");
+    });
+  };
+
+  const submitVoiceChannel = (event: FormEvent) => {
+    event.preventDefault();
+    if (!activeSpace) return;
+    void runAction(async () => {
+      if (!supabase) return;
+      const { data, error } = await supabase.rpc("create_space_voice_channel", {
+        p_space_id: activeSpace.id,
+        p_name: formPrimary.trim(),
+      });
+      if (error) throw error;
+      const conversationId = data as string;
+      await refreshChannels(activeSpace.id, conversationId);
+      setModal(null);
+      setToast("Canale vocale creato");
+    });
+  };
+
+  const submitDm = (event: FormEvent) => {
+    event.preventDefault();
+    if (!identity) return;
+    void runAction(async () => {
+      if (!supabase) return;
+      const usernames = formSecondary.split(/[\s,]+/).map((value) => value.replace(/^@/, "").trim()).filter(Boolean);
+      const { data, error } = await supabase.rpc("create_group_dm", { p_name: formPrimary.trim(), p_usernames: usernames });
+      if (error) throw error;
+      const conversationId = data as string;
+      // Explicitly named groups keep their shared name even with only two members.
+      await saveCommunityIdentity("conversation", conversationId, {name: formPrimary.trim()});
+      await initializeConversationKey(conversationId, identity);
+      await refreshWorkspace(undefined, conversationId);
+      setActiveSpaceId(null);
+      setModal(null);
+      setToast("Gruppo DM creato");
+    });
+  };
+
+  const createInvite = () => {
+    const client = supabase;
+    if (!activeSpace || !client) return;
+    void runAction(async () => {
+      const { data, error } = await client.rpc("create_space_invite", { p_space_id: activeSpace.id });
+      if (error) throw error;
+      const invite = `hush://invite/${data as string}`;
+      setInviteLink(invite);
+      setModal(null);
+      setInviteNotice("");
+      try { await copyText(invite); setInviteNotice("Invito copiato: scade tra 7 giorni"); }
+      catch { setInviteNotice("Seleziona il link e premi Ctrl+C per copiarlo."); }
+    });
+  };
+
+  const leaveOrDeleteSpace = (remove: boolean) => {
+    const client = supabase;
+    if (!activeSpace || !client) return;
+    const target=activeSpace;
+    setFormError(null);
+    setConfirmAction({title:remove?`Eliminare “${target.name}”?`:`Lasciare “${target.name}”?`,description:remove?"I canali e i messaggi di questo server verranno eliminati per tutti. L’operazione non può essere annullata.":"Perderai accesso ai canali del server. Per rientrare servirà un nuovo invito.",label:remove?"Elimina server":"Lascia server",action:async()=>{
+      const {error}=await client.rpc(remove?"delete_owned_space":"leave_space",{p_space_id:target.id});
+      if(error)throw error;
+      setSpaces(current=>current.filter(space=>space.id!==target.id));
+      setActiveConversationId(null);setActiveSpaceId(null);setModal(null);
+      setToast(remove?"Server eliminato":"Hai lasciato il server");
+      void refreshWorkspace().catch(error=>setToast(readableError(error)));
+    }});
+  };
+
+  const deleteChannel = () => {
+    const client = supabase;
+    if (!activeConversation || !["channel", "voice_channel"].includes(activeConversation.kind) || !client || !activeSpace) return;
+    const target=activeConversation,spaceId=activeSpace.id;
+    setFormError(null);
+    setConfirmAction({title:`Eliminare #${target.name}?`,description:"Il canale e i suoi messaggi verranno eliminati per tutti. L’operazione non può essere annullata.",label:"Elimina canale",action:async()=>{
+      const {error}=await client.rpc("delete_space_channel",{p_conversation_id:target.id});
+      if(error)throw error;
+      setChannels(current=>current.filter(room=>room.id!==target.id));setActiveConversationId(null);
+      setToast("Canale eliminato");
+      void refreshChannels(spaceId).catch(error=>setToast(readableError(error)));
+    }});
+  };
+
+  const sendMessage = async (event: FormEvent) => {
+    event.preventDefault();
+    const cleanDraft = draft.trim();
+    if ((!cleanDraft && !pendingFile) || !canWrite || !roomKey || !activeConversation || uploadingMedia) return;
+    try {
+      setUploadingMedia(true);
+      setUploadProgress(0);
+      const controller = new AbortController(); uploadController.current = controller;
+      let attachment: ChatAttachmentMeta | null = null;
+      if (pendingFile) {
+        attachment = await uploadEncryptedChatFile(pendingFile, activeConversation.id, roomKey, {signal: controller.signal, onProgress: setUploadProgress});
+      }
+      const id = crypto.randomUUID();
+      controller.signal.throwIfAborted();
+      const context = `hush:conversation:${activeConversation.id}:epoch:0`;
+      const mentions=extractMentions(cleanDraft,targetsForSender(session.user.id));
+      const packed = packMessageContent(cleanDraft, attachment, replyingTo?.id,mentions);
+      const encrypted = await encryptText(packed, roomKey, context);
+      const saved = await persistEncryptedMessage({
+        id,
+        conversation_id: activeConversation.id,
+        sender_id: session.user.id,
+        algorithm: "AES-256-GCM",
+        key_epoch: 0,
+        nonce: encrypted.iv,
+        ciphertext: encrypted.ciphertext,
+        aad_json: { version: 1, context },
+      });
+      if (activeIdRef.current !== activeConversation.id) return;
+      setMessages((current) => mergeMessages(current, [{
+        id,
+        senderId: session.user.id,
+        author: profile.display_name,
+        initials: initialsFor(profile.display_name),
+        body: cleanDraft,
+        mentions,
+        replyId: replyingTo?.id,
+        createdAt: saved.created_at,
+        encrypted,
+        attachment,
+      }]));
+      setDraft(""); setReplyingTo(null); setAwayFromBottom(false);
+      if (activeChannelRef.current) void broadcastTyping(activeChannelRef.current, session.user.id, false).catch(() => undefined);
+      clearPendingFile();
+      if (activeConversation.kind === "group_dm") {
+        const preview = attachment ? (cleanDraft ? `📷 ${cleanDraft}` : "📷 Immagine") : cleanDraft;
+        setDmDetails((prev) => ({
+          ...prev,
+          [activeConversation.id]: {
+            ...prev[activeConversation.id],
+            lastMessage: preview,
+          },
+        }));
+      }
+      void playChatSound("send");
+    } catch (error) {
+      setToast(error instanceof DOMException && error.name === "AbortError" ? "Caricamento annullato" : readableError(error));
+    } finally {
+      setUploadingMedia(false);
+      uploadController.current = null;
+    }
+  };
+
+  const openHushLink = async (value:string) => {
+    setMobileBrowsing(false);
+    if(!supabase)throw Error('not_configured');
+    const url=new URL(value);
+    if(url.protocol!=='hush:')throw Error('invalid_link');
+    if(url.hostname==='invite'){
+      const token=url.pathname.slice(1);
+      const preview=await supabase.rpc('get_space_invite_preview',{p_token:token});if(preview.error)throw preview.error;
+      if(!preview.data)throw Error('invalid_or_expired_invite');
+      let spaceId=preview.data.id;
+      if(!preview.data.is_member){const joined=await supabase.rpc('join_space_with_invite',{p_token:token});if(joined.error)throw joined.error;spaceId=joined.data;}
+      await refreshWorkspace(spaceId);setActiveConversationId(null);await refreshChannels(spaceId);setSidebarOpen(false);setMobileBrowsing(true);return;
+    }
+    if(url.hostname==='channel'){
+      const {data,error}=await supabase.from('conversations').select('*').eq('id',url.pathname.slice(1)).maybeSingle();if(error)throw error;if(!data)throw Error('channel_not_accessible');
+      const room=data as Conversation;
+      if(room.kind==='voice_channel'){const people=await loadConversationMembers(room.id);await startCall(room,false,people);}
+      else {setActiveSpaceId(room.space_id);setActiveConversationId(room.id);setSidebarOpen(false);}
+      return;
+    }
+    throw Error('invalid_link');
+  };
+  useEffect(() => {
+    const receive = () => {
+      const url = sessionStorage.getItem('hush:pending-link');
+      if (!url) return;
+      sessionStorage.removeItem('hush:pending-link');
+      if (url.startsWith('hush://invite/')) {
+        setSpaceMode('join'); setFormPrimary(url); setFormError(null); setModal('space');
+      } else void openHushLink(url).catch(() => setToast('Questo canale non è accessibile.'));
+    };
+    const failure = (event: Event) => setToast((event as CustomEvent<string>).detail);
+    document.addEventListener('hush:link', receive);
+    document.addEventListener('hush:native-error', failure);
+    receive();
+    return () => { document.removeEventListener('hush:link', receive); document.removeEventListener('hush:native-error', failure); };
+  }, [session.user.id]);
+  useEffect(() => {
+    const back = (event: Event) => {
+      if (workspaceMenu) setWorkspaceMenu(null);
+      else if (inviteGroup) setInviteGroup(null);
+      else if (showStatusMenu) setShowStatusMenu(false);
+      else if (contextMenu) setContextMenu(null);
+      else if (confirmAction) setConfirmAction(null);
+      else if (identityTarget) setIdentityTarget(null);
+      else if (viewedProfile) setViewedProfile(null);
+      else if (mobileActions) setMobileActions(false);
+      else if (manageSpace) setManageSpace(false);
+      else if (modal) setModal(null);
+      else if (showEmojiPicker) setShowEmojiPicker(false);
+      else if (showSearch) closeMessageSearch();
+      else if (isMobile && stage.open && stage.expanded) setStage(current => ({...current,expanded:false}));
+      else if (isMobile && !mobileBrowsing) setMobileBrowsing(true);
+      else if (sidebarOpen) setSidebarOpen(false);
+      else if (activeConversationId && !isMobile) { setActiveConversationId(null); setSidebarOpen(true); }
+      else return;
+      event.preventDefault();
+    };
+    document.addEventListener('hush:back', back);
+    return () => document.removeEventListener('hush:back', back);
+  }, [workspaceMenu, inviteGroup, confirmAction, identityTarget, viewedProfile, manageSpace, modal, showEmojiPicker, showSearch, sidebarOpen, activeConversationId, isMobile, mobileBrowsing, mobileActions, showStatusMenu, contextMenu, stage.open, stage.expanded]);
+  useEffect(() => { if (isMobile && stage.open && stage.expanded) setMobileBrowsing(false); }, [isMobile, stage.open, stage.expanded]);
+  const selectSpace = (spaceId: string) => {
+    setActiveSpaceId(spaceId);
+    setActiveConversationId(null);
+    setStage((current) => current.open ? { ...current, expanded: false } : current);
+  };
+
+  const togglePinnedMessages = () => { if (!activeConversation) return; setShowPins(!showPins); if(!showPins && roomKey && extras.pins.length) void loadAndDecryptMessages(activeConversation.id, roomKey, members, {ids: extras.pins.map(pin => pin.message_id)}).then(rows => {if(activeIdRef.current === activeConversation.id) setMessages(prev => mergeMessages(prev, rows));}).catch(error => setToast(readableError(error)));};
+  const contextAction = (action: () => Promise<unknown>) => { void action().catch(error => setToast(readableError(error))); };
+  const openServerMenu = (event: React.MouseEvent, space: Space) => {
+    event.preventDefault(); setContextMenu(null); setWorkspaceMenu({ x: event.clientX, y: event.clientY, space });
+    void supabase?.rpc("is_space_admin", { requested_space: space.id }).then(({ data, error }) => {
+      if (!error) setWorkspaceMenu(current => current?.space?.id === space.id ? { ...current, canManage: data === true } : current);
+    });
+  };
+  const openGroupInvite = (conversation: Conversation) => contextAction(async () => {
+    const rows = await loadConversationMembers(conversation.id);
+    if (!rows.some(member => member.id === session.user.id)) throw new Error("Non fai più parte di questo gruppo.");
+    setInviteGroup({ conversation, members: rows });
+  });
+  const markRoomsRead = async (ids: string[]) => {
+    await Promise.all(ids.map(id => markConversationRead(id)));
+    setUnreads(current => { const next = { ...current }; for (const id of ids) next[id] = { conversation_id: id, unread_count: 0, last_read_at: new Date().toISOString() }; return next; });
+    setToast("Segnato come già letto");
+  };
+  const copyId = (id: string) => contextAction(async () => { await copyText(id); setToast("ID copiato"); });
+  const preference = (field: "pinned" | "favorites" | "hiddenMuted", id: string) => setWorkspacePreferences(current => ({ ...current, [field]: togglePreference(current[field], id) }));
+  const leaveGroup = (conversation: Conversation) => setConfirmAction({ title: `Lasciare “${conversation.name}”?`, description: "Perderai accesso al gruppo. Un membro dovrà aggiungerti di nuovo per rientrare.", label: "Lascia gruppo", action: async () => {
+    const { error } = await supabase!.rpc("leave_group_dm", { p_conversation_id: conversation.id }); if (error) throw error;
+    if (stage.conversationId === conversation.id) setStage(EMPTY_CALL_STAGE);
+    setDirectMessages(current => current.filter(room => room.id !== conversation.id));
+    if (activeConversationId === conversation.id) setActiveConversationId(null);
+    setToast("Hai lasciato il gruppo");
+  } });
+  const workspaceMenuItems = (): WorkspaceMenuItem[] => {
+    const space = workspaceMenu?.space, conversation = workspaceMenu?.conversation;
+    if (space) {
+      const canManage = workspaceMenu?.canManage ?? (space.owner_id === session.user.id || (space.id === activeSpaceId && canManageSpace));
+      const manage = () => { if (space.id !== activeSpaceId) selectSpace(space.id); setManageSpace(true); };
+      const openCreation = (kind: Exclude<ModalKind, null>) => { if (space.id !== activeSpaceId) selectSpace(space.id); openModal(kind); };
+      return [
+        { label: "Apri server", action: () => selectSpace(space.id) },
+        { label: "Segna come già letto", action: () => contextAction(async () => { const channels = await loadChannels(space.id); await markRoomsRead(channels.filter(room => room.kind !== "voice_channel").map(room => room.id)); }) },
+        { label: "Invita al server", separator: true, disabled: !canManage, action: () => contextAction(async () => {
+          const { data, error } = await supabase!.rpc("create_space_invite", { p_space_id: space.id }); if (error) throw error;
+          const link = `hush://invite/${data}`; setInviteLink(link); try { await copyText(link); setInviteNotice("Invito copiato: scade tra 7 giorni"); } catch { setInviteNotice("Copia il link per invitare i tuoi amici."); }
+        }) },
+        { label: "Notifiche del server", items: [
+          { label: "Silenzia tutti i canali", action: () => contextAction(async () => { for (const room of await loadChannels(space.id)) setChatMuted(room.id, true); setToast("Notifiche del server silenziate"); }) },
+          { label: "Riattiva tutti i canali", action: () => contextAction(async () => { for (const room of await loadChannels(space.id)) setChatMuted(room.id, false); setToast("Notifiche del server riattivate"); }) },
+        ] },
+        { label: "Nascondi canali silenziati", checked: workspacePreferences.hiddenMuted.includes(space.id), action: () => preference("hiddenMuted", space.id) },
+        { label: canManage ? "Personalizza server" : "Informazioni sul server", separator: true, action: () => setIdentityTarget({ kind: "space", id: space.id, value: space, readOnly: !canManage }) },
+        ...(canManage ? [
+          { label: "Impostazioni del server", action: manage },
+          { label: "Crea canale di testo", action: () => openCreation("channel") },
+          { label: "Crea canale vocale", action: () => openCreation("voice") },
+          { label: "Crea categoria", action: () => openCreation("category") },
+        ] : []),
+        { label: "Sposta server", items: ["In cima", "In fondo"].map((label, index) => ({ label, action: () => setWorkspacePreferences(current => { const order = sortWorkspaceItems(spaces, current.serverOrder).map(item => item.id).filter(id => id !== space.id); return { ...current, serverOrder: index ? [...order, space.id] : [space.id, ...order] }; }) })) },
+        ...(space.owner_id !== session.user.id ? [{ label: "Lascia server", separator: true, danger: true, action: () => setConfirmAction({ title: `Lasciare “${space.name}”?`, description: "Perderai accesso ai canali del server. Per rientrare servirà un nuovo invito.", label: "Lascia server", action: async () => {
+          const rooms = await loadChannels(space.id);
+          const { error } = await supabase!.rpc("leave_space", { p_space_id: space.id }); if (error) throw error;
+          setSpaces(current => current.filter(item => item.id !== space.id)); if (activeSpaceId === space.id) { setActiveSpaceId(null); setActiveConversationId(null); }
+          if (stage.conversationId && rooms.some(room => room.id === stage.conversationId)) setStage(EMPTY_CALL_STAGE);
+        } }) }] : []),
+        { label: "Copia ID server", separator: true, action: () => copyId(space.id) },
+      ];
+    }
+    if (!conversation) return [];
+    const isDm = conversation.kind === "group_dm";
+    const isGroup = isDm && (!!conversation.identity_customized || !dmDetails[conversation.id]?.recipient);
+    return [
+      { label: "Segna come già letto", disabled: conversation.kind === "voice_channel", action: () => contextAction(() => markRoomsRead([conversation.id])) },
+      ...(isDm ? [
+        { label: workspacePreferences.pinned.includes(conversation.id) ? "Non fissare più" : "Fissa in alto", separator: true, action: () => preference("pinned", conversation.id) },
+        { label: workspacePreferences.favorites.includes(conversation.id) ? "Rimuovi dai preferiti" : "Aggiungi ai preferiti", action: () => preference("favorites", conversation.id) },
+        ...(isGroup ? [
+          { label: "Invita al gruppo", separator: true, action: () => openGroupInvite(conversation) },
+          { label: "Modifica gruppo", action: () => setIdentityTarget({ kind: "conversation", id: conversation.id, value: conversation, readOnly: false }) },
+        ] : [{ label: "Crea un gruppo", separator: true, action: () => { openModal("dm"); setFormPrimary("Nuovo gruppo"); setFormSecondary(dmDetails[conversation.id]?.recipient?.username ?? ""); } },
+          ...(dmDetails[conversation.id]?.recipient ? [{ label: "Visualizza profilo", action: () => openUserProfile(dmDetails[conversation.id].recipient!) }] : [])]),
+      ] : []),
+      { label: isChatMuted(conversation.id) ? "Riattiva notifiche" : "Silenzia conversazione", separator: true, action: () => { const muted = toggleChatMute(conversation.id); setToast(muted ? "Notifiche silenziate" : "Notifiche riattivate"); } },
+      ...(!isDm ? [
+        { label: canManageSpace ? "Modifica canale" : "Informazioni sul canale", action: () => setIdentityTarget({ kind: "conversation", id: conversation.id, value: conversation, readOnly: !canManageSpace }) },
+        { label: "Copia link del canale", action: () => contextAction(async () => { await copyText(`hush://channel/${conversation.id}`); setToast("Link copiato"); }) },
+        ...(canManageSpace ? [
+          { label: "Sposta nella categoria", items: [{ id: null, name: "Senza categoria" }, ...categories].map(category => ({ label: category.name, checked: (conversation.category_id ?? null) === category.id, action: () => contextAction(async () => { await assignSpaceChannel(conversation.id, category.id, conversation.position ?? 0); await refreshChannels(conversation.space_id!); }) })) },
+          { label: "Permessi e ordine dei canali", action: () => setManageSpace(true) },
+          { label: "Elimina canale", danger: true, separator: true, action: () => setConfirmAction({ title: `Eliminare #${conversation.name}?`, description: "Il canale e i suoi messaggi verranno eliminati per tutti. L’operazione non può essere annullata.", label: "Elimina canale", action: async () => { const { error } = await supabase!.rpc("delete_space_channel", { p_conversation_id: conversation.id }); if (error) throw error; if (activeConversationId === conversation.id) setActiveConversationId(null); if (stage.conversationId === conversation.id) setStage(EMPTY_CALL_STAGE); await refreshChannels(conversation.space_id!); } }) },
+        ] : []),
+      ] : []),
+      ...(isGroup ? [{ label: "Lascia gruppo", separator: true, danger: true, action: () => leaveGroup(conversation) }] : []),
+      { label: "Copia ID canale", separator: true, action: () => copyId(conversation.id) },
+    ];
+  };
+  const conversationActions = activeConversation ? (<div className="header-actions">
+              <button
+                type="button"
+                className={`header-bell-btn ${isChatMuted(activeConversation.id) ? "muted" : ""}`}
+                onClick={() => {
+                  const next = toggleChatMute(activeConversation.id);
+                  setToast(next ? "Notifiche silenziate per questa chat" : "Notifiche riattivate per questa chat");
+                }}
+                aria-label={isChatMuted(activeConversation.id) ? "Notifiche silenziate. Clicca per attivare." : "Notifiche attive. Clicca per silenziare."}
+                title={isChatMuted(activeConversation.id) ? "Notifiche silenziate (Clicca per riattivare)" : "Notifiche attive (Clicca per silenziare)"}
+              >
+                {isChatMuted(activeConversation.id) ? <BellOff size={18} /> : <Bell size={18} />}
+              </button>
+              <button onClick={() => startCall(activeConversation, false)} aria-label="Avvia chiamata"><Phone size={18} /></button>
+              <button onClick={() => startCall(activeConversation, true)} aria-label="Avvia videochiamata"><Video size={19} /></button>
+              <button onClick={()=>setIdentityTarget({kind:"conversation",id:activeConversation.id,value:activeConversation,readOnly:!!activeConversation.space_id&&!canManageSpace})} aria-label={activeConversation.kind==="group_dm"?"Personalizza gruppo":"Informazioni e aspetto del canale"} title="Nome, descrizione e aspetto"><Settings size={17}/></button>
+              {activeConversation.kind === "group_dm" && (activeConversation.identity_customized || members.length > 2) && <button onClick={() => openGroupInvite(activeConversation)} aria-label="Invita al gruppo" title="Invita al gruppo"><UserPlus size={19}/></button>}
+              {activeConversation.kind === "voice_channel" && <button onClick={()=>void copyText(`hush://channel/${activeConversation.id}`).then(()=>setToast("Link del canale copiato")).catch(()=>setToast("Impossibile copiare il link."))} aria-label="Copia link del canale" title="Condividi questo canale"><Copy size={17}/></button>}{activeSpace ? <button onClick={createInvite} aria-label="Copia invito"><UserPlus size={19} /></button> : null}
+              {["channel", "voice_channel"].includes(activeConversation.kind) && activeSpace?.owner_id === session.user.id ? <button onClick={deleteChannel} aria-label="Elimina canale"><Trash2 size={17} /></button> : null}
+              {activeConversation.kind !== "voice_channel" ? <button className="message-search-trigger" onClick={openMessageSearch} aria-label="Cerca nei messaggi" aria-expanded={showSearch} aria-controls={showSearch?"message-search":undefined} title="Cerca nei messaggi · Ctrl+K"><Search size={17} /></button> : null}
+            </div>) : null;
+
+  return (
+    <div className="app-shell" data-mobile-view={mobileBrowsing ? "browse" : "content"}>
+      <DotPattern />
+      <aside className="server-rail" aria-label="Server" onClickCapture={() => { setMobileBrowsing(true); setSidebarOpen(false); }}>
+        <div className={`rail-item ${activeSpaceId === null ? "is-selected" : ""}`}><button className={`brand-mark ${activeSpaceId === null ? "selected" : ""}`} aria-current={activeSpaceId===null?"page":undefined} onClick={() => { setActiveSpaceId(null); setActiveConversationId(null); setStage((current) => current.open ? { ...current, expanded: false } : current); }} aria-label={`Messaggi diretti e amici${incomingFriendRequests ? `, ${incomingFriendRequests} richieste ricevute` : ""}`} title="Messaggi diretti e amici"><BrandMark size={28} />{incomingFriendRequests>0&&<span className="friends-rail-badge">{incomingFriendRequests}</span>}</button></div>
+        <div className="rail-rule" />
+        {sortWorkspaceItems(spaces, workspacePreferences.serverOrder).map((space) => (
+          <div className={`rail-item ${activeSpaceId===space.id?"is-selected":""}`} key={space.id}><button className={`server-icon ${activeSpaceId === space.id ? "selected" : ""}`} aria-current={activeSpaceId===space.id?"page":undefined} onClick={() => selectSpace(space.id)} aria-label={space.name} title={space.name} onContextMenu={event => openServerMenu(event, space)}>{safeCommunityImage(space.icon_data)?<img className="community-icon-img" src={space.icon_data!} alt=""/>:initialsFor(space.name)}{allTextConversations.some(conv=>conv.space_id===space.id && (unreads[conv.id]?.unread_count??0)>0) && <i className="server-unread-dot"/>}</button></div>
+        ))}
+        <button className="server-icon add-server" onClick={() => openModal("space")} aria-label="Crea o unisciti a un server"><Plus size={20} /></button>
+      </aside>
+
+      <aside className={`channel-sidebar ${sidebarOpen ? "sidebar-open" : ""}`} onClickCapture={event => { if ((event.target as Element).closest(".dm-row,.channel-row,.friends-nav")) setMobileBrowsing(false); }}>
+        <button style={{"--identity-accent":identityColor(activeSpace?.accent_color)} as import("react").CSSProperties} className={`server-title ${activeSpace?"community-server-title":""}`} onClick={() => activeSpace && openModal("server")} disabled={!activeSpace}>
+          {safeCommunityImage(activeSpace?.banner_data)&&<img className="server-cover-image" src={activeSpace!.banner_data!} alt=""/>}
+          <span><span className="eyebrow">spazio privato</span><strong>{activeSpace?.name ?? (isMobile ? "Messaggi" : "Messaggi diretti")}</strong>{activeSpace?.description&&<small title={activeSpace.description}>{activeSpace.description}</small>}</span>
+          {activeSpace ? <ChevronDown size={17} /> : null}
+        </button>
+        <button className="sidebar-close" onClick={() => setSidebarOpen(false)} aria-label="Chiudi menu"><X size={18} /></button>
+        {isMobile && !activeSpace && <div className="mobile-browse-tools"><label><Search size={18}/><input type="search" value={dmQuery} onChange={event => setDmQuery(event.target.value)} placeholder="Cerca una conversazione" aria-label="Cerca una conversazione" /></label><button onClick={() => openModal("dm")} aria-label="Nuova conversazione"><Plus size={21}/></button></div>}
+        <div className="sidebar-scroll">
+          {!activeSpace && <button className="friends-nav" aria-current={!activeConversationId ? "page" : undefined} onClick={() => {setActiveSpaceId(null);setActiveConversationId(null);setSidebarOpen(false);setStage(current=>current.open?{...current,expanded:false}:current);}}><UserPlus size={17}/> Amici{friendships.entries.some(row=>row.status==="pending"&&row.recipient_id===session.user.id)&&<span aria-label="Richieste di amicizia ricevute">{friendships.entries.filter(row=>row.status==="pending"&&row.recipient_id===session.user.id).length}</span>}</button>}
+          {activeSpace ? (
+            <>
+              <div className="channel-section">
+                <div className="section-label"><span>canali di testo</span>{(activeSpace.owner_id===session.user.id||mySpaceRole==="admin")&&<button onClick={() => openModal("channel")} aria-label="Crea canale"><Plus size={14} /></button>}</div>
+                {textChannels.map((channel, index) => {
+                  const muted = isChatMuted(channel.id);
+                  return (
+                    <div key={channel.id}>
+                    {channel.category_id && (index === 0 || textChannels[index-1].category_id !== channel.category_id) && <button className="category-toggle" aria-expanded={!collapsedCategories.has(channel.category_id)} onClick={()=>setCollapsedCategories(current=>{const next=new Set(current);next.has(channel.category_id!)?next.delete(channel.category_id!):next.add(channel.category_id!);return next;})}><ChevronDown size={12}/><span>{categories.find(category=>category.id===channel.category_id)?.name}</span><small>{textChannels.filter(item=>item.category_id===channel.category_id).length}</small></button>}
+                    <button
+                      draggable={canManageSpace}
+                      onDragStart={e=>{setDragChannelId(channel.id);e.dataTransfer.effectAllowed="move";e.dataTransfer.setData("text/plain",channel.id);}}
+                      onDragEnd={()=>setDragChannelId(null)}
+                      onDragOver={e=>{if(dragChannelId)e.preventDefault();}}
+                      onDrop={e=>{e.preventDefault();void dropChannel(channel.id);}}
+                      hidden={(!!channel.category_id&&collapsedCategories.has(channel.category_id)) || (!!activeSpaceId && workspacePreferences.hiddenMuted.includes(activeSpaceId) && isChatMuted(channel.id))}
+                      className={`channel-row ${activeConversationId === channel.id ? "active" : ""}`}
+                      onClick={() => { setActiveConversationId(channel.id); setSidebarOpen(false); setStage((current) => current.open ? { ...current, expanded: false } : current); }}
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        setContextMenu(null);
+                        setWorkspaceMenu({x:e.clientX,y:e.clientY,conversation:channel});
+                      }}
+                    >
+                      <Hash size={17} style={channel.identity_customized?{color:identityColor(channel.accent_color)}:undefined}/>
+                      <span>{channel.name}</span>{!!unreads[channel.id]?.unread_count && <span className="unread-badge">{unreads[channel.id].unread_count}</span>}
+                      {muted ? <BellOff size={13} className="sidebar-mute-icon" /> : null}
+                    </button></div>
+                  );
+                })}
+                {!loading && textChannels.length === 0 ? <p className="sidebar-empty">Nessun canale di testo</p> : null}
+              </div>
+              <div className="channel-section voice-section">
+                <div className="section-label"><span>canali vocali</span>{(activeSpace.owner_id===session.user.id||mySpaceRole==="admin")&&<button onClick={() => openModal("voice")} aria-label="Crea canale vocale"><Plus size={14} /></button>}</div>
+                {voiceChannels.map((channel,index) => (
+                  <div key={channel.id}>
+                  {channel.category_id&&(index===0||voiceChannels[index-1].category_id!==channel.category_id)&&<button className="category-toggle" aria-expanded={!collapsedCategories.has(channel.category_id)} onClick={()=>setCollapsedCategories(current=>{const next=new Set(current);next.has(channel.category_id!)?next.delete(channel.category_id!):next.add(channel.category_id!);return next;})}><ChevronDown size={12}/><span>{categories.find(c=>c.id===channel.category_id)?.name}</span></button>}
+                  <button
+                    hidden={(!!channel.category_id&&collapsedCategories.has(channel.category_id)) || (!!activeSpaceId && workspacePreferences.hiddenMuted.includes(activeSpaceId) && isChatMuted(channel.id))}
+                    draggable={canManageSpace}
+                    onDragStart={e=>{setDragChannelId(channel.id);e.dataTransfer.effectAllowed="move";e.dataTransfer.setData("text/plain",channel.id);}}
+                    onDragEnd={()=>setDragChannelId(null)}
+                    onDragOver={e=>{if(dragChannelId)e.preventDefault();}}
+                    onDrop={e=>{e.preventDefault();void dropChannel(channel.id);}}
+                    key={channel.id}
+                    className={`channel-row voice-row ${activeConversationId === channel.id ? "active" : ""}`}
+                    onContextMenu={event => {event.preventDefault();setContextMenu(null);setWorkspaceMenu({x:event.clientX,y:event.clientY,conversation:channel});}}
+                    onClick={() => {
+                      setActiveConversationId(channel.id);
+                      setSidebarOpen(false);
+                      startCall(channel, false);
+                    }}
+                  >
+                    <Volume2 size={17} /><span>{channel.name}</span>{!!unreads[channel.id]?.unread_count && <span className="unread-badge">{unreads[channel.id].unread_count}</span>}<small>Entra</small>
+                  </button></div>
+                ))}
+                {!loading && voiceChannels.length === 0 ? <p className="sidebar-empty">Nessun canale vocale</p> : null}
+              </div>
+            </>
+          ) : (
+            <div className="channel-section">
+              <div className="section-label"><span>messaggi diretti</span><button onClick={() => openModal("dm")} aria-label="Nuovo gruppo DM"><Plus size={14} /></button></div>
+              {sortWorkspaceItems(directMessages, [...workspacePreferences.pinned, ...workspacePreferences.favorites.filter(id => !workspacePreferences.pinned.includes(id))]).filter(conversation => !dmQuery.trim() || `${conversation.name} ${dmDetails[conversation.id]?.recipient?.display_name ?? ""} ${dmDetails[conversation.id]?.recipient?.username ?? ""}`.toLocaleLowerCase().includes(dmQuery.trim().toLocaleLowerCase())).map((conversation) => {
+                const details = dmDetails[conversation.id];
+                const partner = details?.recipient;
+                const isGroup=!!conversation.identity_customized||!!conversation.icon_data||!!conversation.description;
+                const displayName = isGroup ? conversation.name : (partner?.display_name || conversation.name);
+                const snippet = details?.lastMessage || "Nessun messaggio";
+                const avatarColor = conversation.identity_customized?identityColor(conversation.accent_color):(partner?.avatar_color || "#73b7ff");
+
+                return (
+                  <button
+                    className={`dm-row ${activeConversationId === conversation.id ? "active" : ""} ${safeCommunityImage(conversation.banner_data) ? "has-conversation-banner" : ""}`}
+                    key={conversation.id}
+                    onClick={() => {
+                      setActiveSpaceId(null);
+                      setActiveConversationId(conversation.id);
+                      setSidebarOpen(false);
+                      setStage((current) => (current.open ? { ...current, expanded: false } : current));
+                    }}
+                    onContextMenu={event => { event.preventDefault(); setContextMenu(null); setWorkspaceMenu({x:event.clientX,y:event.clientY,conversation}); }}
+                  >
+                    {safeCommunityImage(conversation.banner_data) && <img className="conversation-banner-image" src={conversation.banner_data!} alt="" aria-hidden="true" />}
+                    <span className="dm-avatar" style={{ backgroundColor: avatarColor }}>
+                      {safeCommunityImage(conversation.icon_data) ? <img className="community-icon-img" src={conversation.icon_data!} alt=""/> : partner?.avatar_path ? (
+                        <ProfileImage path={partner.avatar_path} alt="" className="dm-avatar-img" />
+                      ) : conversation.identity_customized ? <span className="dm-avatar-initials">{initialsFor(conversation.name)}</span> : partner ? (
+                        <span className="dm-avatar-initials">{initialsFor(partner.display_name)}</span>
+                      ) : (
+                        <UserRound size={16} />
+                      )}
+                    </span>
+                    {partner && <i className={`dm-presence status-${onlineUserIds.includes(partner.id) ? (remoteStatuses[partner.id] === "dnd" ? "dnd" : "online") : "invisible"}`} aria-label={onlineUserIds.includes(partner.id) ? "Online" : "Offline"}/>}
+                    <span className="dm-copy">
+                      <strong className="dm-name">{displayName}{workspacePreferences.pinned.includes(conversation.id) && <span className="workspace-row-marker" title="Conversazione fissata">◆</span>}{workspacePreferences.favorites.includes(conversation.id) && <span className="workspace-row-marker" title="Preferiti">★</span>}{!!unreads[conversation.id]?.unread_count && <span className="unread-badge">{unreads[conversation.id].unread_count}</span>}{isChatMuted(conversation.id) ? <BellOff size={12} className="sidebar-mute-icon" /> : null}</strong>
+                      <small className="dm-snippet">{snippet}</small>
+                    </span>
+                  </button>
+                );
+              })}
+              {!loading && directMessages.length === 0 ? <p className="sidebar-empty">Nessun gruppo DM</p> : null}
+            </div>
+          )}
+        </div>
+        {!isMobile ? <div className="desktop-call-slot" ref={setDesktopCallTarget} /> : stage.open ? (
+          <section className="call-dock" aria-label="Chiamata connessa">
+            <div><span className="call-dock-live"><i /> connesso</span><strong>{stage.roomName}</strong><small>La chiamata resta attiva mentre navighi.</small></div>
+            <button onClick={() => setStage((current) => ({ ...current, expanded: true }))} aria-label="Riapri chiamata"><PanelTopOpen size={16} /></button>
+            <button className="call-dock-leave" onClick={leaveCall} aria-label="Lascia chiamata"><PhoneOff size={16} /></button>
+          </section>
+        ) : null}
+        <div className="user-panel" ref={statusMenuRef}>
+          <button
+            type="button"
+            className="user-status-avatar-btn"
+            onClick={() => setShowStatusMenu((v) => !v)}
+            aria-label={`Stato utente: ${userStatus}. Clicca per cambiare stato.`}
+            title="Cambia stato"
+          >
+            <Avatar profile={profile} />
+            <span className={`status-badge status-${userStatus}`} />
+          </button>
+          <div className="user-copy">
+            <strong>{profile.display_name}</strong>
+            <div className="user-status-text-row">
+              <button onClick={() => { void copyText(profile.username).then(() => setToast("Username copiato")).catch(() => setToast("Copia non riuscita. Il tuo username è @" + profile.username)); }}>@{profile.username}</button>
+              <button
+                type="button"
+                className={`user-status-label-badge status-label-${userStatus}`}
+                onClick={() => setShowStatusMenu((v) => !v)}
+                title="Cambia stato"
+              >
+                {userStatus === "online" ? "Online" : userStatus === "dnd" ? "Non disturbare" : "Invisibile"}
+              </button>
+            </div>
+          </div>
+          <button onClick={() => openModal("settings")} aria-label="Impostazioni"><Settings size={16} /></button>
+          <button aria-label="Esci" onClick={() => { void supabase?.auth.signOut(); }}><LogOut size={16} /></button>
+
+          {showStatusMenu ? (
+            <div className="user-status-menu" role="menu">
+              <div className="user-status-menu-header">Imposta il tuo stato</div>
+              <button
+                type="button"
+                className={`user-status-menu-item ${userStatus === "online" ? "selected" : ""}`}
+                onClick={() => {
+                  setUserStatus("online");
+                  setShowStatusMenu(false);
+                }}
+              >
+                <span className="status-dot status-online" />
+                <div className="status-menu-text">
+                  <strong>Online</strong>
+                  <small>Disponibile per notifiche e messaggi</small>
+                </div>
+              </button>
+              <button
+                type="button"
+                className={`user-status-menu-item ${userStatus === "dnd" ? "selected" : ""}`}
+                onClick={() => {
+                  setUserStatus("dnd");
+                  setShowStatusMenu(false);
+                }}
+              >
+                <span className="status-dot status-dnd" />
+                <div className="status-menu-text">
+                  <strong>Non Disturbare</strong>
+                  <small>Silenzia notifiche e suoni</small>
+                </div>
+              </button>
+              <button
+                type="button"
+                className={`user-status-menu-item ${userStatus === "invisible" ? "selected" : ""}`}
+                onClick={() => {
+                  setUserStatus("invisible");
+                  setShowStatusMenu(false);
+                }}
+              >
+                <span className="status-dot status-invisible" />
+                <div className="status-menu-text">
+                  <strong>Invisibile (Appari offline)</strong>
+                  <small>Appari offline agli altri ma puoi chattare</small>
+                </div>
+              </button>
+            </div>
+          ) : null}
+        </div>
+      </aside>
+
+      {isMobile && mobileActions && <Modal className="mobile-actions-sheet" title="Azioni della chat" onClose={() => setMobileActions(false)}><div onClick={event => { if ((event.target as Element).closest('button')) setMobileActions(false); }}>{conversationActions}<button className="mobile-sheet-pins" onClick={() => {togglePinnedMessages();setMobileActions(false);}}>Messaggi fissati ({extras.pins.length})</button><button className="mobile-sheet-pins" onClick={() => {setShowCipher(value => !value);setMobileActions(false);}}>Dettagli della cifratura</button></div></Modal>}
+      <main className="chat-panel">
+        <header className={`chat-header ${safeCommunityImage(activeConversation?.banner_data) ? "has-conversation-banner" : ""}`}>
+          {safeCommunityImage(activeConversation?.banner_data) && <img className="conversation-banner-image" src={activeConversation!.banner_data!} alt="" aria-hidden="true" />}
+          <button className="mobile-menu" onClick={() => isMobile ? setMobileBrowsing(true) : setSidebarOpen(true)} aria-label={isMobile ? "Torna alle conversazioni" : "Apri menu"}>{isMobile ? <ArrowLeft size={23}/> : <Menu size={20} />}</button>
+          {isMobile && activeConversation && !safeCommunityImage(activeConversation.icon_data) && !activeSpaceId && dmDetails[activeConversation.id]?.recipient && <span className="mobile-conversation-avatar" aria-hidden="true" style={{background:dmDetails[activeConversation.id].recipient!.avatar_color}}>{initialsFor(dmDetails[activeConversation.id].recipient!.display_name)}<ProfileImage path={dmDetails[activeConversation.id].recipient!.avatar_path} alt=""/></span>}
+          {safeCommunityImage(activeConversation?.icon_data)?<img className="conversation-header-icon" src={activeConversation!.icon_data!} alt=""/>:activeConversation?.kind === "voice_channel" ? <Volume2 size={21} className="hash-icon voice-icon" /> : activeConversation ? <Hash size={21} className="hash-icon" /> : <ShieldCheck size={21} className="hash-icon" />}
+          <div className="channel-heading"><button className="conversation-identity-trigger" title="Nome, descrizione e aspetto" disabled={!activeConversation} onClick={()=>activeConversation&&setIdentityTarget({kind:"conversation",id:activeConversation.id,value:activeConversation,readOnly:!!activeConversation.space_id&&!canManageSpace})}><strong>{(activeConversation && !activeConversation.identity_customized && !activeConversation.description && !activeConversation.icon_data && !activeSpaceId && dmDetails[activeConversation.id]?.recipient?.display_name) ? dmDetails[activeConversation.id].recipient!.display_name : (activeConversation?.name ?? (activeSpaceId ? "Il tuo spazio Hush" : "Amici"))}</strong>{activeConversation?.description&&<small title={activeConversation.description}>{activeConversation.description}</small>}</button><span>{activeConversation ? activeConversation.kind === "voice_channel" ? `${members.length} membri · canale vocale` : `${members.length} membri` : `Benvenuto, ${profile.display_name}`}</span></div>
+          {isMobile && activeConversation ? <div className="mobile-header-actions"><button onClick={() => startCall(activeConversation, false)} aria-label="Avvia chiamata"><Phone size={21}/></button>{activeConversation.kind !== "voice_channel" && <button onClick={openMessageSearch} aria-label="Cerca nei messaggi"><Search size={21}/></button>}<button onClick={() => setMobileActions(true)} aria-label="Altre azioni della chat"><MoreHorizontal size={21}/></button></div> : conversationActions}
+
+        </header>
+
+        {isMobile && stage.open && !stage.expanded && <div className="mobile-call-dock"><button onClick={() => setStage(current => ({...current,expanded:true}))} aria-label="Riapri chiamata"><Volume2 size={18}/><span>{stage.roomName}</span></button><button onClick={leaveCall} aria-label="Lascia chiamata"><PhoneOff size={19}/></button></div>}
+        <MediaStage
+          open={stage.open}
+          expanded={stage.expanded}
+          startWithVideo={stage.video}
+          conversationId={stage.conversationId}
+          roomName={stage.roomName}
+          userId={session.user.id}
+          displayName={profile.display_name}
+          memberNames={stage.memberNames}
+          selfProfile={profile}
+          memberProfiles={memberProfilesMap}
+          onUserContextMenu={(e, user, inCall, meta) => {
+            setContextMenu({
+              x: e.clientX,
+              y: e.clientY,
+              user,
+              inCall,
+              isStream: meta?.isStream,
+              isScreenShare: meta?.isScreenShare,
+            });
+          }}
+          onMinimize={() => setStage((current) => ({ ...current, expanded: false }))}
+          onClose={leaveCall}
+          dockTarget={desktopCallTarget}
+          onExpand={() => setStage(current => ({...current, expanded: true}))}
+        />
+
+        {stage.expanded ? null : activeConversation ? activeConversation.kind === "voice_channel" ? (
+          <div className="chat-content empty-chat voice-lobby">
+            <section className="workspace-empty voice-room-card">
+              <div className="voice-room-mark"><Volume2 size={30} /></div>
+              <span className="eyebrow">stanza vocale cifrata</span>
+              <h1>{activeConversation.name}</h1>
+              <p>Ritrovatevi in voce, accendete la videocamera o condividete lo schermo. Scegli tu come partecipare.</p>
+              <div className="voice-room-actions">
+                <button className="empty-primary" onClick={() => startCall(activeConversation, false)}><Phone size={17} /> Entra in voce</button>
+                <button className="voice-video-button" onClick={() => startCall(activeConversation, true)}><Video size={17} /> Entra con video</button>
+              </div>
+            </section>
+          </div>
+        ) : (
+          <>
+            <button className={`trust-line key-${keyStatus}`} onClick={() => keyStatus === "ready" && setShowCipher((current) => !current)} disabled={keyStatus !== "ready"}>
+              <span className="trust-signal"><LockKeyhole size={14} /><EncryptedLabel text={keyStatus === "ready" ? "E2EE ATTIVA" : keyStatus === "waiting" ? "CHIAVE RICHIESTA" : "PREPARAZIONE CHIAVE"} /></span>
+              <span>{keyStatus === "ready" ? <>Impronta <code>{fingerprint}</code></> : keyStatus === "waiting" ? "Un membro deve aprire questa conversazione per autorizzare il dispositivo." : "Cifratura del dispositivo in corso…"}</span>
+              {keyStatus === "ready" ? <span className="trust-action">{showCipher ? "Nascondi" : "Verifica"}</span> : null}
+            </button>
+            {showSearch && <MessageSearch key={activeConversation.id} name={activeConversation.name} query={search} onChange={setSearch} onClose={closeMessageSearch} onSearch={()=>void searchHistory()} onStop={()=>{searchGenerationRef.current++;setSearchingHistory(false);setHistoryNotice(`${historyResults?.length??0} risultati · ricerca interrotta`);}} searching={searchingHistory} ready={keyStatus==="ready"} resultCount={filteredMessages.length} notice={historyNotice}/>}
+            <div className="chat-tools"><button aria-pressed={showPins} onClick={togglePinnedMessages}>Messaggi fissati ({extras.pins.length})</button></div>
+            {showCipher ? <section className="cipher-inspector"><div><span className="eyebrow">ultimo pacchetto salvato</span><code>{latestCipher ? `${latestCipher.iv}.${latestCipher.ciphertext}` : "Nessun messaggio inviato."}</code></div><button onClick={() => setShowCipher(false)} aria-label="Chiudi"><X size={16} /></button></section> : null}
+            <div className="chat-content chat-content-text">
+              <div className="messages" ref={messagesRef} onScroll={event => {const element=event.currentTarget; setAwayFromBottom(element.scrollHeight-element.scrollTop-element.clientHeight > 100);}}>
+                <section className="channel-intro"><div className="intro-icon"><Hash size={28} /></div><span className="eyebrow">il vostro spazio</span><h1>{activeConversation.name}</h1><p>Un posto per ritrovarvi. I messaggi sono protetti dalla cifratura end-to-end.</p></section>
+                {filteredMessages.length === 0 ? <div className="conversation-empty">{search ? "Nessun messaggio corrisponde alla ricerca." : keyStatus === "waiting" ? "Chiave richiesta. Chiedi a un membro di aprire questa conversazione." : "Nessun messaggio. Scrivi il primo."}</div> : null}
+                {hasOlder && <button className="history-load" disabled={loadingOlder} onClick={() => void loadOlder()}>{loadingOlder ? "Caricamento…" : "Carica messaggi precedenti"}</button>}
+                {filteredMessages.map((message, index) => {
+                  const sender: Profile = members.find(member => member.id === message.senderId) ?? {id: message.senderId || message.author, username: message.author, display_name: message.author, avatar_color: "#73b7ff"};
+                  const date = new Date(message.createdAt).toLocaleDateString("it");
+                  return <div key={message.id}>
+                    {(index === 0 || new Date(filteredMessages[index-1].createdAt).toLocaleDateString("it") !== date) && <div className="message-date">{messageDayLabel(message.createdAt)}</div>}
+                    <ChatMessage onHushLink={openHushLink} onJumpToReply={()=>void jumpToMessage(message.replyId!)} replySender={memberProfilesMap[messageLookup.get(message.replyId??"")?.senderId??""]} continuation={!search&&!showPins&&isMessageContinuation(filteredMessages[index-1],message)} canEdit={canWrite} mentions={resolveMentions(message.body,message.mentions,targetsForSender(message.senderId??""))} mentionTargets={targetsForSender(message.senderId??"")} highlighted={mentionsRecipient(resolveMentions(message.body,message.mentions,targetsForSender(message.senderId??"")),session.user.id,myRoleIds,userStatus!=="invisible")||(message.senderId!==session.user.id&&!!message.replyId&&messageLookup.get(message.replyId)?.senderId===session.user.id)} senderRole={rolesForUser(roleContext,message.senderId??"")[0]} canReact={activePermissions.includes("add_reactions")} canPin={activePermissions.includes("pin_messages")} canManageMessages={activePermissions.includes("manage_messages")} message={message} sender={sender} selfId={session.user.id} roomKey={roomKey} conversationId={activeConversation.id} reply={messageLookup.get(message.replyId??"")} reactions={extras.reactions.filter(item => item.message_id === message.id)} pinned={extras.pins.some(item => item.message_id === message.id)} onReply={() => {setReplyingTo(message); messageInputRef.current?.focus();}} onEdit={text => editMessage(message, text)} onDelete={async () => {await deleteEncryptedMessage(message.id); if(activeIdRef.current === activeConversation.id) setMessages(prev => prev.filter(item => item.id !== message.id));}} onReact={async emoji => {await toggleMessageReaction(message.id, emoji); await refreshExtras(activeConversation.id);}} onPin={async () => {await toggleMessagePin(message.id); await refreshExtras(activeConversation.id);}} onProfile={anchor=>openUserProfile(sender,anchor)} onToast={setToast} />
+                  </div>;
+                })}
+                <div ref={messageEnd} />
+              </div>
+              {awayFromBottom && <button className="jump-latest" onClick={() => {setAwayFromBottom(false); messageEnd.current?.scrollIntoView({behavior:"instant"});}}>Vai agli ultimi messaggi</button>}
+              <div className="typing-indicator" role="status">{Object.keys(typingUsers).filter(id => typingUsers[id] > Date.now()).map(id => members.find(member => member.id === id)?.display_name).filter(Boolean).join(", ")}{Object.values(typingUsers).some(until => until > Date.now()) ? " sta scrivendo…" : ""}</div>
+              {replyingTo && <div className="composer-reply"><span>Risposta a <strong>{replyingTo.author}</strong>: {replyingTo.body || "Allegato"}</span><button onClick={() => setReplyingTo(null)} aria-label="Annulla risposta"><X size={14}/></button></div>}
+              {pendingPreview && pendingFile ? (
+                <div className="composer-attachment-preview">
+                  <div className="composer-attachment-thumb">
+                    {pendingFile.type.startsWith("image/") && pendingFile.size <= 16 * 1024 * 1024 ? <img src={pendingPreview} alt="Anteprima" /> : <ImagePlus size={22}/>}
+                  </div>
+                  <div className="composer-attachment-info">
+                    <span className="composer-attachment-name">{pendingFile.name}</span>
+                    <span className="composer-attachment-size">{(pendingFile.size / 1024).toFixed(1)} KB</span>
+                    <span className="composer-attachment-size" role="status">{uploadingMedia ? `Caricamento ${Math.round(uploadProgress * 100)}%` : "Pulizia annuale dopo 12 mesi"}</span>
+                  </div>
+                  <button
+                    type="button"
+                    className="composer-attachment-remove"
+                    onClick={() => uploadingMedia ? uploadController.current?.abort() : clearPendingFile()}
+                    disabled={uploadingMedia && uploadProgress === 1}
+                    aria-label={uploadingMedia ? "Annulla caricamento" : "Rimuovi allegato"}
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+              ) : null}
+              {mentionOptions.length>0 && <div id="mention-options" className="mention-suggestions" role="listbox" aria-label="Menzioni">{mentionOptions.map((target,index)=><button key={`${target.kind}:${target.id}`} id={`mention-option-${index}`} role="option" aria-selected={index===Math.min(mentionIndex,mentionOptions.length-1)} type="button" onMouseDown={e=>e.preventDefault()} onClick={()=>insertMention(target)}><strong style={{color:target.color}}>@{target.label}</strong><span>{target.name}</span></button>)}</div>}
+              <form
+                className="composer"
+                onSubmit={sendMessage}
+                onPaste={handlePaste}
+                onKeyDown={(event) => { if (event.key.length === 1 && !event.metaKey && !event.ctrlKey && !event.altKey) void playChatSound("typing"); }}
+                onClick={(event) => { if (event.target instanceof Element && event.target.closest("[aria-label='Aggiungi emoji']")) void playChatSound("reaction"); }}
+              >
+                <input
+                  type="file"
+                  ref={fileInputRef}
+
+                  style={{ display: "none" }}
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) selectFile(file);
+                  }}
+                />
+                <button
+                  type="button"
+                  className="composer-attach-btn"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={!canWrite || keyStatus !== "ready" || uploadingMedia}
+                  aria-label="Allega file"
+                  title="Allega un file · pulizia annuale dopo 12 mesi"
+                >
+                  {isMobile ? <Plus size={22}/> : <ImagePlus size={19} />}
+                </button>
+                <textarea rows={1} maxLength={8000}
+                  ref={messageInputRef}
+                  value={draft}
+                  onSelect={event=>setMentionCursor(event.currentTarget.selectionStart)}
+                  aria-controls={mentionOptions.length?"mention-options":undefined}
+                  aria-activedescendant={mentionOptions.length?`mention-option-${Math.min(mentionIndex,mentionOptions.length-1)}`:undefined}
+                  onChange={event => {setDraft(event.target.value);setMentionCursor(event.target.selectionStart);setMentionIndex(0);setMentionDismissed(false); if(activeChannelRef.current && Date.now()-typingSentRef.current > 2000) {typingSentRef.current=Date.now(); void broadcastTyping(activeChannelRef.current, session.user.id, !!event.target.value).catch(() => undefined);}}}
+                  onKeyDown={event => {if(!event.nativeEvent.isComposing&&mentionOptions.length){if(event.key==="ArrowDown"||event.key==="ArrowUp"){event.preventDefault();setMentionIndex(index=>(index+(event.key==="ArrowDown"?1:-1)+mentionOptions.length)%mentionOptions.length);return;}if((event.key==="Enter"&&!event.shiftKey)||event.key==="Tab"){event.preventDefault();insertMention(mentionOptions[Math.min(mentionIndex,mentionOptions.length-1)]);return;}if(event.key==="Escape"){event.preventDefault();event.stopPropagation();setMentionDismissed(true);return;}}if(event.key === "Enter" && !isMobile && !event.shiftKey && !event.nativeEvent.isComposing) {event.preventDefault();event.currentTarget.form?.requestSubmit();}}}
+                  disabled={!canWrite || keyStatus !== "ready" || uploadingMedia}
+                  placeholder={!canWrite ? "Non hai il permesso di scrivere in questo canale" : keyStatus === "ready" ? (uploadingMedia ? "Cifratura e caricamento file…" : `Scrivi in ${activeConversation.name}`) : "In attesa della chiave…"}
+                  aria-label="Messaggio"
+                />
+                <div className="composer-emoji-wrap">
+                  <button
+                    type="button"
+                    className={`composer-emoji-btn ${showEmojiPicker ? "active" : ""}`}
+                    onClick={() => setShowEmojiPicker((current) => !current)}
+                    disabled={!canWrite || keyStatus !== "ready" || uploadingMedia}
+                    aria-label="Aggiungi emoji"
+                    aria-expanded={showEmojiPicker}
+                  >
+                    <Smile size={19} />
+                  </button>
+                  {showEmojiPicker ? (
+                    <EmojiPicker
+                      onSelect={handleInsertEmoji}
+                      onClose={() => setShowEmojiPicker(false)}
+                    />
+                  ) : null}
+                </div>
+                <button
+                  className="send-button"
+                  type="submit"
+                  disabled={!canWrite || (!draft.trim() && !pendingFile) || keyStatus !== "ready" || uploadingMedia}
+                  aria-label="Invia messaggio"
+                >
+                  {uploadingMedia ? <Loader2 size={17} className="attachment-spinner" /> : <Send size={17} />}
+                </button>
+                <div className="composer-security"><LockKeyhole size={11} /> AES-256-GCM sul dispositivo</div>
+              </form>
+            </div>
+          </>
+        ) : (
+          !activeSpaceId ? <FriendsPanel compactActions={isMobile} friendships={friendships} onMessage={user=>void handleOpenDm(user)} onProfile={openUserProfile}/> : <div className="chat-content empty-chat"><section className="workspace-empty"><div className="workspace-empty-mark"><BrandMark size={46} /></div><span className="eyebrow">spazio privato</span><h1>{loading ? "Caricamento…" : "Pronto per iniziare"}</h1><p>Riunisci i tuoi amici in un server, usa un invito oppure inizia una conversazione privata.</p><button className="empty-primary" onClick={() => openModal("space")}><Plus size={17} /> Crea o unisciti</button></section></div>
+        )}
+      </main>
+
+      <aside className="member-sidebar">
+        <div className="member-heading"><span>Persone</span><span>{members.length || 1}</span></div>
+        <div className="member-list">
+          {(members.length ? members : [profile]).map((member) => (
+            <button
+              type="button"
+              className="member current-member member-profile-button"
+              key={member.id}
+              onClick={event=>openUserProfile(member,event.currentTarget)}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                setContextMenu({
+                  x: e.clientX,
+                  y: e.clientY,
+                  user: member,
+                  inCall: stage.open,
+                });
+              }}
+              aria-label={`Profilo di ${member.display_name}`}
+            ><span className="member-avatar"><Avatar profile={member} /><i className={`status ${member.id === session.user.id ? (userStatus === "invisible" ? "status-away" : userStatus === "dnd" ? "status-dnd" : "status-online") : (remoteStatuses[member.id] === "dnd" ? "status-dnd" : onlineUserIds.includes(member.id) ? "status-online" : "status-away")}`} /></span><span><strong style={{color:rolesForUser(roleContext,member.id)[0]?.color}}>{member.display_name}</strong><small>{rolesForUser(roleContext,member.id)[0]?.name??`@${member.username}`}</small></span></button>
+          ))}
+        </div>
+        {activeConversation?.kind === "group_dm" && (activeConversation.identity_customized || members.length > 2) && <button className="invite-group-button" onClick={() => openGroupInvite(activeConversation)}><UserPlus size={17}/> Invita al gruppo</button>}
+        <div className="privacy-note"><ShieldCheck size={16} /><p><strong>{keyStatus === "ready" ? "Chiave verificata" : "Supabase connesso"}</strong><span>{identity ? `Dispositivo ${identity.id.slice(0, 8)}` : "Registrazione dispositivo…"}</span></p><i className={`backend-light backend-${keyStatus === "error" ? "degraded" : "ready"}`} /></div>
+      </aside>
+
+      {confirmAction&&<Modal title={confirmAction.title} description={confirmAction.description} onClose={()=>{if(!busy)setConfirmAction(null);}}><div className="modal-form">{formError&&<p className="auth-error" role="alert">{formError}</p>}<button type="button" className="modal-primary" disabled={busy} onClick={()=>setConfirmAction(null)}>Annulla</button><button type="button" className="danger-action" disabled={busy} onClick={()=>void runAction(async()=>{await confirmAction.action();setConfirmAction(null);})}>{busy?"Attendi…":confirmAction.label}</button></div></Modal>}
+      {identityTarget&&<CommunityIdentityEditor key={`${identityTarget.kind}:${identityTarget.id}`} value={identityTarget.value} label={identityTarget.kind==="space"?"server":activeConversation?.kind==="group_dm"?"gruppo":"canale"} readOnly={identityTarget.readOnly} onClose={()=>setIdentityTarget(null)} onSave={async value=>{await saveCommunityIdentity(identityTarget.kind,identityTarget.id,value);if(identityTarget.kind==="space")setSpaces(current=>current.map(space=>space.id===identityTarget.id?{...space,...value,identity_customized:true}:space));else {setChannels(current=>current.map(room=>room.id===identityTarget.id?{...room,...value,identity_customized:true}:room));setDirectMessages(current=>current.map(room=>room.id===identityTarget.id?{...room,...value,identity_customized:true}:room));}setToast("Personalizzazione salvata");}}/>}
+      {inviteLink ? <Modal title="Invita nel server" description="Condividi questo link con gli amici. Scade tra 7 giorni; incollalo in Server → Usa invito." onClose={() => setInviteLink(null)}><div className="modal-form"><label>Link di invito<input readOnly value={inviteLink} onFocus={(event) => event.target.select()} /></label><button className="modal-primary" onClick={() => { void copyText(inviteLink).then(() => setInviteNotice("Invito copiato")).catch(() => setInviteNotice("Seleziona il link e premi Ctrl+C per copiarlo.")); }}>Copia invito</button><p role="status">{inviteNotice}</p></div></Modal> : null}
+      {viewedProfile&&<UserProfile key={`${viewedProfile.id}:${activeSpaceId??"dm"}`} friendshipAction={<FriendActions compact key={viewedProfile.id} user={viewedProfile} friendships={friendships}/>} profile={members.find(m=>m.id===viewedProfile.id)??viewedProfile} selfId={session.user.id} anchor={profileAnchor} anchorElement={profileAnchorElement.current} initialExpanded={profileExpanded} status={viewedProfile.id===session.user.id?(userStatus==="invisible"?"offline":userStatus):remoteStatuses[viewedProfile.id]==="dnd"?"dnd":onlineUserIds.includes(viewedProfile.id)?"online":"offline"} space={activeSpace} spaces={spaces} roleContext={roleContext} canManageRoles={canManageSpace&&roleContext.memberships.some(m=>m.user_id===viewedProfile.id)&&(roleContext.memberships.find(m=>m.user_id===viewedProfile.id)?.role!=="owner"||roleContext.memberships.find(m=>m.user_id===session.user.id)?.role==="owner")} onToggleRole={async(role,assigned)=>{
+        if(!activeSpaceId)return;
+        const spaceId=activeSpaceId,fresh=await loadServerRoles(spaceId),ids=rolesForUser(fresh,viewedProfile.id).map(r=>r.id);
+        await setMemberRoles(spaceId,viewedProfile.id,assigned?[...new Set([...ids,role.id])]:ids.filter(id=>id!==role.id));
+        const next=await loadServerRoles(spaceId);if(mentionContextRef.current.spaceId===spaceId)setRoleContext(next);
+      }} onMessage={()=>{const target=viewedProfile;setViewedProfile(null);void handleOpenDm(target);}} onSelectSpace={id=>{setViewedProfile(null);setActiveSpaceId(id);setSidebarOpen(false);}} onClose={()=>setViewedProfile(null)}/>}
+      {modal === "space" ? <Modal title="Server" description="Crea un nuovo spazio oppure incolla un invito ricevuto da un amico." onClose={() => setModal(null)}><div className="modal-tabs"><button className={spaceMode === "create" ? "active" : ""} onClick={() => { setSpaceMode("create"); setFormPrimary(""); setFormError(null); }}>Crea</button><button className={spaceMode === "join" ? "active" : ""} onClick={() => { setSpaceMode("join"); setFormPrimary(""); setFormError(null); }}>Usa invito</button></div><form className="modal-form" onSubmit={submitSpace}><label>{spaceMode === "create" ? "Nome del server" : "Codice o link di invito"}<input autoFocus required maxLength={spaceMode === "create" ? 80 : 200} value={formPrimary} onChange={(event) => setFormPrimary(event.target.value)} placeholder={spaceMode === "create" ? "La nostra stanza" : "hush://invite/…"} /></label>{formError ? <div className="auth-error">{formError}</div> : null}<button className="modal-primary" disabled={busy || !formPrimary.trim()}>{busy ? "Attendi…" : spaceMode === "create" ? "Crea server" : "Entra nel server"}</button></form></Modal> : null}
+      {modal === "channel" ? <Modal title="Nuovo canale" description={`Verrà aggiunto a ${activeSpace?.name ?? "questo server"} e riceverà una chiave E2EE separata.`} onClose={() => setModal(null)}><form className="modal-form" onSubmit={submitChannel}><label>Nome del canale<input autoFocus required maxLength={80} value={formPrimary} onChange={(event) => setFormPrimary(event.target.value)} placeholder="gaming" /></label>{formError ? <div className="auth-error">{formError}</div> : null}<button className="modal-primary" disabled={busy || !formPrimary.trim()}>{busy ? "Creazione…" : "Crea canale"}</button></form></Modal> : null}
+      {modal === "dm" ? <Modal title="Nuovo gruppo DM" description="Inserisci gli username esatti, separati da virgole. Hush distribuirà la chiave ai loro dispositivi registrati." onClose={() => setModal(null)}><form className="modal-form" onSubmit={submitDm}><label>Nome del gruppo<input autoFocus required maxLength={80} value={formPrimary} onChange={(event) => setFormPrimary(event.target.value)} placeholder="Nome del gruppo" /></label><label>Username<input required value={formSecondary} onChange={(event) => setFormSecondary(event.target.value)} placeholder="@amico1, @amico2" /></label>{formError ? <div className="auth-error">{formError}</div> : null}<button className="modal-primary" disabled={busy || !formPrimary.trim() || !formSecondary.trim()}>{busy ? "Creazione…" : "Crea gruppo"}</button></form></Modal> : null}
+      {modal === "settings" ? <Suspense fallback={null}><SettingsPanel profile={profile} theme={theme} onThemeChange={onThemeChange} inCall={stage.open} onClose={() => setModal(null)} onSaved={(next) => { setProfile(next); setMembers((current) => current.map((member) => member.id === next.id ? next : member)); }} /></Suspense> : null}
+      {manageSpace && activeSpace && <SpaceManagement onCustomize={()=>setIdentityTarget({kind:"space",id:activeSpace.id,value:activeSpace,readOnly:!canManageSpace})} spaceId={activeSpace.id} currentUserId={session.user.id} onChanged={() => {void refreshChannels(activeSpace.id); setKeyRetry(value => value+1);}} onClose={() => setManageSpace(false)} />}
+      {modal === "server" && activeSpace ? <Modal title={activeSpace.name} description="Gestisci accesso e permanenza nel server." onClose={() => setModal(null)}><div className="server-actions"><button onClick={()=>setIdentityTarget({kind:"space",id:activeSpace.id,value:activeSpace,readOnly:!canManageSpace})}><ImagePlus size={17}/><span><strong>Personalizza server</strong><small>Identità, icona, copertina e colore</small></span></button><button onClick={() => {setModal(null);setManageSpace(true);}}><Settings size={17}/><span><strong>Gestisci server</strong><small>Canali, ruoli, membri e inviti</small></span></button><button onClick={createInvite}><Copy size={17} /><span><strong>Copia invito</strong><small>Valido 7 giorni, massimo 25 utilizzi</small></span></button>{activeSpace.owner_id === session.user.id ? <button className="danger-action" onClick={() => leaveOrDeleteSpace(true)}><Trash2 size={17} /><span><strong>Elimina server</strong><small>Rimuove canali e messaggi in modo permanente</small></span></button> : <button className="danger-action" onClick={() => leaveOrDeleteSpace(false)}><LogOut size={17} /><span><strong>Lascia server</strong><small>Perderai accesso alle conversazioni</small></span></button>}{formError ? <div className="auth-error">{formError}</div> : null}</div></Modal> : null}
+
+      {modal === "voice" ? <Modal title="Nuovo canale vocale" description={`Crea una stanza vocale persistente in ${activeSpace?.name ?? "questo server"}.`} onClose={() => setModal(null)}><form className="modal-form" onSubmit={submitVoiceChannel}><label>Nome del canale<input autoFocus required maxLength={80} value={formPrimary} onChange={(event) => setFormPrimary(event.target.value)} placeholder="Lounge" /></label>{formError ? <div className="auth-error">{formError}</div> : null}<button className="modal-primary" disabled={busy || !formPrimary.trim()}>{busy ? "Creazione…" : "Crea canale vocale"}</button></form></Modal> : null}
+
+      {workspaceMenu && <WorkspaceContextMenu x={workspaceMenu.x} y={workspaceMenu.y} title={workspaceMenu.space?.name ?? workspaceMenu.conversation?.name ?? "Gestisci"} items={workspaceMenuItems()} onClose={() => setWorkspaceMenu(null)}/>}
+      {modal === "category" && activeSpace && <Modal title="Nuova categoria" description={`Organizza i canali di ${activeSpace.name}.`} onClose={() => setModal(null)}><form className="modal-form" onSubmit={event => { event.preventDefault(); void runAction(async () => { await createSpaceCategory(activeSpace.id, formPrimary); const { data, error } = await supabase!.from("space_categories").select("id,name,position").eq("space_id",activeSpace.id).order("position"); if (error) throw error; setCategories(data ?? []); setModal(null); setToast("Categoria creata"); }); }}><label>Nome della categoria<input autoFocus required maxLength={80} value={formPrimary} onChange={event => setFormPrimary(event.target.value)} placeholder="La nostra community"/></label>{formError && <p className="auth-error" role="alert">{formError}</p>}<button className="modal-primary" disabled={busy || !formPrimary.trim()}>{busy ? "Creazione…" : "Crea categoria"}</button></form></Modal>}
+      {inviteGroup && <Suspense fallback={null}><GroupInvite conversation={inviteGroup.conversation} members={inviteGroup.members} friends={friendships.entries.filter(friend => friend.status === "accepted").map(friend => friend.user)} onClose={() => setInviteGroup(null)} onInvite={async usernames => {
+        if (!identity || !supabase) throw new Error("Attendi che il dispositivo sia pronto.");
+        const conversation = inviteGroup.conversation;
+        const key = await loadConversationKey(conversation.id, identity);
+        if (!key) throw new Error("Apri il gruppo e attendi il caricamento della chiave prima di invitare persone.");
+        const { data, error } = await supabase.rpc("add_group_members", { p_conversation_id: conversation.id, p_usernames: usernames });
+        if (error) throw error;
+        // Membership is committed before envelopes can be sent to the new devices.
+        // Pending key requests also allow another online member to complete delivery.
+        try { await fulfillPendingKeyRequests(conversation.id, key, identity); }
+        catch { setToast("Persone aggiunte. Sincronizzazione delle chiavi in corso…"); }
+        const rows = await loadConversationMembers(conversation.id);
+        if (activeConversationId === conversation.id) setMembers(rows);
+        if (stage.conversationId === conversation.id) setStage(current => ({ ...current, memberNames: Object.fromEntries(rows.map(row => [row.id,row.display_name])) }));
+        if (Number(data) > 0) setToast(`${data} ${Number(data) === 1 ? "persona aggiunta" : "persone aggiunte"} al gruppo`);
+        else setToast("Queste persone fanno già parte del gruppo");
+      }}/></Suspense>}
+      {contextMenu ? (
+        <UserContextMenu
+          target={contextMenu}
+          currentUserId={session.user.id}
+          onClose={() => setContextMenu(null)}
+          onViewProfile={user=>openUserProfile(user,undefined,true)}
+          onOpenDm={handleOpenDm}
+          onMention={handleMention}
+          onOpenSettings={() => openModal("settings")}
+          onToast={setToast}
+        />
+      ) : null}
+
+      {incomingCall ? (
+        <IncomingCallDialog
+          call={incomingCall}
+          onAccept={handleAcceptCall}
+          onDecline={handleDeclineCall}
+        />
+      ) : null}
+      {toast ? <div className="toast" role="status"><MessageCircleMore size={16} />{toast}</div> : null}
+      {sidebarOpen ? <button className="sidebar-scrim" onClick={() => setSidebarOpen(false)} aria-label="Chiudi menu" /> : null}
+    </div>
+  );
+}

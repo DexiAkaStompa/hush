@@ -15,6 +15,7 @@ const binary = path.resolve(process.argv[2] || path.join(project, "src-tauri/tar
 const outputDirectory = path.resolve(process.argv[3] || path.join(project, "release-rust-check"));
 assert.ok(existsSync(binary), `Rust debug executable not found: ${binary}`);
 const { version } = JSON.parse(await readFile(path.join(project, "package.json"), "utf8"));
+const verifyUpdates = process.env.HUSH_RUN_RUST_UPDATE_CHECK === "1";
 await mkdir(outputDirectory, { recursive: true });
 
 const temporaryParent = await realpath(tmpdir());
@@ -32,6 +33,10 @@ const child = spawn(binary, [], {
     ...process.env,
     HUSH_RUST_TEST_BROWSER_ARGS: `--remote-debugging-port=${port} --remote-debugging-address=127.0.0.1 --use-fake-ui-for-media-stream --use-fake-device-for-media-stream`,
     HUSH_RUST_TEST_DATA_DIR: browserDirectory,
+    HUSH_RUST_TEST_ALLOW_MULTI_INSTANCE: "1",
+    // An explicit absent fixture marker disables detection of real profiles.
+    HUSH_RUST_TEST_MIGRATION_MARKER: path.join(browserDirectory, "missing-marker.json"),
+    HUSH_RUST_TEST_UPDATE_VERIFY_ONLY: verifyUpdates ? "1" : "0",
   },
 });
 let stderr = "";
@@ -253,6 +258,26 @@ try {
   await waitFor(() => devtools.evaluate("!('__hushRustSmokeOldDocument' in globalThis)"), "The packaged renderer did not create a fresh document after reload.");
   await waitForAuth();
   report.checks.cryptoAfterReload = await devtools.evaluate(`(${verifyCryptoFixture.toString()})()`, 30000);
+  if (verifyUpdates) {
+    // Debug verification can download and verify the public current package,
+    // but both explicit installation and install-on-quit are disabled natively.
+    report.checks.signedUpdate = await devtools.evaluate(`(async () => {
+      const phases = [];
+      const unsubscribe = window.hushWindow.onUpdateStatus(status => phases.push(status.status));
+      try {
+        const status = await window.hushWindow.checkForUpdates();
+        if (status.status !== 'downloaded' || status.version !== ${JSON.stringify(version)}) throw new Error('Signed update was not downloaded and verified: ' + status.status);
+        await window.hushWindow.setCallActive(true);
+        let activeCallRejected = false;
+        try { await window.hushWindow.installUpdate(); } catch (error) { activeCallRejected = String(error).includes('Termina la chiamata'); }
+        await window.hushWindow.setCallActive(false);
+        let verificationInstallRejected = false;
+        try { await window.hushWindow.installUpdate(); } catch (error) { verificationInstallRejected = String(error).includes('disattivata nelle build di verifica'); }
+        if (!activeCallRejected || !verificationInstallRejected) throw new Error('Verification must not install or interrupt a call.');
+        return { version: status.version, phases, activeCallRejected, verificationInstallRejected };
+      } finally { unsubscribe(); }
+    })()`, 60000);
+  }
   report.cspViolations.push(...await devtools.evaluate("globalThis.__hushRustSmokeCsp || []"));
   assert.equal(report.exceptions.length, 0, "The renderer raised an uncaught exception.");
   assert.equal(report.cspViolations.length, 0, "The packaged renderer violated its content security policy.");

@@ -50,7 +50,7 @@ describe("media preferences", () => {
       height: { ideal: 1080 },
     });
   });
-  it("generates high-definition 60fps screen sharing constraints with stereo audio", () => {
+  it("retains screen quality and offers system audio for window sharing without choosing a source", () => {
     const constraints = screenConstraints(DEFAULT_MEDIA_SETTINGS);
     expect(constraints).toMatchObject({
       video: {
@@ -60,8 +60,15 @@ describe("media preferences", () => {
       },
       audio: {
         channelCount: 2,
+        echoCancellation: false,
+        noiseSuppression: false,
       },
+      systemAudio: "include",
+      windowAudio: "system",
     });
+    expect(constraints.video).not.toHaveProperty("deviceId");
+    expect(screenConstraints({ ...DEFAULT_MEDIA_SETTINGS, screenFps: 30 }).video)
+      .toMatchObject({ frameRate: { ideal: 30, max: 60 } });
   });
 });
 

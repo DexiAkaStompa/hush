@@ -13,7 +13,6 @@ const NO_DRAG_REGION = [
   ".member-sidebar", ".media-stage", ".room-music", ".composer", ".modal-card",
 ].join(", ");
 const MAX_WRITE_BYTES = 8 * 1024 * 1024;
-const PREVIEW_UPDATE_MESSAGE = "Gli aggiornamenti automatici della versione Rust saranno attivati dopo la verifica del nuovo canale firmato.";
 
 export function validTauriLink(value: unknown): boolean {
   return typeof value === "string" && /^hush:\/\/(invite\/[a-f0-9]{48}|channel\/[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12})\/?$/i.test(value);
@@ -50,6 +49,8 @@ async function initialize(): Promise<Unlisten | null> {
   const unlisteners: Unlisten[] = [];
   const maximizeListeners = new Set<(maximized: boolean) => void>();
   const notificationListeners = new Set<() => void>();
+  const updateListeners = new Set<(status: HushUpdateStatus) => void>();
+  const migrationListeners = new Set<(message: import('./migration-transport').MigrationWireMessage) => void>();
   const downloads = new Set<AbortController>();
   let active = true;
   let resizeTimer: ReturnType<typeof setTimeout> | undefined;
@@ -137,6 +138,8 @@ async function initialize(): Promise<Unlisten | null> {
     for (const unlisten of unlisteners.splice(0)) unlisten();
     maximizeListeners.clear();
     notificationListeners.clear();
+    updateListeners.clear();
+    migrationListeners.clear();
     document.removeEventListener("mousedown", onMouseDown);
     document.removeEventListener("click", onClick);
     window.removeEventListener("beforeunload", dispose);
@@ -145,20 +148,26 @@ async function initialize(): Promise<Unlisten | null> {
   };
 
   try {
-    const currentVersion = await invoke<string>("native_version");
-    const updateStatus = (): HushUpdateStatus => ({ status: "disabled", currentVersion, message: PREVIEW_UPDATE_MESSAGE });
+    await invoke<string>("native_version");
     bridge = {
+      hasDesktopMigrationSource: () => invoke<boolean>("native_migration_has_source"),
+      getDesktopMigrationSourceState: () => invoke('native_migration_source_status'),
+      beginDesktopMigration: hello => invoke<boolean>("native_migration_begin", { hello }),
+      sendDesktopMigrationMessage: message => invoke<void>("native_migration_send", { message }),
+      finishDesktopMigration: () => invoke<void>("native_migration_finish"),
+      onDesktopMigrationMessage: callback => { migrationListeners.add(callback); return () => { migrationListeners.delete(callback); }; },
       copyText: text => invoke<void>("native_copy_text", { text }),
+      setCallActive: active => invoke<void>("native_set_call_active", { active }),
       minimize: () => fire(currentWindow.minimize()),
       toggleMaximize: () => fire(currentWindow.toggleMaximize()),
       close: () => fire(currentWindow.close()),
       isMaximized: () => currentWindow.isMaximized(),
       setMaterial: enabled => invoke<boolean>("native_set_material", { enabled }),
       onMaximizedChange: callback => { maximizeListeners.add(callback); return () => { maximizeListeners.delete(callback); }; },
-      getUpdateStatus: async () => updateStatus(),
-      checkForUpdates: async () => updateStatus(),
-      installUpdate: async () => { throw new Error(PREVIEW_UPDATE_MESSAGE); },
-      onUpdateStatus: () => () => {},
+      getUpdateStatus: () => invoke<HushUpdateStatus>("native_updates_get_status"),
+      checkForUpdates: () => invoke<HushUpdateStatus>("native_updates_check"),
+      installUpdate: () => invoke<void>("native_updates_install"),
+      onUpdateStatus: callback => { updateListeners.add(callback); return () => { updateListeners.delete(callback); }; },
       searchMusic: (query, provider = "youtube") => invoke("native_search_music", { query, provider }),
       requestCallRelay: (accessToken, conversationId) => invoke<unknown>("native_call_relay", { accessToken, conversationId }),
       showNotification: options => invoke<void>("native_show_notification", { options }),
@@ -180,6 +189,12 @@ async function initialize(): Promise<Unlisten | null> {
     }));
     unlisteners.push(await listen("native_notification_clicked", () => {
       if (active) for (const callback of notificationListeners) callback();
+    }));
+    unlisteners.push(await listen<HushUpdateStatus>("native_update_status", event => {
+      if (active) for (const callback of updateListeners) callback(event.payload);
+    }));
+    unlisteners.push(await listen<import('./migration-transport').MigrationWireMessage>("native_migration_message", event => {
+      if (active) for (const callback of migrationListeners) callback(event.payload);
     }));
     unlisteners.push(await listen<string>("hush:deep-link", event => {
       if (validTauriLink(event.payload)) receivedLiveLink = true;

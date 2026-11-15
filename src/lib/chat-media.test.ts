@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, test, expect, vi } from "vitest";
-const mocks = vi.hoisted(() => ({ upload: vi.fn(), download: vi.fn(), sharedConfigured: false, sharedUpload: vi.fn() }));
+const mocks = vi.hoisted(() => ({ upload: vi.fn(), download: vi.fn(), sharedConfigured: false, sharedUpload: vi.fn(), sharedDownload: vi.fn() }));
 vi.mock("./shared-media", () => ({
   get isSharedMediaConfigured() { return mocks.sharedConfigured; },
   uploadSharedMedia: mocks.sharedUpload,
-  downloadSharedMedia: vi.fn(),
+  downloadSharedMedia: mocks.sharedDownload,
 }));
 vi.mock("./supabase", () => ({ supabase: {
   storage: { from: () => ({ upload: mocks.upload, download: mocks.download }) },
@@ -186,6 +186,32 @@ test("downloadAndDecryptChatImage uses desktop IPC download when available", asy
   expect(url).toMatch(/^blob:/);
 
   delete (globalThis as unknown as { window?: unknown }).window;
+});
+
+test("old Drive attachments decrypt through the authenticated shared service without local Drive credentials", async () => {
+  mocks.sharedConfigured = true;
+  const key = await createRoomKey();
+  const { iv, ciphertext } = await encryptedFixture("legacy-conversation", key);
+  mocks.sharedDownload.mockResolvedValue(ciphertext);
+  const desktop = vi.fn();
+  (globalThis as unknown as { window: { hushWindow: unknown } }).window = { hushWindow: { downloadGDriveMedia: desktop } };
+  const url = await downloadAndDecryptChatImage(fixtureAttachment("legacy-drive-file", iv), "legacy-conversation", key);
+  expect(mocks.sharedDownload).toHaveBeenCalledExactlyOnceWith("legacy-conversation", "legacy-drive-file");
+  expect(desktop).not.toHaveBeenCalled();
+  expect(new Uint8Array(await (await fetch(url)).arrayBuffer())).toEqual(new Uint8Array([0x89, 0x50, 0x4e, 0x47]));
+});
+
+test("an unavailable shared service preserves the previous Electron legacy attachment route", async () => {
+  mocks.sharedConfigured = true;
+  const key = await createRoomKey();
+  const { iv, ciphertext } = await encryptedFixture("legacy-fallback", key);
+  mocks.sharedDownload.mockRejectedValue(new Error("Service unavailable"));
+  const desktop = vi.fn().mockResolvedValue(new Uint8Array(ciphertext));
+  (globalThis as unknown as { window: { hushWindow: unknown } }).window = { hushWindow: { downloadGDriveMedia: desktop } };
+  const url = await downloadAndDecryptChatImage(fixtureAttachment("legacy-public-file", iv), "legacy-fallback", key);
+  expect(desktop).toHaveBeenCalledExactlyOnceWith({ fileId: "legacy-public-file", downloadUrl: undefined });
+  expect(mocks.sharedDownload.mock.invocationCallOrder[0]).toBeLessThan(desktop.mock.invocationCallOrder[0]);
+  expect(url).toMatch(/^blob:/);
 });
 
 test("deduplicates concurrent cache misses and releases the final lease", async () => {

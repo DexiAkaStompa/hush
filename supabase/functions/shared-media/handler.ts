@@ -1,6 +1,7 @@
 export const MAX_MEDIA_BYTES = 16 * 1024 * 1024 + 16;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const FILE_ID = /^[A-Za-z0-9_-]{10,256}$/;
+const LEGACY_NAME = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}-[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.bin$/i;
 
 export type SharedMediaConfig = {
   supabaseUrl: string;
@@ -125,8 +126,22 @@ export async function googleToken(config: SharedMediaConfig, fetchFn: FetchLike)
   return tokenFlight;
 }
 
-async function driveMetadata(fileId: string, token: string, fetchFn: FetchLike): Promise<{ id?: string; size?: string; parents?: string[]; appProperties?: Record<string, string>; trashed?: boolean } | null> {
-  const response = await fetchFn(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?fields=id,size,parents,appProperties,trashed`, { headers: { Authorization: `Bearer ${token}` } });
+type DriveMetadata = { id?: string; name?: string; mimeType?: string; size?: string; parents?: string[]; appProperties?: Record<string, string>; trashed?: boolean };
+
+function belongsToConversation(metadata: DriveMetadata, conversationId: string): boolean {
+  const properties = metadata.appProperties;
+  if (properties?.conversationId === conversationId) return true;
+  // Older Hush uploads predate appProperties. Admit only their exact generated
+  // name and binary MIME type; an existing property's mismatch is never a
+  // reason to fall back to the name. The caller also checks the private folder.
+  if (properties !== undefined && (!properties || typeof properties !== "object" || Array.isArray(properties) || Object.keys(properties).length !== 0)) return false;
+  return metadata.mimeType === "application/octet-stream"
+    && typeof metadata.name === "string" && LEGACY_NAME.test(metadata.name)
+    && metadata.name.slice(0, 36).toLowerCase() === conversationId.toLowerCase();
+}
+
+async function driveMetadata(fileId: string, token: string, fetchFn: FetchLike): Promise<DriveMetadata | null> {
+  const response = await fetchFn(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?fields=id,name,mimeType,size,parents,appProperties,trashed`, { headers: { Authorization: `Bearer ${token}` } });
   if (!response.ok) return null;
   return await response.json();
 }
@@ -187,7 +202,7 @@ export function createHandler(config: SharedMediaConfig, fetchFn: FetchLike = fe
       if (!requireFileId(fileId)) return bad(400, "invalid_file", headers);
       const token = await googleToken(config, fetchFn);
       let metadata = await driveMetadata(fileId, token, fetchFn);
-      if (!metadata || metadata.trashed || !metadata.parents?.includes(config.googleFolderId) || metadata.appProperties?.conversationId !== conversationId) return bad(404, "file_not_found", headers);
+      if (!metadata || metadata.trashed || !metadata.parents?.includes(config.googleFolderId) || !belongsToConversation(metadata, conversationId)) return bad(404, "file_not_found", headers);
       let downloadId = fileId;
       if (rawChunkIndex !== null) {
         const attachmentId = metadata.appProperties?.attachmentId;

@@ -1,6 +1,14 @@
 /// <reference types="vite/client" />
 
 interface HushWindowControls {
+  hasDesktopMigrationSource?: () => Promise<boolean>;
+  getDesktopMigrationSourceState?: () => Promise<'ready' | 'update-required' | 'none'>;
+  beginDesktopMigration?: (hello: import('./lib/migration-transport').MigrationHello) => Promise<boolean>;
+  getDesktopMigrationRequest?: () => Promise<import('./lib/migration-transport').MigrationHello | null>;
+  sendDesktopMigrationMessage?: (message: import('./lib/migration-transport').MigrationWireMessage) => Promise<void>;
+  onDesktopMigrationMessage?: (listener: (message: import('./lib/migration-transport').MigrationWireMessage) => void) => () => void;
+  finishDesktopMigration?: () => Promise<void>;
+  setCallActive?: (active: boolean) => Promise<void>;
   copyText: (text: string) => Promise<void>;
   getUpdateStatus: () => Promise<HushUpdateStatus>;
   checkForUpdates: () => Promise<HushUpdateStatus>;

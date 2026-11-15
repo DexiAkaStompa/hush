@@ -1,11 +1,14 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod downloads;
+mod memory;
+mod migration;
 mod music;
+mod updates;
 
 use downloads::DownloadManager;
 use std::sync::Mutex;
-use tauri::{ipc::InvokeBody, Emitter, Manager, State, WebviewWindow};
+use tauri::{ipc::InvokeBody, AppHandle, Emitter, Manager, State, WebviewWindow};
 use tauri_plugin_clipboard_manager::ClipboardExt;
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_notification::NotificationExt;
@@ -13,6 +16,9 @@ use tauri_plugin_notification::NotificationExt;
 struct AppState {
     downloads: Mutex<DownloadManager>,
     http: reqwest::Client,
+    updates: updates::UpdateManager,
+    memory: memory::MemoryController,
+    migration: migration::MigrationManager,
 }
 
 fn trusted(window: &WebviewWindow) -> Result<(), String> {
@@ -51,10 +57,108 @@ fn native_version(window: WebviewWindow) -> Result<String, String> {
 }
 
 #[tauri::command]
+fn native_set_call_active(
+    window: WebviewWindow,
+    state: State<'_, AppState>,
+    active: bool,
+) -> Result<(), String> {
+    trusted(&window)?;
+    state.memory.set_call_active(&window, active)
+}
+
+#[tauri::command]
+fn native_get_memory_status(
+    window: WebviewWindow,
+    state: State<'_, AppState>,
+) -> Result<memory::MemoryStatus, String> {
+    trusted(&window)?;
+    state.memory.status()
+}
+
+#[tauri::command]
+fn native_migration_has_source(
+    window: WebviewWindow,
+    state: State<'_, AppState>,
+) -> Result<bool, String> {
+    trusted(&window)?;
+    Ok(state.migration.source_available())
+}
+
+#[tauri::command]
+fn native_migration_source_status(
+    window: WebviewWindow,
+    state: State<'_, AppState>,
+) -> Result<&'static str, String> {
+    trusted(&window)?;
+    Ok(state.migration.source_status())
+}
+
+#[tauri::command]
+async fn native_migration_begin(
+    window: WebviewWindow,
+    state: State<'_, AppState>,
+    hello: serde_json::Value,
+) -> Result<bool, String> {
+    trusted(&window)?;
+    state.migration.begin(&window, hello).await
+}
+
+#[tauri::command]
+async fn native_migration_send(
+    window: WebviewWindow,
+    state: State<'_, AppState>,
+    message: serde_json::Value,
+) -> Result<(), String> {
+    trusted(&window)?;
+    state.migration.send(&window, message).await
+}
+
+#[tauri::command]
+async fn native_migration_finish(
+    window: WebviewWindow,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    trusted(&window)?;
+    state.migration.finish(&window).await
+}
+
+#[tauri::command]
 fn native_pending_link(window: WebviewWindow) -> Result<Option<String>, String> {
     trusted(&window)?;
     // The preview deliberately does not take over the stable app's hush:// links.
     Ok(None)
+}
+
+#[tauri::command]
+fn native_updates_get_status(
+    window: WebviewWindow,
+    state: State<'_, AppState>,
+) -> Result<updates::UpdateStatus, String> {
+    trusted(&window)?;
+    state.updates.status()
+}
+
+#[tauri::command]
+async fn native_updates_check(
+    window: WebviewWindow,
+    state: State<'_, AppState>,
+) -> Result<updates::UpdateStatus, String> {
+    trusted(&window)?;
+    state.updates.check(window.app_handle()).await
+}
+
+#[tauri::command]
+async fn native_updates_install(window: WebviewWindow) -> Result<(), String> {
+    trusted(&window)?;
+    if window.state::<AppState>().memory.status()?.call_active {
+        return Err("Termina la chiamata prima di installare l’aggiornamento.".into());
+    }
+    let app = window.app_handle().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        app.state::<AppState>().updates.install(&app, true)
+    })
+    .await
+    .map_err(|_| "Installazione interrotta.".to_string())?
 }
 
 #[tauri::command]
@@ -309,28 +413,63 @@ fn main() {
     }
 }
 
+fn abort_native_work(app: &AppHandle) {
+    if let Some(state) = app.try_state::<AppState>() {
+        if let Ok(mut downloads) = state.downloads.lock() {
+            downloads.abort_owner("main");
+        }
+        state.migration.abort_owner("main");
+    }
+}
+
 fn run() -> Result<(), Box<dyn std::error::Error>> {
     let http = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(20))
         .redirect(reqwest::redirect::Policy::none())
         .build()?;
-    let app = tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|app, _, _| {
+    let builder = tauri::Builder::default();
+    let builder = if cfg!(debug_assertions)
+        && std::env::var("HUSH_RUST_TEST_ALLOW_MULTI_INSTANCE").as_deref() == Ok("1")
+    {
+        builder
+    } else {
+        builder.plugin(tauri_plugin_single_instance::init(|app, _, _| {
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.unminimize();
                 let _ = window.show();
                 let _ = window.set_focus();
             }
         }))
+    };
+    let app = builder
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(AppState {
             downloads: Mutex::new(DownloadManager::default()),
             http,
+            updates: updates::UpdateManager::new(
+                env!("CARGO_PKG_VERSION").into(),
+                updates::verification_only()
+                    || (!cfg!(debug_assertions)
+                        && std::env::var("HUSH_DISABLE_AUTO_UPDATE").as_deref() != Ok("1")),
+            ),
+            memory: memory::MemoryController::default(),
+            migration: migration::MigrationManager::default(),
         })
         .invoke_handler(tauri::generate_handler![
             native_version,
+            native_set_call_active,
+            native_get_memory_status,
+            native_migration_has_source,
+            native_migration_source_status,
+            native_migration_begin,
+            native_migration_send,
+            native_migration_finish,
+            native_updates_get_status,
+            native_updates_check,
+            native_updates_install,
             native_pending_link,
             native_copy_text,
             native_set_material,
@@ -358,7 +497,25 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 .windows
                 .first()
                 .ok_or("Configurazione finestra mancante")?;
-            let builder = tauri::WebviewWindowBuilder::from_config(app, config)?
+            let window_config = config.clone();
+            #[cfg(debug_assertions)]
+            let window_config = {
+                let mut config = window_config;
+                if let Ok(value) = std::env::var("HUSH_RUST_TEST_URL") {
+                    let url: tauri::Url = value.parse()?;
+                    if url.scheme() != "http"
+                        || url.host_str() != Some("127.0.0.1")
+                        || url.port() != Some(5173)
+                        || !url.username().is_empty()
+                        || url.password().is_some()
+                    {
+                        return Err("Origine di verifica non valida.".into());
+                    }
+                    config.url = tauri::WebviewUrl::External(url);
+                }
+                config
+            };
+            let builder = tauri::WebviewWindowBuilder::from_config(app, &window_config)?
                 .on_navigation(trusted_url)
                 .on_new_window(|_, _| tauri::webview::NewWindowResponse::Deny);
             #[cfg(debug_assertions)]
@@ -373,29 +530,78 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             } else {
                 builder
             };
+            #[cfg(debug_assertions)]
+            let builder = if let Ok(title) = std::env::var("HUSH_RUST_TEST_WINDOW_TITLE") {
+                builder.title(title)
+            } else {
+                builder
+            };
             builder.build()?;
+            if !cfg!(debug_assertions) {
+                let updates_app = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    // Leave first paint and sign-in free of updater work.
+                    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                    loop {
+                        let _ = updates_app
+                            .state::<AppState>()
+                            .updates
+                            .check(&updates_app)
+                            .await;
+                        tokio::time::sleep(std::time::Duration::from_secs(4 * 60 * 60)).await;
+                    }
+                });
+            }
             Ok(())
         })
         .on_window_event(|window, event| {
+            if matches!(
+                event,
+                tauri::WindowEvent::Focused(_) | tauri::WindowEvent::Resized(_)
+            ) {
+                if let Some(webview) = window.app_handle().get_webview_window(window.label()) {
+                    let state = window.state::<AppState>();
+                    let _ = state.memory.update_window(
+                        &webview,
+                        window.is_focused().unwrap_or(true),
+                        window.is_minimized().unwrap_or(false),
+                    );
+                }
+            }
             if matches!(event, tauri::WindowEvent::Destroyed) {
                 if let Some(state) = window.try_state::<AppState>() {
                     if let Ok(mut downloads) = state.downloads.lock() {
                         downloads.abort_owner(window.label());
                     }
+                    state.migration.abort_owner(window.label());
                 }
             }
         })
         .build(tauri::generate_context!())?;
     app.run(|app, event| {
+        if let tauri::RunEvent::ExitRequested { api, .. } = &event {
+            if app.state::<AppState>().updates.has_ready() {
+                // As in the Electron client, a verified background download is
+                // applied on an ordinary quit. Explicit restart uses the same path.
+                api.prevent_exit();
+                let update_app = app.clone();
+                tauri::async_runtime::spawn_blocking(move || {
+                    if update_app
+                        .state::<AppState>()
+                        .updates
+                        .install(&update_app, false)
+                        .is_err()
+                    {
+                        update_app.exit(0);
+                    }
+                });
+            }
+        }
         if matches!(
             event,
             tauri::RunEvent::Exit | tauri::RunEvent::ExitRequested { .. }
         ) {
-            if let Some(state) = app.try_state::<AppState>() {
-                if let Ok(mut downloads) = state.downloads.lock() {
-                    downloads.abort_owner("main");
-                }
-            }
+            abort_native_work(app);
         }
     });
     Ok(())

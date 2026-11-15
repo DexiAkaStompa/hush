@@ -1,6 +1,16 @@
 fn main() {
     let manifest = tauri_build::AppManifest::new().commands(&[
         "native_version",
+        "native_migration_has_source",
+        "native_migration_source_status",
+        "native_migration_begin",
+        "native_migration_send",
+        "native_migration_finish",
+        "native_set_call_active",
+        "native_get_memory_status",
+        "native_updates_get_status",
+        "native_updates_check",
+        "native_updates_install",
         "native_pending_link",
         "native_copy_text",
         "native_set_material",

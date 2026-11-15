@@ -99,6 +99,56 @@ describe("shared media handler", () => {
   });
 });
 
+describe("legacy Hush attachment recovery", () => {
+  const legacy = (overrides: Record<string, unknown> = {}) => ({
+    id: fileId, name: `${conversationId}-${attachmentId}.bin`, mimeType: "application/octet-stream",
+    size: "17", parents: [folderId], trashed: false, ...overrides,
+  });
+
+  it.each([undefined, {}])("serves an authenticated member's exact legacy filename with properties %j", async (appProperties) => {
+    const fetchMock = mockFetch({ metadata: legacy({ appProperties }) });
+    const response = await createHandler(config, fetchMock)(request("GET", `?conversationId=${conversationId}&fileId=${fileId}`));
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+    expect(new Uint8Array(await response.arrayBuffer())).toEqual(new Uint8Array(17).fill(1));
+    expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("name,mimeType"), expect.anything());
+  });
+
+  it("still rejects a non-member before touching the owner's Drive", async () => {
+    const fetchMock = mockFetch({ member: false, metadata: legacy() });
+    const response = await createHandler(config, fetchMock)(request("GET", `?conversationId=${conversationId}&fileId=${fileId}`));
+    expect(response.status).toBe(403);
+    expect(fetchMock).not.toHaveBeenCalledWith("https://oauth2.googleapis.com/token", expect.anything());
+  });
+
+  it.each([
+    { parents: ["unrelated-folder"] },
+    { name: `${userId}-${attachmentId}.bin` },
+    { name: `${conversationId}-arbitrary-file.bin` },
+    { name: `${conversationId}-${attachmentId}.bin.exe` },
+    { mimeType: "application/pdf" },
+    { trashed: true },
+    { appProperties: { conversationId: userId, attachmentId } },
+    { appProperties: { conversationId: "" } },
+    { appProperties: { unrelatedProperty: "value" } },
+    { appProperties: null },
+  ])("does not broaden Drive access or bypass existing properties: %j", async (metadata) => {
+    const fetchMock = mockFetch({ metadata: legacy(metadata) });
+    const response = await createHandler(config, fetchMock)(request("GET", `?conversationId=${conversationId}&fileId=${fileId}`));
+    expect(response.status).toBe(404);
+    expect(fetchMock).not.toHaveBeenCalledWith(expect.stringContaining("alt=media"), expect.anything());
+  });
+
+  it("retains the byte limit, exact size validation and modern manifest rules", async () => {
+    const tooLarge = await createHandler(config, mockFetch({ metadata: legacy({ size: String(MAX_MEDIA_BYTES + 1) }) }))(request("GET", `?conversationId=${conversationId}&fileId=${fileId}`));
+    expect(tooLarge.status).toBe(413);
+    const truncated = await createHandler(config, mockFetch({ metadata: legacy({ size: "18" }) }))(request("GET", `?conversationId=${conversationId}&fileId=${fileId}`));
+    expect(truncated.status).toBe(502);
+    const chunk = await createHandler(config, mockFetch({ metadata: legacy() }))(request("GET", `?conversationId=${conversationId}&fileId=${fileId}&chunkIndex=0`));
+    expect(chunk.status).toBe(404);
+  });
+});
+
 it("never caches authenticated private responses", async () => {
   const response = await createHandler(config, mockFetch())(request("GET", `?conversationId=${conversationId}&fileId=${fileId}`));
   expect(response.headers.get("cache-control")).toBe("private, no-store");

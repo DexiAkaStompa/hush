@@ -16,6 +16,7 @@ const fs = require("node:fs");
 const { pathToFileURL } = require("node:url");
 const { autoUpdater } = require("electron-updater");
 const { supportsAcrylic, materialWindowOptions, setWindowMaterial } = require("./window-material.cjs");
+const { registerDeviceMigration, migrationArguments, migrationArgumentsForSecondInstance } = require("./device-migration.cjs");
 
 // All Hush themes use light text. Keep native backdrops and dialogs dark too.
 nativeTheme.themeSource = "dark";
@@ -39,7 +40,11 @@ protocol.registerSchemesAsPrivileged([
 
 app.enableSandbox();
 
-const gotSingleInstanceLock = app.requestSingleInstanceLock();
+let initialMigrationRequest = null;
+try { initialMigrationRequest = migrationArguments(process.argv || []); } catch { /* Invalid switches do not authorize a handoff. */ }
+// Chromium can reorder/alter argv for second-instance delivery. Keep only the
+// validated native migration descriptor in Electron's lossless extra payload.
+const gotSingleInstanceLock = app.requestSingleInstanceLock(initialMigrationRequest ? { hushMigration: initialMigrationRequest } : {});
 if (!gotSingleInstanceLock) app.quit();
 
 let mainWindow = null;
@@ -145,6 +150,30 @@ function windowForEvent(event) {
 }
 
 require("./attachment-downloads.cjs").registerAttachmentDownloads({ ipcMain, dialog, windowForEvent });
+const migrationOnlyLaunch = Boolean(initialMigrationRequest);
+let migrationQuitting = false;
+const deviceMigration = registerDeviceMigration({
+  ipcMain, windowForEvent, getWindow: () => mainWindow,
+  onFinished: () => {
+    autoUpdater.autoInstallOnAppQuit = false;
+    migrationQuitting = true; setImmediate(() => app.quit());
+  },
+  onAborted: () => {
+    if (migrationOnlyLaunch && !migrationQuitting) {
+      migrationQuitting = true; setImmediate(() => app.quit());
+    }
+  },
+});
+
+function writeMigrationReadyMarker() {
+  if (process.platform !== "win32" || !app.isPackaged) return;
+  try {
+    const profilePath = app.getPath("userData");
+    fs.writeFileSync(path.join(profilePath, "migration-ready.json"), JSON.stringify({
+      protocolVersion: 1, executablePath: process.execPath, profilePath, version: app.getVersion(),
+    }), { mode: 0o600 });
+  } catch { /* A read-only profile remains usable; automatic migration stays unavailable. */ }
+}
 
 ipcMain.handle("clipboard:write", (event, text) => {
   if (!windowForEvent(event) || typeof text !== "string" || text.length > 16384) throw new Error("Richiesta appunti non valida.");
@@ -642,7 +671,7 @@ async function createMainWindow() {
   mainWindow.webContents.on("will-navigate", (event, url) => {
     if (!isTrustedUrl(url)) event.preventDefault();
   });
-  mainWindow.once("ready-to-show", () => mainWindow.show());
+  mainWindow.once("ready-to-show", () => { if (!migrationOnlyLaunch) mainWindow.show(); });
   const sendMaximizedState = () => mainWindow?.webContents.send("window:maximized-change", mainWindow.isMaximized());
   mainWindow.on("maximize", sendMaximizedState);
   mainWindow.on("unmaximize", sendMaximizedState);
@@ -662,15 +691,23 @@ app.whenReady().then(async () => {
   configurePermissions();
   configureContentSecurityPolicy();
   await createMainWindow();
-  configureAutoUpdater();
+  writeMigrationReadyMarker();
+  if (migrationOnlyLaunch) {
+    try { deviceMigration.beginFromArguments(process.argv || []); }
+    catch { migrationQuitting = true; app.quit(); }
+  }
+  if (!migrationOnlyLaunch) configureAutoUpdater();
   app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) void createMainWindow(); });
 });
 
-app.on("second-instance", () => {
+app.on("second-instance", (_event, argv, _directory, additionalData) => {
+  try { if (deviceMigration.beginFromArguments(migrationArgumentsForSecondInstance(argv, additionalData))) return; } catch { return; }
   if (!mainWindow) return;
   if (mainWindow.isMinimized()) mainWindow.restore();
   mainWindow.focus();
 });
+
+app.on("before-quit", () => deviceMigration.abort());
 
 app.on("window-all-closed", () => {
   if (updateCheckTimer) clearInterval(updateCheckTimer);

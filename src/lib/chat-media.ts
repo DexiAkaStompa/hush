@@ -199,7 +199,13 @@ export async function downloadAndDecryptChatImage(
     const desktop = typeof window !== "undefined" ? window.hushWindow : undefined;
 
     let buf: ArrayBuffer | null = null;
-    if (desktop?.downloadGDriveMedia) {
+    // Let every current client recover old managed attachments through the
+    // authenticated shared service; local Drive credentials are unnecessary.
+    if (isSharedMediaConfigured) {
+      try { buf = await downloadSharedMedia(conversationId, fileId); }
+      catch { /* Keep the previous public/desktop route for legacy files. */ }
+    }
+    if (!buf && desktop?.downloadGDriveMedia) {
       try {
         const data = await desktop.downloadGDriveMedia({
           fileId,

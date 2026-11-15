@@ -22,7 +22,7 @@ function desktopHarness() {
     Notification: class { constructor() {} show() {} on() {} static isSupported() { return true; } },
   };
   const context: Record<string, any> = {
-    require: (name: string) => name === "electron" ? electron : name === "electron-updater" ? { autoUpdater: updater } : name === "./attachment-downloads.cjs" ? {registerAttachmentDownloads() {}} : name === "./window-material.cjs" ? { setWindowMaterial } : {},
+    require: (name: string) => name === "electron" ? electron : name === "electron-updater" ? { autoUpdater: updater } : name === "./attachment-downloads.cjs" ? {registerAttachmentDownloads() {}} : name === "./device-migration.cjs" ? {migrationArguments: () => null, registerDeviceMigration: () => ({beginFromArguments: () => false, abort() {}})} : name === "./window-material.cjs" ? { setWindowMaterial } : {},
     process: { env: {}, platform: "win32" }, setInterval: () => ({ unref() {} }), setImmediate: (fn: () => void) => fn(),
     URL, Response, console,
   };

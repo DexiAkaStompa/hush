@@ -6,7 +6,11 @@ export default defineConfig({
   base: "./",
   server: {
     host: "127.0.0.1",
+    watch: {
+      ignored: ["**/src-tauri/target/**", "**/.rust-tools.local/**", "**/.rust-signing.local/**", "**/release*/**"],
+    },
   },
+  optimizeDeps: { entries: ["index.html"] },
   test: {
     environment: "node",
     // Database suites each start a WASM Postgres instance; bound their memory use.

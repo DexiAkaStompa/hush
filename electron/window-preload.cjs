@@ -1,6 +1,14 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("hushWindow", {
+  getDesktopMigrationRequest: () => ipcRenderer.invoke("migration:get-request"),
+  sendDesktopMigrationMessage: (message) => ipcRenderer.invoke("migration:send", message),
+  finishDesktopMigration: () => ipcRenderer.invoke("migration:finish"),
+  onDesktopMigrationMessage: (listener) => {
+    const handler = (_event, message) => listener(message);
+    ipcRenderer.on("migration:message", handler);
+    return () => ipcRenderer.removeListener("migration:message", handler);
+  },
   copyText: (text) => ipcRenderer.invoke("clipboard:write", text),
   getUpdateStatus: () => ipcRenderer.invoke("updates:get-status"),
   checkForUpdates: () => ipcRenderer.invoke("updates:check"),

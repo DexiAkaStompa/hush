@@ -89,7 +89,10 @@ export function cameraConstraints(settings: MediaSettings): MediaTrackConstraint
   };
 }
 
-export function screenConstraints(settings: MediaSettings): DisplayMediaStreamOptions {
+export function screenConstraints(settings: MediaSettings): DisplayMediaStreamOptions & {
+  systemAudio: "include";
+  windowAudio: "system";
+} {
   return {
     video: {
       width: { ideal: 2560, max: 3840 },
@@ -102,6 +105,10 @@ export function screenConstraints(settings: MediaSettings): DisplayMediaStreamOp
       noiseSuppression: false,
       channelCount: 2,
     },
+    // Offer the Windows picker the same system audio available in Electron.
+    // These are hints; the user still chooses the source and audio checkbox.
+    systemAudio: "include",
+    windowAudio: "system",
   };
 }
 export async function routeAudio(element: HTMLMediaElement, settings: Pick<MediaSettings, "outputId" | "outputVolume">, effectiveVolume?: number) {

@@ -15,7 +15,8 @@ Create a production Supabase Edge Function secret for each of these values:
 - `GDRIVE_REFRESH_TOKEN`
 - `GDRIVE_FOLDER_ID` (the existing `Hush-Media` folder)
 - `SHARED_MEDIA_ALLOWED_ORIGINS` (comma-separated; production desktop is
-  `hush://app`, while local Vite uses `http://127.0.0.1:5173`)
+  `hush://app` for Electron and `https://tauri.localhost` for Windows Rust,
+  while local Vite uses `http://127.0.0.1:5173`)
 
 The function also uses Supabase's injected `SUPABASE_URL` and the public/anon
 key (`SUPABASE_ANON_KEY` or `SUPABASE_PUBLISHABLE_KEY`) to verify the caller
@@ -36,7 +37,8 @@ The current endpoint contract is:
   For a chunked attachment, add `&chunkIndex=<index>` and use the manifest file ID.
   The selected chunk must also match the manifest's attachment ID and uploader.
 - `GET ?status=1` returns `{ "configured": boolean }` after Supabase auth and
-  does not contact Google.
+  validates the owner's Google refresh grant. An expired or revoked grant is
+  reported instead of claiming storage is connected.
 
 The Drive file stores `conversationId` and `attachmentId` in private
 `appProperties`. The function never creates an `anyone` permission or returns a
@@ -44,6 +46,15 @@ Drive URL. Do not expose the OAuth values through an installer, renderer,
 setup code, CI artifact, or client environment. Credential packaging, CI injection, and setup-code export/import have been disabled.
 The legacy Electron upload/download path remains for compatibility with existing
 local installations; the shared endpoint takes precedence when configured.
+
+Historical files without `appProperties` can also use the authenticated shared
+endpoint. They must be non-trashed binary files in the configured Hush folder,
+with the exact `<conversation UUID>-<attachment UUID>.bin` name and the requested
+conversation ID. Conflicting existing properties are rejected. Membership,
+size and retention checks still apply. This supports old attachments in Rust
+without embedding Google credentials or depending on a public download URL.
+The deployed endpoint passed a real legacy ciphertext roundtrip and decryption,
+including rejection for a different conversation; all temporary data was removed.
 
 ## Client rollout
 
