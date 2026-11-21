@@ -9,7 +9,7 @@ Windows x64. Per una nuova installazione puoi scaricare direttamente Hush Rust.
 
 ## Passaggio dal client attuale
 
-1. Lascia che il client precedente si aggiorni alla **0.5.68 o successiva** e apri Hush con il tuo account.
+1. Lascia che il client precedente si aggiorni alla **0.5.69 o successiva** e apri Hush con il tuo account.
 2. Il client scarica e verifica Hush Rust automaticamente in background.
 3. Premi **Installa e apri Hush Rust** quando compare l’avviso. Puoi anche aprire **Impostazioni → Aggiornamenti**.
 

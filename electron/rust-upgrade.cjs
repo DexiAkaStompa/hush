@@ -169,7 +169,8 @@ function createRustUpgrade({ version, updateStatus, installProcess = spawn }) {
     }
     try {
       if (closed || !canInstall()) throw new Error("Termina la chiamata prima di installare Hush Rust.");
-      const child = installProcess(candidate.filename, ["/P", "/UPDATE", "/R", "/ARGS"], { stdio: "ignore", detached: true, windowsHide: true });
+      // The first installation needs WebView2 setup and Windows shortcuts.
+      const child = installProcess(candidate.filename, ["/P", "/R", "/ARGS"], { stdio: "ignore", detached: true, windowsHide: true });
       status("installing", { version: candidate.selected.version, message: "Hush Rust si aprirà per trasferire le tue chat." });
       child.once("exit", code => {
         installing = false;

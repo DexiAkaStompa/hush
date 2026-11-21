@@ -105,6 +105,22 @@ jobs:
           verifyInstaller(createHash('blake2b512').update(readFileSync(filename)).digest(), selected, readFileSync('src-tauri/updater.pub', 'utf8'));
           '@
           node -e $verifyBridge
+      - name: Verify a first installation creates a shortcut and opens Rust
+        shell: pwsh
+        run: |
+          $installer = (Get-ChildItem src-tauri/target/release/bundle/nsis/*.exe | Select-Object -First 1).FullName
+          $setup = Start-Process -FilePath $installer -ArgumentList '/P','/R','/ARGS' -WindowStyle Hidden -PassThru
+          if (!$setup.WaitForExit(90000) -or $setup.ExitCode -ne 0) { throw 'The passive Rust installer did not complete' }
+          $programs = [Environment]::GetFolderPath('Programs')
+          $name = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).productName
+          if (!(Test-Path -LiteralPath (Join-Path $programs "$name.lnk"))) { throw 'The Rust installer did not create a Start Menu shortcut' }
+          $deadline = (Get-Date).AddSeconds(20)
+          do {
+            $client = Get-Process -Name 'hush-desktop' -ErrorAction SilentlyContinue
+            if (!$client) { Start-Sleep -Milliseconds 500 }
+          } until ($client -or (Get-Date) -ge $deadline)
+          if (!$client) { throw 'The Rust installer did not open the new client' }
+          $client | Stop-Process
       - name: Upload preview installer
         uses: actions/upload-artifact@v4
         with:
