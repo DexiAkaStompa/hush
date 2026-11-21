@@ -1,3 +1,5 @@
+@import './design-theme-tokens.css';
+
 /* Shared by the app and the desktop screen picker. */
 :root {
   /* Shape is shared by all themes: controls, contained surfaces, and windows.

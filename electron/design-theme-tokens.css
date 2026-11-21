@@ -1,0 +1,121 @@
+/* Palettes shared by Hush, its theme previews and the native screen picker. */
+:root[data-theme="ardesia"], [data-theme-preview="ardesia"] {
+  --ink: #172c27; --obsidian: #14181d; --panel: #252d35; --panel-raised: #304940;
+  --line: #343f49; --muted: #aebac4; --frost: #f2f5f5;
+  --blue: #b4e9d6; --mint: #91d4bc; --coral: #f8a8ad;
+  --app-background: #101418;
+  --rail-background: #14181d; --sidebar-background: #1e242b; --chat-background: #171c21;
+  --soft-surface: #252d35; --field-background: #252d35; --dot-color: #343f49;
+  --radius-control: 8px; --radius-surface: calc(8px + 3px);
+  --scrim: rgba(5, 8, 12, .62);
+}
+
+:root[data-theme="inchiostro"], [data-theme-preview="inchiostro"] {
+  --ink: #3b2018; --obsidian: #1c181d; --panel: #312b31; --panel-raised: #49353b;
+  --line: #4b3f47; --muted: #c7b7c0; --frost: #fff5ef;
+  --blue: #ffc6ab; --mint: #a5d4b2; --coral: #f8a8ad;
+  --app-background: #1b171c;
+  --rail-background: #1c181d; --sidebar-background: #221e23; --chat-background: #262227;
+  --soft-surface: #312b31; --field-background: #312b31; --dot-color: #4b3f47;
+  --radius-control: 12px; --radius-surface: calc(12px + 3px);
+  --scrim: rgba(5, 8, 12, .62);
+}
+
+:root[data-theme="basalto"], [data-theme-preview="basalto"] {
+  --ink: #262f19; --obsidian: #171819; --panel: #292c2d; --panel-raised: #363d2d;
+  --line: #363a3b; --muted: #b0b4b5; --frost: #f4f4ef;
+  --blue: #d7ed91; --mint: #bfe18b; --coral: #f8a8ad;
+  --app-background: #131415;
+  --rail-background: #171819; --sidebar-background: #222526; --chat-background: #191b1c;
+  --soft-surface: #292c2d; --field-background: #292c2d; --dot-color: #363a3b;
+  --radius-control: 5px; --radius-surface: calc(5px + 3px);
+  --scrim: rgba(5, 8, 12, .62);
+}
+
+:root[data-theme="marea"], [data-theme-preview="marea"] {
+  --ink: #0d2833; --obsidian: #122337; --panel: #1d3550; --panel-raised: #21445a;
+  --line: #34516e; --muted: #b8cce2; --frost: #f0f7ff;
+  --blue: #93e5f2; --mint: #8ae6ce; --coral: #f8a8ad;
+  --app-background: radial-gradient(ellipse at 12% 0%, #254365, transparent 65%), radial-gradient(ellipse at 95% 100%, #21455a, transparent 60%), #0f2033;
+  --rail-background: #122337; --sidebar-background: #162c46; --chat-background: #0f2033;
+  --soft-surface: #1d3550; --field-background: #1d3550; --dot-color: #34516e;
+  --radius-control: 11px; --radius-surface: calc(11px + 3px);
+  --scrim: rgba(5, 8, 12, .62);
+}
+
+:root[data-theme="prisma"], [data-theme-preview="prisma"] {
+  --ink: #fff; --obsidian: #eeecf8; --panel: #fff; --panel-raised: #e6dff9;
+  --line: #d9d3e8; --muted: #625b75; --frost: #29233b;
+  --blue: #603abc; --mint: #267658; --coral: #8f3d43;
+  --app-background: #faf9fd;
+  --rail-background: #eeecf8; --sidebar-background: #eeedf7; --chat-background: #f8f7fc;
+  --soft-surface: #fff; --field-background: #fff; --dot-color: #d9d3e8;
+  --radius-control: 14px; --radius-surface: calc(14px + 3px);
+  --scrim: rgba(24, 25, 29, .53);
+}
+
+:root[data-theme="notturno"], [data-theme-preview="notturno"] {
+  --ink: #2b193b; --obsidian: #131117; --panel: #232028; --panel-raised: #332840;
+  --line: #342e3a; --muted: #bcb1c4; --frost: #f4eef8;
+  --blue: #d6b7fb; --mint: #95d5ae; --coral: #f8a8ad;
+  --app-background: #111014;
+  --rail-background: #131117; --sidebar-background: #1b181f; --chat-background: #16141a;
+  --soft-surface: #232028; --field-background: #232028; --dot-color: #342e3a;
+  --radius-control: 10px; --radius-surface: calc(10px + 3px);
+  --scrim: rgba(5, 8, 12, .62);
+}
+
+:root[data-theme="serra"], [data-theme-preview="serra"] {
+  --ink: #fff; --obsidian: #f0f3ec; --panel: #f3f6ef; --panel-raised: #d8e5d8;
+  --line: #cbd6c9; --muted: #536155; --frost: #242e26;
+  --blue: #285c47; --mint: #38804e; --coral: #8f3d43;
+  --app-background: #f4f7f0;
+  --rail-background: #f0f3ec; --sidebar-background: #e9eee6; --chat-background: #fcfcf8;
+  --soft-surface: #f3f6ef; --field-background: #f3f6ef; --dot-color: #cbd6c9;
+  --radius-control: 9px; --radius-surface: calc(9px + 3px);
+  --scrim: rgba(24, 25, 29, .53);
+}
+
+:root[data-theme="studio"], [data-theme-preview="studio"] {
+  --ink: #3a2712; --obsidian: #1d1916; --panel: #332d26; --panel-raised: #473626;
+  --line: #524337; --muted: #d1c0ad; --frost: #fff4e6;
+  --blue: #ffce7d; --mint: #aed5a8; --coral: #f8a8ad;
+  --app-background: #1b1714;
+  --rail-background: #1d1916; --sidebar-background: #2c2620; --chat-background: #231f1b;
+  --soft-surface: #332d26; --field-background: #332d26; --dot-color: #524337;
+  --radius-control: 8px; --radius-surface: calc(8px + 3px);
+  --scrim: rgba(5, 8, 12, .62);
+}
+
+:root[data-theme="quota"], [data-theme-preview="quota"] {
+  --ink: #fff; --obsidian: #213c9b; --panel: #fff; --panel-raised: #dfe7ff;
+  --line: #cfd8ee; --muted: #4c5d82; --frost: #182749;
+  --blue: #2345b7; --mint: #287558; --coral: #8f3d43;
+  --app-background: #223e9e;
+  --rail-background: #213c9b; --sidebar-background: #edf0f9; --chat-background: #f8f9fe;
+  --soft-surface: #fff; --field-background: #fff; --dot-color: #cfd8ee;
+  --radius-control: 5px; --radius-surface: calc(5px + 3px);
+  --scrim: rgba(24, 25, 29, .53);
+}
+
+:root[data-theme="orbita"], [data-theme-preview="orbita"] {
+  --ink: #44203e; --obsidian: #191422; --panel: #322643; --panel-raised: #47304f;
+  --line: #48385c; --muted: #c8b8d9; --frost: #f9f0ff;
+  --blue: #f3b6ea; --mint: #afe0c4; --coral: #f8a8ad;
+  --app-background: #171220;
+  --rail-background: #191422; --sidebar-background: #1e182a; --chat-background: #231b32;
+  --soft-surface: #322643; --field-background: #322643; --dot-color: #48385c;
+  --radius-control: 12px; --radius-surface: calc(12px + 3px);
+  --scrim: rgba(5, 8, 12, .62);
+}
+
+:root[data-theme="portico"], [data-theme-preview="portico"] {
+  --ink: #fff9f2; --obsidian: #e7dac6; --panel: #fff9ee; --panel-raised: #dce7dc;
+  --line: #d6c8b3; --muted: #665b4e; --frost: #302c26;
+  --blue: #23564f; --mint: #32714c; --coral: #8f3d43;
+  --app-background: #efe5d5;
+  --rail-background: #e7dac6; --sidebar-background: #f1e6d5; --chat-background: #fbf5ea;
+  --soft-surface: #fff9ee; --field-background: #fff9ee; --dot-color: #d6c8b3;
+  --radius-control: 9px; --radius-surface: calc(9px + 3px);
+  --scrim: rgba(24, 25, 29, .53);
+}

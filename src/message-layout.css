@@ -159,6 +159,7 @@
   color: var(--muted);
   opacity: 0;
 }
+.message-time-clock { display: none; }
 .chat-message:is(:hover, :focus-within) .message-continuation-time {
   opacity: 1;
 }

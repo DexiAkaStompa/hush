@@ -39,6 +39,7 @@ import {
   Trash2,
   UserPlus,
   UserRound,
+  UsersRound,
   Video,
   Volume2,
   X,
@@ -246,6 +247,15 @@ export function WorkspaceApp({ session, theme, onThemeChange }: { session: Sessi
   const [showSearch, setShowSearch] = useState(false);
   const [showCipher, setShowCipher] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [showThemeMembers, setShowThemeMembers] = useState(false);
+  const memberToggleRef = useRef<HTMLButtonElement>(null);
+  const [wideLayout, setWideLayout] = useState(() => window.matchMedia("(min-width: 1100px)").matches);
+  useEffect(() => {
+    const query = window.matchMedia("(min-width: 1100px)");
+    const update = () => setWideLayout(query.matches);
+    query.addEventListener("change", update);
+    return () => query.removeEventListener("change", update);
+  }, []);
   const isMobile = useMobileLayout();
   const [mobileBrowsing, setMobileBrowsing] = useState(true);
   const [mobileActions, setMobileActions] = useState(false);
@@ -1504,6 +1514,48 @@ export function WorkspaceApp({ session, theme, onThemeChange }: { session: Sessi
       { label: "Copia ID canale", separator: true, action: () => copyId(conversation.id) },
     ];
   };
+  const quotaChannelTabs = theme === "quota" && wideLayout && !!activeSpace;
+  const textChannelSection = activeSpace ? (
+    <div className="channel-section text-channel-section">
+      <div className="section-label"><span>canali di testo</span>{(activeSpace.owner_id===session.user.id||mySpaceRole==="admin")&&<button onClick={() => openModal("channel")} aria-label="Crea canale"><Plus size={14} /></button>}</div>
+      {textChannels.map((channel, index) => {
+        const muted = isChatMuted(channel.id);
+        return (
+          <div key={channel.id}>
+          {channel.category_id && (index === 0 || textChannels[index-1].category_id !== channel.category_id) && <button className="category-toggle" aria-expanded={!collapsedCategories.has(channel.category_id)} onClick={()=>setCollapsedCategories(current=>{const next=new Set(current);next.has(channel.category_id!)?next.delete(channel.category_id!):next.add(channel.category_id!);return next;})}><ChevronDown size={12}/><span>{categories.find(category=>category.id===channel.category_id)?.name}</span><small>{textChannels.filter(item=>item.category_id===channel.category_id).length}</small></button>}
+          <button
+            draggable={canManageSpace}
+            onDragStart={e=>{setDragChannelId(channel.id);e.dataTransfer.effectAllowed="move";e.dataTransfer.setData("text/plain",channel.id);}}
+            onDragEnd={()=>setDragChannelId(null)}
+            onDragOver={e=>{if(dragChannelId)e.preventDefault();}}
+            onDrop={e=>{e.preventDefault();void dropChannel(channel.id);}}
+            hidden={(!!channel.category_id&&collapsedCategories.has(channel.category_id)) || (!!activeSpaceId && workspacePreferences.hiddenMuted.includes(activeSpaceId) && isChatMuted(channel.id))}
+            className={`channel-row ${activeConversationId === channel.id ? "active" : ""}`}
+            onClick={() => { setActiveConversationId(channel.id); setSidebarOpen(false); setStage((current) => current.open ? { ...current, expanded: false } : current); }}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              setContextMenu(null);
+              setWorkspaceMenu({x:e.clientX,y:e.clientY,conversation:channel});
+            }}
+          >
+            <Hash size={17} style={channel.identity_customized?{color:identityColor(channel.accent_color)}:undefined}/>
+            <span>{channel.name}</span>{!!unreads[channel.id]?.unread_count && <span className="unread-badge">{unreads[channel.id].unread_count}</span>}
+            {muted ? <BellOff size={13} className="sidebar-mute-icon" /> : null}
+          </button></div>
+        );
+      })}
+      {!loading && textChannels.length === 0 ? <p className="sidebar-empty">Nessun canale di testo</p> : null}
+    </div>
+  ) : null;
+  const closeThemeMembers = () => {
+    setShowThemeMembers(false);
+    memberToggleRef.current?.focus();
+  };
+  const memberToggle = theme === "notturno" ? (
+    <button ref={memberToggleRef} className="theme-members-toggle" aria-label="Persone" aria-expanded={showThemeMembers}
+      aria-controls="workspace-members" onClick={() => setShowThemeMembers(open => !open)}><UsersRound size={19} /></button>
+  ) : null;
+
   const conversationActions = activeConversation ? (<div className="header-actions">
               <button
                 type="button"
@@ -1527,7 +1579,7 @@ export function WorkspaceApp({ session, theme, onThemeChange }: { session: Sessi
             </div>) : null;
 
   return (
-    <div className="app-shell" data-mobile-view={mobileBrowsing ? "browse" : "content"}>
+    <div className="app-shell" data-mobile-view={mobileBrowsing ? "browse" : "content"} data-members-open={theme === "notturno" && showThemeMembers && !(isMobile && mobileBrowsing) ? "true" : undefined}>
       <DotPattern />
       <aside className="server-rail" aria-label="Server" onClickCapture={() => { setMobileBrowsing(true); setSidebarOpen(false); }}>
         <div className={`rail-item ${activeSpaceId === null ? "is-selected" : ""}`}><button className={`brand-mark ${activeSpaceId === null ? "selected" : ""}`} aria-current={activeSpaceId===null?"page":undefined} onClick={() => { setActiveSpaceId(null); setActiveConversationId(null); setStage((current) => current.open ? { ...current, expanded: false } : current); }} aria-label={`Messaggi diretti e amici${incomingFriendRequests ? `, ${incomingFriendRequests} richieste ricevute` : ""}`} title="Messaggi diretti e amici"><BrandMark size={28} />{incomingFriendRequests>0&&<span className="friends-rail-badge">{incomingFriendRequests}</span>}</button></div>
@@ -1550,36 +1602,7 @@ export function WorkspaceApp({ session, theme, onThemeChange }: { session: Sessi
           {!activeSpace && <button className="friends-nav" aria-current={!activeConversationId ? "page" : undefined} onClick={() => {setActiveSpaceId(null);setActiveConversationId(null);setSidebarOpen(false);setStage(current=>current.open?{...current,expanded:false}:current);}}><UserPlus size={17}/> Amici{friendships.entries.some(row=>row.status==="pending"&&row.recipient_id===session.user.id)&&<span aria-label="Richieste di amicizia ricevute">{friendships.entries.filter(row=>row.status==="pending"&&row.recipient_id===session.user.id).length}</span>}</button>}
           {activeSpace ? (
             <>
-              <div className="channel-section">
-                <div className="section-label"><span>canali di testo</span>{(activeSpace.owner_id===session.user.id||mySpaceRole==="admin")&&<button onClick={() => openModal("channel")} aria-label="Crea canale"><Plus size={14} /></button>}</div>
-                {textChannels.map((channel, index) => {
-                  const muted = isChatMuted(channel.id);
-                  return (
-                    <div key={channel.id}>
-                    {channel.category_id && (index === 0 || textChannels[index-1].category_id !== channel.category_id) && <button className="category-toggle" aria-expanded={!collapsedCategories.has(channel.category_id)} onClick={()=>setCollapsedCategories(current=>{const next=new Set(current);next.has(channel.category_id!)?next.delete(channel.category_id!):next.add(channel.category_id!);return next;})}><ChevronDown size={12}/><span>{categories.find(category=>category.id===channel.category_id)?.name}</span><small>{textChannels.filter(item=>item.category_id===channel.category_id).length}</small></button>}
-                    <button
-                      draggable={canManageSpace}
-                      onDragStart={e=>{setDragChannelId(channel.id);e.dataTransfer.effectAllowed="move";e.dataTransfer.setData("text/plain",channel.id);}}
-                      onDragEnd={()=>setDragChannelId(null)}
-                      onDragOver={e=>{if(dragChannelId)e.preventDefault();}}
-                      onDrop={e=>{e.preventDefault();void dropChannel(channel.id);}}
-                      hidden={(!!channel.category_id&&collapsedCategories.has(channel.category_id)) || (!!activeSpaceId && workspacePreferences.hiddenMuted.includes(activeSpaceId) && isChatMuted(channel.id))}
-                      className={`channel-row ${activeConversationId === channel.id ? "active" : ""}`}
-                      onClick={() => { setActiveConversationId(channel.id); setSidebarOpen(false); setStage((current) => current.open ? { ...current, expanded: false } : current); }}
-                      onContextMenu={(e) => {
-                        e.preventDefault();
-                        setContextMenu(null);
-                        setWorkspaceMenu({x:e.clientX,y:e.clientY,conversation:channel});
-                      }}
-                    >
-                      <Hash size={17} style={channel.identity_customized?{color:identityColor(channel.accent_color)}:undefined}/>
-                      <span>{channel.name}</span>{!!unreads[channel.id]?.unread_count && <span className="unread-badge">{unreads[channel.id].unread_count}</span>}
-                      {muted ? <BellOff size={13} className="sidebar-mute-icon" /> : null}
-                    </button></div>
-                  );
-                })}
-                {!loading && textChannels.length === 0 ? <p className="sidebar-empty">Nessun canale di testo</p> : null}
-              </div>
+              {!quotaChannelTabs && textChannelSection}
               <div className="channel-section voice-section">
                 <div className="section-label"><span>canali vocali</span>{(activeSpace.owner_id===session.user.id||mySpaceRole==="admin")&&<button onClick={() => openModal("voice")} aria-label="Crea canale vocale"><Plus size={14} /></button>}</div>
                 {voiceChannels.map((channel,index) => (
@@ -1741,13 +1764,19 @@ export function WorkspaceApp({ session, theme, onThemeChange }: { session: Sessi
       <main className="chat-panel">
         <header className={`chat-header ${safeCommunityImage(activeConversation?.banner_data) ? "has-conversation-banner" : ""}`}>
           {safeCommunityImage(activeConversation?.banner_data) && <img className="conversation-banner-image" src={activeConversation!.banner_data!} alt="" aria-hidden="true" />}
-          <button className="mobile-menu" onClick={() => isMobile ? setMobileBrowsing(true) : setSidebarOpen(true)} aria-label={isMobile ? "Torna alle conversazioni" : "Apri menu"}>{isMobile ? <ArrowLeft size={23}/> : <Menu size={20} />}</button>
+          <button className="mobile-menu" onClick={() => {
+            if (isMobile) {
+              setShowThemeMembers(false);
+              setMobileBrowsing(true);
+            } else setSidebarOpen(true);
+          }} aria-label={isMobile ? "Torna alle conversazioni" : "Apri menu"}>{isMobile ? <ArrowLeft size={23}/> : <Menu size={20} />}</button>
           {isMobile && activeConversation && !safeCommunityImage(activeConversation.icon_data) && !activeSpaceId && dmDetails[activeConversation.id]?.recipient && <span className="mobile-conversation-avatar" aria-hidden="true" style={{background:dmDetails[activeConversation.id].recipient!.avatar_color}}>{initialsFor(dmDetails[activeConversation.id].recipient!.display_name)}<ProfileImage path={dmDetails[activeConversation.id].recipient!.avatar_path} alt=""/></span>}
           {safeCommunityImage(activeConversation?.icon_data)?<img className="conversation-header-icon" src={activeConversation!.icon_data!} alt=""/>:activeConversation?.kind === "voice_channel" ? <Volume2 size={21} className="hash-icon voice-icon" /> : activeConversation ? <Hash size={21} className="hash-icon" /> : <ShieldCheck size={21} className="hash-icon" />}
           <div className="channel-heading"><button className="conversation-identity-trigger" title="Nome, descrizione e aspetto" disabled={!activeConversation} onClick={()=>activeConversation&&setIdentityTarget({kind:"conversation",id:activeConversation.id,value:activeConversation,readOnly:!!activeConversation.space_id&&!canManageSpace})}><strong>{(activeConversation && !activeConversation.identity_customized && !activeConversation.description && !activeConversation.icon_data && !activeSpaceId && dmDetails[activeConversation.id]?.recipient?.display_name) ? dmDetails[activeConversation.id].recipient!.display_name : (activeConversation?.name ?? (activeSpaceId ? "Il tuo spazio Hush" : "Amici"))}</strong>{activeConversation?.description&&<small title={activeConversation.description}>{activeConversation.description}</small>}</button><span>{activeConversation ? activeConversation.kind === "voice_channel" ? `${members.length} membri · canale vocale` : `${members.length} membri` : `Benvenuto, ${profile.display_name}`}</span></div>
           {isMobile && activeConversation ? <div className="mobile-header-actions"><button onClick={() => startCall(activeConversation, false)} aria-label="Avvia chiamata"><Phone size={21}/></button>{activeConversation.kind !== "voice_channel" && <button onClick={openMessageSearch} aria-label="Cerca nei messaggi"><Search size={21}/></button>}<button onClick={() => setMobileActions(true)} aria-label="Altre azioni della chat"><MoreHorizontal size={21}/></button></div> : conversationActions}
-
+          {memberToggle}
         </header>
+        {quotaChannelTabs && <nav className="quota-channel-tabs" aria-label="Canali di testo">{textChannelSection}</nav>}
 
         {isMobile && stage.open && !stage.expanded && <div className="mobile-call-dock"><button onClick={() => setStage(current => ({...current,expanded:true}))} aria-label="Riapri chiamata"><Volume2 size={18}/><span>{stage.roomName}</span></button><button onClick={leaveCall} aria-label="Lascia chiamata"><PhoneOff size={19}/></button></div>}
         <MediaStage
@@ -1914,8 +1943,10 @@ export function WorkspaceApp({ session, theme, onThemeChange }: { session: Sessi
         )}
       </main>
 
-      <aside className="member-sidebar">
-        <div className="member-heading"><span>Persone</span><span>{members.length || 1}</span></div>
+      <aside className="member-sidebar" id="workspace-members" onKeyDown={event => {
+        if (theme === "notturno" && event.key === "Escape" && !event.defaultPrevented) closeThemeMembers();
+      }}>
+        <div className="member-heading"><span>Persone</span><span>{members.length || 1}</span>{theme === "notturno" && <button type="button" className="theme-members-close" aria-label="Nascondi persone" onClick={closeThemeMembers}><X size={16} /></button>}</div>
         <div className="member-list">
           {(members.length ? members : [profile]).map((member) => (
             <button

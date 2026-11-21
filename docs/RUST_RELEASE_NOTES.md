@@ -4,9 +4,16 @@ La versione Windows usa un motore desktop in Rust e mantiene l'interfaccia,
 i temi e le funzioni condivise di Hush. Android, macOS e Linux continuano a
 ricevere i loro pacchetti esistenti.
 
+## Novità della 0.5.67
+
+In **Impostazioni → Aspetto** puoi scegliere fra undici nuovi design con
+anteprima, fra cui Marea, Prisma, Quota e Notturno. I design cambiano colori
+e disposizione dell’interfaccia. La scelta si applica subito e resta salvata
+sul dispositivo.
+
 ## Passaggio dal client attuale
 
-1. Aggiorna Hush alla **0.5.66** e aprilo almeno una volta.
+1. Aggiorna Hush alla **0.5.66 o successiva** e aprilo almeno una volta.
 2. Termina eventuali chiamate e chiudi Hush.
 3. Installa e apri **Hush Rust Preview** da questa pagina.
 

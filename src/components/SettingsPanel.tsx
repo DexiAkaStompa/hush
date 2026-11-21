@@ -582,7 +582,7 @@ export function SettingsPanel({ profile, theme, onThemeChange, onSaved, onClose,
       </form> : null}
       {tab === "voice" ? <VoiceSettings inCall={inCall} /> : null}
       {tab === "appearance" ? <div className="settings-form appearance-settings">
-        <div><h3>Il tuo spazio, la tua luce</h3><p className="settings-hint">Scegli un tema: si applica subito e resta salvato su questo dispositivo.</p></div>
+        <div><h3>Aspetto di Hush</h3><p className="settings-hint">Scegli un tema. Colori e disposizione si applicano subito e la scelta resta salvata su questo dispositivo.</p></div>
         <div className="theme-grid" role="group" aria-label="Tema dell’app">
           {THEMES.map((option) => <button type="button" className={`theme-option ${theme === option.id ? "selected" : ""}`} key={option.id} aria-pressed={theme === option.id} onClick={() => onThemeChange(option.id)}>
             <span className="theme-preview" data-theme-preview={option.id} aria-hidden="true">

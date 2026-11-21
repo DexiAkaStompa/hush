@@ -177,10 +177,11 @@ export function ChatMessage({
   }, [menu]);
   const grouped = [...new Set(reactions.map((reaction) => reaction.emoji))];
   const compact = continuation && !pinned;
+  const timestamp = messageTimestamp(message.createdAt);
   return (
     <article
       ref={articleRef}
-      className={`message chat-message ${compact ? "is-continuation" : "is-group-start"} ${pinned ? "is-pinned" : ""} ${highlighted ? "is-mentioned" : ""}`}
+      className={`message chat-message ${compact ? "is-continuation" : "is-group-start"} ${message.senderId === selfId ? "is-own" : ""} ${pinned ? "is-pinned" : ""} ${highlighted ? "is-mentioned" : ""}`}
       aria-label={`${message.author}, ${new Date(message.createdAt).toLocaleString("it")}`}
       id={`message-${message.id}`}
       tabIndex={0}
@@ -288,7 +289,8 @@ export function ChatMessage({
               dateTime={message.createdAt}
               title={new Date(message.createdAt).toLocaleString("it")}
             >
-              {messageTimestamp(message.createdAt)}
+              <span className="message-time-label">{timestamp}</span>
+              <span className="message-time-clock" aria-hidden="true">{timestamp.slice(-5)}</span>
             </time>
             {pinned && <Pin size={12} aria-label="Messaggio fissato" />}
           </div>

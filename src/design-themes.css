@@ -1,0 +1,378 @@
+/* The new designs share the live interface and its controls. Most variation is
+   in the palette and spacing. Wider layouts also rearrange the existing panes. */
+:root[data-design] {
+  --design-gutter: clamp(16px, 3vw, 28px);
+  --design-heading: 20px;
+  accent-color: var(--blue);
+}
+:root[data-design="light"] { color-scheme: light; }
+:root[data-design] ::selection { background: var(--blue); color: var(--ink); }
+:root[data-design] :is(.app-shell, .auth-screen) { border-color: var(--line); box-shadow: none; backdrop-filter: none; }
+:root[data-design] :is(.app-shell, .auth-screen)::before { content: none; }
+:root[data-design] .dot-pattern { display: none; }
+:root[data-design] .app-shell {
+  --design-rail-width: 66px;
+  --design-sidebar-width: 230px;
+  --design-people-width: 208px;
+}
+:root[data-design] .app-shell :is(.server-rail, .channel-sidebar, .member-sidebar, .user-panel, .chat-header, .composer) {
+  border-color: var(--line);
+  box-shadow: none;
+  backdrop-filter: none;
+}
+:root[data-design] .app-shell .server-rail { overflow: hidden auto; scrollbar-width: thin; }
+:root[data-design] .server-rail :is(.brand-mark, .server-icon) {
+  background: var(--soft-surface);
+  color: var(--frost);
+}
+:root[data-design] .server-rail :is(.brand-mark, .server-icon).selected {
+  background: var(--blue);
+  border-color: transparent;
+  color: var(--ink);
+  box-shadow: none;
+}
+:root[data-design] .server-rail .rail-item::before { background: var(--blue); }
+:root[data-design] .server-rail :is(.brand-mark, .server-icon):focus-visible { outline: 2px solid var(--blue); outline-offset: 3px; }
+:root[data-design] .server-rail .rail-rule { background: var(--line); }
+:root[data-design] .server-rail .add-server { background: transparent; color: var(--muted); border: 1px dashed var(--line); }
+:root[data-design] .app-shell .server-title {
+  margin-inline: 0;
+  border-color: var(--line);
+  padding-inline: 14px;
+  color: var(--frost);
+}
+:root[data-design] .app-shell :is(.server-title, .channel-heading) strong { font-weight: 700; }
+:root[data-design] .app-shell .channel-heading strong { font-size: var(--design-heading); }
+:root[data-design] .app-shell .server-title .eyebrow { font-family: inherit; letter-spacing: .045em; }
+:root[data-design] .app-shell :is(.section-label, .hash-icon, .channel-heading span, .dm-snippet, .member-heading, .member small, .composer-security) { color: var(--muted); }
+:root[data-design] .app-shell :is(.channel-heading span, .channel-section, .member-heading) { border-color: var(--line); }
+:root[data-design] .app-shell :is(.channel-row, .dm-row, .friends-nav).active,
+:root[data-design] .app-shell .friends-nav[aria-current="page"] { color: var(--blue); background-color: var(--panel-raised); }
+:root[data-design] .app-shell :is(.channel-row, .dm-row, .friends-nav) { border-color: transparent; box-shadow: none; }
+:root[data-design] .app-shell .channel-row[hidden] { display: none; }
+:root[data-design] .app-shell .voice-row { color: var(--muted); }
+:root[data-design] .app-shell .voice-row.active { color: var(--blue); background: var(--panel-raised); }
+:root[data-design] .app-shell :is(.server-title, .dm-row, .chat-header).has-conversation-banner,
+:root[data-design] .app-shell .server-title:has(.server-cover-image) { color: #fff; }
+:root[data-design] .app-shell .chat-header { flex-shrink: 0; background: var(--chat-background); }
+:root[data-design] .app-shell .chat-header.has-conversation-banner { background: var(--sidebar-background); }
+:root[data-design] .app-shell .chat-header.has-conversation-banner :is(.channel-heading span, .hash-icon, .header-actions button) { color: #f4f4f4; }
+:root[data-design] .app-shell .chat-header .channel-heading { flex: 1; min-width: 0; }
+:root[data-design] .app-shell :is(.header-actions > button, .mobile-header-actions > button, .mobile-menu, .theme-members-toggle, .theme-members-close, .user-panel > button, .composer > button, .composer .composer-emoji-btn) {
+  border-color: transparent;
+  background: transparent;
+  color: var(--muted);
+  box-shadow: none;
+}
+:root[data-design] .app-shell :is(.header-actions > button, .mobile-header-actions > button, .mobile-menu, .theme-members-toggle, .theme-members-close, .user-panel > button, .composer > button):hover:not(:disabled) {
+  color: var(--frost);
+  background: var(--soft-surface);
+  transform: none;
+}
+:root[data-design] .app-shell :is(.trust-line, .cipher-inspector, .conversation-empty, .privacy-note, .chat-tools button, .media-stage, .call-dock, .input-toast) {
+  color: var(--frost);
+  background: var(--soft-surface);
+  border-color: var(--line);
+  box-shadow: none;
+  backdrop-filter: none;
+}
+:root[data-design] .app-shell .trust-line { margin-top: 7px; min-height: 32px; padding-block: 6px; }
+:root[data-design] .app-shell .trust-line:hover:not(:disabled),
+:root[data-design] .app-shell .chat-tools button:hover { background: var(--panel-raised); }
+:root[data-design] .app-shell .trust-line .trust-signal { color: var(--mint); }
+:root[data-design] .app-shell .privacy-note strong { color: var(--frost); }
+:root[data-design] .app-shell .trust-line :is(code, .trust-action) { color: var(--frost); }
+:root[data-design] .app-shell .composer {
+  background: var(--field-background);
+  min-height: 56px;
+  margin: 8px var(--design-gutter) 16px;
+  padding: 6px 8px;
+}
+:root[data-design] .app-shell .composer textarea {
+  background: transparent;
+  color: var(--frost);
+  border: 0;
+  min-height: 36px;
+}
+:root[data-design] :is(.composer, .auth-input, .modal-form, .find-conversation) :is(input, textarea)::placeholder { color: var(--muted); opacity: 1; }
+:root[data-design] .app-shell .composer .send-button,
+:root[data-design] :is(.auth-submit, .modal-primary, .empty-primary) {
+  background: var(--blue);
+  color: var(--ink);
+  border-color: transparent;
+  box-shadow: none;
+}
+:root[data-design] .app-shell :is(.chat-panel .messages, .sidebar-scroll, .member-sidebar) { scrollbar-color: var(--line) transparent; }
+:root[data-design] .app-shell .messages:has(.chat-message) .channel-intro { display: none; }
+:root[data-design]:not([data-theme="inchiostro"]) .app-shell .messages:has(.chat-message) { display: flex; flex-direction: column; }
+:root[data-design]:not([data-theme="inchiostro"]) .app-shell .messages:has(.chat-message)::before { content: ""; flex: 1 0 0px; }
+:root[data-design]:not([data-theme="inchiostro"]) .app-shell .messages:has(.chat-message) > * { flex-shrink: 0; }
+:root[data-design] .app-shell .chat-panel .messages .chat-message { padding-inline: var(--design-gutter); }
+:root[data-design] .app-shell .message-text a { color: var(--blue); text-underline-offset: 3px; }
+:root[data-design] .app-shell .chat-message.is-mentioned { background: var(--panel-raised); box-shadow: inset 2px 0 var(--blue); }
+:root[data-design] .app-shell .message-date { margin-inline: var(--design-gutter); color: var(--muted); }
+:root[data-design] .app-shell :is(.intro-icon, .workspace-empty-mark, .voice-room-mark, .mention-token) { background: var(--panel-raised); color: var(--blue); border-color: var(--line); box-shadow: none; }
+:root[data-design] .app-shell :is(.voice-lobby, .room-music, .desktop-call-widget) { color: var(--frost); }
+:root[data-design] .app-shell .desktop-call-widget { background: var(--panel-raised); }
+:root[data-design] .app-shell .desktop-call-widget .call-widget-room :is(svg, strong) { color: var(--mint); }
+:root[data-design] .app-shell .member-heading { font-size: 11px; }
+:root[data-design] :is(.window-controls, .window-controls button) { color: var(--muted); border-color: var(--line); box-shadow: none; backdrop-filter: none; }
+:root[data-design] .window-controls { background: var(--field-background); }
+:root[data-design] .window-controls button:hover { background: var(--panel-raised); color: var(--frost); }
+:root[data-design] .window-controls .window-close:hover { background: #a63848; color: #fff; }
+:root[data-design] :is(.settings-content, .settings-nav, .auth-story, .auth-panel) { border-color: var(--line); }
+:root[data-design] :is(.modal-card, .settings-nav, .auth-form-wrap) { color: var(--frost); background: var(--panel); }
+:root[data-design] :is(.settings-nav button, .settings-nav > small, .settings-hint, .auth-form-wrap form > small, .auth-form-wrap label, .auth-proof small) { color: var(--muted); }
+:root[data-design] .settings-nav button:is(.active, [aria-current], [aria-selected="true"]) { color: var(--blue); background: var(--panel-raised); }
+:root[data-design] .settings-modal :is(.theme-option, .settings-nav button, header button) { transition-property: scale; }
+:root[data-design="light"] :is(.auth-error, .danger-action, .hint-error) { color: var(--coral); }
+:root[data-design="light"] :is(.auth-error, .danger-action) { background: color-mix(in srgb, var(--coral) 8%, var(--panel)); }
+:root[data-design="light"] :is(.toast, .workspace-context-menu, .message-options, .message-toolbar, .user-context-menu, .user-status-menu, .emoji-picker-popover, .pinned-panel, .message-search-panel) {
+  color: var(--frost);
+  background: var(--panel);
+  border-color: var(--line);
+}
+:root[data-design="light"] .app-shell :is(.channel-intro p, .workspace-empty p, .user-copy small, .conversation-empty p, .section-label button) { color: var(--muted); }
+
+/* Sign-in follows the same palette, with the account form at the center. */
+:root[data-design] .auth-screen { grid-template: auto auto / minmax(0,1fr); align-content: center; padding: 32px 16px; overflow: auto; }
+:root[data-design] .auth-story { align-items: center; min-height: 0; margin: 0; padding: 0 0 14px; background: none; border: 0; box-shadow: none; backdrop-filter: none; }
+:root[data-design] .auth-story :is(.auth-thesis, .auth-proof) { display: none; }
+:root[data-design] .auth-brand > span { background: var(--blue); color: var(--ink); box-shadow: none; }
+:root[data-design] .auth-panel { min-height: 0; margin: 0; padding: 0; border: 0; background: none; box-shadow: none; backdrop-filter: none; }
+:root[data-design] .auth-form-wrap { border-color: var(--line); box-shadow: none; }
+:root[data-design] .auth-form-wrap .eyebrow { display: none; }
+:root[data-design] .auth-input { color: var(--muted); }
+:root[data-design] .auth-input input { color: var(--frost); }
+:root[data-design] .auth-mode button[aria-selected="true"] { background: var(--panel-raised); color: var(--blue); box-shadow: none; }
+:root[data-design] .auth-submit:disabled { color: var(--muted); background: var(--soft-surface); }
+
+:root[data-theme="basalto"] { --design-heading: 17px; }
+:root[data-theme="basalto"] .app-shell :is(.channel-row, .dm-row) { min-height: 30px; }
+:root[data-theme="basalto"] .app-shell .chat-panel .messages .chat-message.is-group-start { margin-top: 10px; grid-template-columns: 32px minmax(0, 1fr); }
+:root[data-theme="basalto"] .app-shell .message-avatar-button,
+:root[data-theme="basalto"] .app-shell .message-avatar-button .avatar { width: 32px; height: 32px; border-radius: 5px; }
+:root[data-theme="basalto"] .app-shell .messages .chat-message.is-continuation { grid-template-columns: 32px minmax(0,1fr); }
+:root[data-theme="basalto"] .message-continuation-time { width: 32px; }
+:root[data-theme="marea"] { --design-heading: 21px; }
+:root[data-theme="prisma"] .app-shell .messages .chat-message.is-own { grid-template-columns: minmax(0,1fr) 40px; }
+:root[data-theme="prisma"] .app-shell .chat-message.is-own > :is(.message-avatar-button, .message-continuation-time) { grid-column: 2; grid-row: 1; }
+:root[data-theme="prisma"] .app-shell .chat-message.is-own .message-copy { grid-column: 1; grid-row: 1; align-items: flex-end; }
+:root[data-theme="prisma"] .app-shell .chat-message.is-own .message-meta { justify-content: end; }
+:root[data-theme="prisma"] .app-shell .message-copy .message-text { width: fit-content; max-width: 100%; padding: 7px 11px; background: #fff; border-radius: 4px 13px 13px; }
+:root[data-theme="prisma"] .app-shell .is-own .message-copy .message-text { background: #fde6e4; border-radius: 13px 4px 13px 13px; }
+:root[data-theme="prisma"] .app-shell .message-copy :is(.message-editor, .link-embeds, .chat-media) { max-width: 100%; }
+:root[data-theme="prisma"] .app-shell .is-own .message-toolbar { right: 64px; }
+:root[data-theme="notturno"] { --design-heading: clamp(21px, 2.3vw, 30px); }
+:root[data-theme="notturno"] .app-shell .member-sidebar { display: none; }
+:root[data-theme="notturno"] .app-shell[data-members-open="true"] .member-sidebar {
+  display: block;
+  position: absolute;
+  z-index: 16;
+  right: var(--design-gutter);
+  top: 72px;
+  width: min(235px, calc(100% - 32px));
+  max-height: calc(100% - 88px);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-surface);
+  box-shadow: var(--overlay-shadow);
+}
+.theme-members-toggle, .theme-members-close {
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: var(--radius-control);
+  width: 35px;
+  height: 35px;
+  flex: 0 0 auto;
+  cursor: pointer;
+}
+:root[data-theme="notturno"] .app-shell .theme-members-toggle[aria-expanded="true"] { color: var(--blue); background: var(--panel-raised); }
+:root[data-theme="notturno"] .member-heading > .theme-members-close { margin-left: auto; width: 26px; height: 26px; }
+:root[data-theme="studio"] { --design-heading: clamp(21px, 3vw, 34px); }
+:root[data-theme="studio"] .app-shell .desktop-call-slot { order: 2; }
+:root[data-theme="studio"] .app-shell .desktop-call-widget { background: var(--panel-raised); }
+:root[data-theme="studio"] .app-shell .desktop-call-widget .call-widget-room :is(svg, strong) { color: var(--blue); }
+:root[data-theme="quota"] .app-shell .server-rail { background: var(--rail-background); }
+:root[data-theme="quota"] .app-shell .user-panel { background: var(--sidebar-background); }
+:root[data-theme="quota"] .server-rail .rail-item::before { background: white; }
+:root[data-theme="quota"] .server-rail :is(.brand-mark, .server-icon) { color: #eff3ff; background: #3854af; }
+:root[data-theme="quota"] .server-rail :is(.brand-mark, .server-icon).selected { color: var(--blue); background: #fff; }
+:root[data-theme="quota"] .server-rail .add-server { color: #fff; background: transparent; }
+:root[data-theme="quota"] .server-rail :is(.brand-mark, .server-icon):focus-visible { outline-color: #fff; }
+:root[data-theme="quota"] .quota-channel-tabs {
+  flex: none;
+  padding: 4px var(--design-gutter);
+  overflow-x: auto;
+  scrollbar-width: thin;
+  border-bottom: 1px solid var(--line);
+  -webkit-app-region: no-drag;
+}
+:root[data-theme="quota"] .quota-channel-tabs .text-channel-section { display: flex; align-items: center; gap: 6px; width: max-content; min-width: 100%; margin: 0; }
+:root[data-theme="quota"] .quota-channel-tabs .text-channel-section > div { display: flex; align-items: center; gap: 3px; }
+:root[data-theme="quota"] .quota-channel-tabs :is(.channel-row, .category-toggle, .section-label) { width: auto; margin: 0; white-space: nowrap; }
+:root[data-theme="quota"] .quota-channel-tabs .section-label span { display: none; }
+:root[data-theme="quota"] .quota-channel-tabs .section-label:not(:has(button)) { display: none; }
+:root[data-theme="quota"] .quota-channel-tabs .channel-row { min-height: 32px; padding: 5px 9px; }
+:root[data-theme="quota"] .quota-channel-tabs .channel-row.active { box-shadow: inset 0 -2px var(--blue); }
+:root[data-theme="quota"] .quota-channel-tabs .category-toggle { padding-inline: 7px; }
+:root[data-theme="orbita"] { --design-heading: 23px; }
+:root[data-theme="portico"] { --design-heading: clamp(22px, 2.5vw, 32px); }
+:root[data-theme="portico"] :is(.conversation-identity-trigger strong, .server-title strong, .auth-form-wrap h2),
+:root[data-theme="inchiostro"] :is(.conversation-identity-trigger strong, .auth-form-wrap h2) { font-family: Georgia, serif; font-weight: 600; }
+:root[data-theme="portico"] .app-shell .server-title:not(:has(.server-cover-image)) { background: #e8ccba; }
+:root[data-theme="portico"] .app-shell .chat-header:not(.has-conversation-banner) { background: #f6ecdc; }
+:root[data-theme="portico"] .app-shell .server-title strong { font-size: 22px; }
+:root[data-theme="inchiostro"] { --design-heading: clamp(22px, 2.5vw, 30px); }
+
+@media (min-width: 1100px) {
+  :root[data-design] .app-shell {
+    grid-template: minmax(0,1fr) / var(--design-rail-width) var(--design-sidebar-width) minmax(0,1fr) var(--design-people-width);
+    grid-template-areas: "rail sidebar chat people";
+  }
+  :root[data-design] .app-shell > .server-rail { grid-area: rail; padding-inline: 10px; }
+  :root[data-design] .app-shell > .channel-sidebar { grid-area: sidebar; }
+  :root[data-design] .app-shell > .chat-panel { grid-area: chat; }
+  :root[data-design] .app-shell > .member-sidebar { grid-area: people; display: block; }
+  :root[data-design] body:has(.window-controls) .app-shell > .member-sidebar { padding-top: 43px; }
+  :root[data-design] .app-shell .server-rail :is(.server-icon,.brand-mark) { width: 42px; height: 42px; }
+  :root[data-design] .app-shell .chat-header { flex-basis: 68px; }
+  :root[data-design] .app-shell .server-title { min-height: 68px; }
+  :root[data-theme="basalto"] .app-shell { --design-rail-width: 54px; --design-sidebar-width: 218px; --design-people-width: 178px; }
+  :root[data-theme="basalto"] .app-shell .server-rail { gap: 8px; padding-inline: 7px; }
+  :root[data-theme="basalto"] .app-shell .server-rail :is(.server-icon,.brand-mark) { width: 34px; height: 34px; }
+  :root[data-theme="basalto"] .app-shell .server-rail .rail-item::before { left: -7px; }
+  :root[data-theme="basalto"] .app-shell .chat-header { flex-basis: 58px; }
+  :root[data-theme="basalto"] .app-shell .server-title { min-height: 58px; }
+
+  :root[data-theme="inchiostro"] .app-shell,
+  :root[data-theme="prisma"] .app-shell {
+    grid-template-columns: var(--design-sidebar-width) minmax(0,1fr) var(--design-people-width);
+  }
+  :root[data-theme="inchiostro"] .app-shell {
+    grid-template-rows: 56px minmax(0,1fr);
+    grid-template-areas: "rail rail rail" "sidebar chat people";
+  }
+  :root[data-theme="prisma"] .app-shell {
+    grid-template-rows: minmax(0,1fr) 56px;
+    grid-template-areas: "sidebar chat people" "rail rail rail";
+  }
+  :root:is([data-theme="inchiostro"], [data-theme="prisma"]) .app-shell > .server-rail {
+    flex-direction: row;
+    align-items: center;
+    gap: 12px;
+    padding: 0 18px;
+    border: 0;
+    border-bottom: 1px solid var(--line);
+    overflow: auto hidden;
+    -webkit-app-region: no-drag;
+  }
+  :root[data-theme="prisma"] .app-shell > .server-rail { border-top: 1px solid var(--line); border-bottom: 0; }
+  :root[data-theme="prisma"] .server-rail > :first-child { margin-inline-start: auto; }
+  :root[data-theme="prisma"] .server-rail > :last-child { margin-inline-end: auto; }
+  :root[data-theme="inchiostro"] body:has(.window-controls) .app-shell > .server-rail { padding-right: 112px; }
+  :root:is([data-theme="inchiostro"], [data-theme="prisma"]) .server-rail .rail-rule { width: 1px; height: 21px; flex: 0 0 1px; }
+  :root:is([data-theme="inchiostro"], [data-theme="prisma"]) .server-rail .rail-item::before { display: none; }
+  :root:is([data-theme="inchiostro"], [data-theme="prisma"]) .app-shell .server-rail :is(.server-icon,.brand-mark) { width: 36px; height: 36px; }
+  :root[data-theme="inchiostro"] .app-shell .chat-panel .messages { width: 100%; max-width: 690px; margin-inline: auto; }
+  :root[data-theme="inchiostro"] .app-shell .composer { width: min(640px, calc(100% - 48px)); margin-inline: auto; }
+
+  :root[data-theme="marea"] .app-shell { --design-rail-width: 53px; --design-sidebar-width: 218px; --design-people-width: 190px; gap: 10px; padding: 12px; }
+  :root[data-theme="marea"] .app-shell > :is(.server-rail, .channel-sidebar, .chat-panel, .member-sidebar) { border: 1px solid var(--line); border-radius: var(--radius-surface); }
+  :root[data-theme="marea"] .app-shell :is(.server-rail, .channel-sidebar, .member-sidebar) { background: color-mix(in srgb, var(--sidebar-background) 89%, transparent); }
+  :root[data-theme="marea"] .app-shell .server-rail :is(.server-icon,.brand-mark) { width: 34px; height: 34px; }
+  :root[data-theme="marea"] .app-shell > .server-rail { padding-inline: 7px; }
+  :root[data-theme="marea"] .app-shell .server-rail .rail-item::before { left: -7px; }
+
+  :root[data-theme="notturno"] .app-shell { grid-template-columns: 62px 218px minmax(0,1fr); grid-template-areas: "rail sidebar chat"; }
+  :root[data-theme="notturno"] .app-shell > .member-sidebar { display: none; }
+  :root[data-theme="notturno"] body:has(.window-controls) .app-shell > .member-sidebar { padding-top: 14px; }
+  :root[data-theme="notturno"] body:has(.window-controls) .app-shell .chat-header { padding-right: 116px; }
+  :root[data-theme="notturno"] .app-shell .chat-panel .messages { width: min(100%, 770px); margin-inline: auto; }
+  :root[data-theme="notturno"] .app-shell .composer { width: min(718px, calc(100% - 48px)); margin-inline: auto; }
+
+  :root[data-theme="serra"] .app-shell {
+    grid-template: minmax(0,1fr) minmax(140px,29%) / 60px minmax(0,1fr) 250px;
+    grid-template-areas: "rail chat sidebar" "rail chat people";
+  }
+  :root[data-theme="serra"] .app-shell > .channel-sidebar { border-left: 1px solid var(--line); border-right: 0; }
+  :root[data-theme="serra"] .app-shell > .member-sidebar { border-top: 1px solid var(--line); padding-block: 12px; }
+  :root[data-theme="serra"] body:has(.window-controls) .app-shell > .member-sidebar { padding-top: 12px; }
+  :root[data-theme="serra"] body:has(.window-controls) .app-shell .server-title { padding-top: 42px; }
+  :root[data-theme="studio"] .app-shell { --design-sidebar-width: 248px; --design-people-width: 190px; }
+  :root[data-theme="studio"] .app-shell .chat-header { flex-basis: 83px; }
+  :root[data-theme="studio"] .app-shell .server-title { min-height: 83px; }
+
+  :root[data-theme="orbita"] .app-shell .chat-panel .messages .chat-message { position: relative; padding-left: calc(var(--design-gutter) + 54px); }
+  :root[data-theme="orbita"] .app-shell .chat-message.is-group-start .message-meta time {
+    position: absolute;
+    left: var(--design-gutter);
+    top: 7px;
+    max-width: 44px;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+  :root[data-theme="orbita"] .message-time-label { position: absolute; width: 1px; height: 1px; clip-path: inset(50%); overflow: hidden; }
+  :root[data-theme="orbita"] .message-time-clock { display: inline; }
+  :root[data-theme="orbita"] .app-shell .chat-message.is-group-start::before {
+    content: "";
+    position: absolute;
+    left: calc(var(--design-gutter) + 46px);
+    top: 11px;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--blue);
+  }
+  :root[data-theme="portico"] .app-shell { --design-sidebar-width: 254px; --design-people-width: 184px; }
+  :root[data-theme="portico"] .app-shell .chat-header { flex-basis: 96px; }
+  :root[data-theme="portico"] .app-shell .server-title { min-height: 96px; }
+}
+
+/* Miniatures use the same tokens and show where the server controls live. */
+.theme-preview[data-theme-preview="inchiostro"], .theme-preview[data-theme-preview="prisma"] { grid-template-columns: 49px 1fr; }
+.theme-preview[data-theme-preview="inchiostro"] { grid-template-rows: 21px 1fr; }
+.theme-preview[data-theme-preview="prisma"] { grid-template-rows: 1fr 21px; }
+.theme-preview:is([data-theme-preview="inchiostro"],[data-theme-preview="prisma"]) .theme-preview-rail { grid-column: 1 / -1; flex-direction: row; gap: 5px; padding: 0 7px; }
+.theme-preview[data-theme-preview="prisma"] .theme-preview-rail { grid-row: 2; justify-content: center; }
+.theme-preview[data-theme-preview="serra"] { grid-template-columns: 22px 1fr 49px; }
+.theme-preview[data-theme-preview="serra"] .theme-preview-sidebar { grid-column: 3; grid-row: 1; }
+.theme-preview[data-theme-preview="serra"] .theme-preview-chat { grid-column: 2; grid-row: 1; }
+.theme-preview[data-theme-preview="notturno"] { grid-template-columns: 16px 34px 1fr; }
+.theme-preview[data-theme-preview="marea"] { gap: 3px; padding: 3px; }
+.theme-preview[data-theme-preview="marea"] > span { border-radius: 4px; }
+.theme-preview[data-theme-preview="quota"] .theme-preview-chat > span:first-child { width: 80%; background: repeating-linear-gradient(90deg,var(--blue) 0 17%,transparent 17% 25%); }
+.theme-preview[data-theme-preview="orbita"] .theme-preview-chat { border-left: 1px solid var(--blue); }
+.theme-preview[data-theme-preview="portico"] .theme-preview-chat > span:first-child { width: 100%; height: 11px; background: #e8ccba; }
+
+@media (min-width: 850px) {
+  .settings-content .appearance-settings .theme-grid { grid-template-columns: repeat(3, minmax(0,1fr)); }
+}
+@media (821px <= width < 1100px) {
+  :root[data-design] body:has(.window-controls) .app-shell .chat-header {
+    display: grid;
+    grid-template-columns: auto minmax(0,1fr) auto;
+    grid-template-rows: minmax(32px, auto) auto;
+    height: auto;
+    flex-basis: auto;
+    padding: 8px 14px;
+  }
+  :root[data-design] body:has(.window-controls) .app-shell .channel-heading { margin-right: 104px; }
+  :root[data-design] body:has(.window-controls) .app-shell .header-actions { grid-row: 2; grid-column: 1 / -1; }
+  :root[data-design] body:has(.window-controls) .app-shell .theme-members-toggle { grid-row: 2; grid-column: 3; justify-self: end; }
+  :root[data-design] body:has(.window-controls) .app-shell .header-actions > button { width: 36px; height: 34px; }
+}
+@media (max-width: 820px) {
+  :root[data-design] { --design-gutter: 12px; --design-heading: 18px; }
+  :root[data-design] .app-shell .chat-header { gap: 5px; }
+  :root[data-design] .app-shell .server-rail { overflow-y: auto; }
+  :root[data-design] .app-shell .composer { margin-inline: 10px; }
+  :root[data-design] .app-shell .trust-line { margin-inline: 12px; }
+  :root[data-theme="prisma"] .app-shell .messages .chat-message.is-own { grid-template-columns: minmax(0,1fr) 36px; }
+  :root[data-design] .auth-screen { padding: 24px 14px; }
+  :root[data-design] .auth-form-wrap { padding: 20px; }
+}
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+  :root[data-theme="marea"] .app-shell :is(.server-rail, .channel-sidebar, .member-sidebar) { background: var(--sidebar-background); }
+  :root[data-design] :is(.modal-backdrop, .modal-card) { backdrop-filter: none; }
+}

@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useLayoutEffect, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { AuthScreen } from "./components/AuthScreen";
 import { BrandMark } from "./components/BrandMark";
@@ -26,8 +26,9 @@ export function App() {
   const [authReady, setAuthReady] = useState(!isSupabaseConfigured);
   const [theme, setTheme] = useState<ThemeId>(readTheme);
 
+  useLayoutEffect(() => { applyTheme(theme); }, [theme]);
+
   useEffect(() => {
-    applyTheme(theme);
     let active = true;
     let dispose: (() => void) | undefined;
     if (theme === "liquid-glass") void import("./lib/liquid-glass").then(({ installLiquidGlass }) => {

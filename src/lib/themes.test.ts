@@ -20,6 +20,26 @@ test("saved Frosted and opaque theme choices remain selected", async () => {
   saved = "invalid"; expect(readTheme()).toBe("liquid-glass");
 });
 
+test("all approved designs persist and clear their layout attributes on returning to a classic theme", async () => {
+  const h = harness();
+  const stored = new Map<string, string>();
+  window.localStorage.setItem = (key, value) => { stored.set(key, value); };
+  window.localStorage.getItem = key => stored.get(key) ?? null;
+  const { THEMES, applyTheme, readTheme } = await import("./themes");
+  const dark = ["ardesia", "inchiostro", "basalto", "marea", "notturno", "studio", "orbita"] as const;
+  const light = ["prisma", "serra", "quota", "portico"] as const;
+  for (const id of [...dark, ...light]) {
+    expect(THEMES.filter(theme => theme.id === id)).toHaveLength(1);
+    applyTheme(id);
+    expect(readTheme()).toBe(id);
+    expect(h.dataset.design).toBe(light.some(lightId => lightId === id) ? "light" : "dark");
+  }
+  applyTheme("frosted-glass");
+  expect(h.dataset.design).toBeUndefined();
+  stored.set("hush-theme", "carta");
+  expect(readTheme()).toBe("liquid-glass");
+});
+
 function harness(setMaterial?: (enabled: boolean) => Promise<boolean>, reduced = false) {
   const dataset: Record<string, string> = {};
   const listeners: Array<() => void> = [];

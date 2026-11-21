@@ -4,13 +4,14 @@ import { App } from "./App";
 import { AppErrorBoundary } from "./components/AppErrorBoundary";
 import { WindowControls } from "./components/WindowControls";
 import { BrandMark } from "./components/BrandMark";
-import { readTheme } from "./lib/themes";
+import { readTheme, setThemeAttributes } from "./lib/themes";
 import "./styles.css";
 import "./ambient-light.css";
 import "./apple-polish.css";
 import "./chat-experience.css";
 import "./mobile.css";
 import "./liquid-glass.css";
+import "./design-themes.css";
 import { Capacitor } from '@capacitor/core';
 
 // Install the Rust bridge before any component captures window.hushWindow.
@@ -21,7 +22,7 @@ if ('__TAURI_INTERNALS__' in window) {
 }
 
 // Apply the saved palette before React's first paint, without changing that choice.
-document.documentElement.dataset.theme = readTheme();
+setThemeAttributes(readTheme());
 const root = createRoot(document.getElementById("root")!);
 let migrationFailure: string | undefined;
 let pendingMigration = false;
@@ -48,7 +49,7 @@ if ('__TAURI_INTERNALS__' in window && !completedMigration && !migrationFailure 
   const { initDesktopMigrationTarget } = await import('./lib/desktop-migration-target');
   const result = await initDesktopMigrationTarget((stage) => preparing(stage === 'keys' ? "Trasferimento sicuro delle chat…" : "Trasferimento delle tue impostazioni…"));
   if (result.status === 'failed') migrationFailure = result.message;
-  document.documentElement.dataset.theme = readTheme();
+  setThemeAttributes(readTheme());
 }
 
 if (Capacitor.isNativePlatform()) {
