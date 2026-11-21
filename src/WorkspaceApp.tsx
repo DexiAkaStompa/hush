@@ -270,15 +270,6 @@ export function WorkspaceApp({ session, theme, onThemeChange }: { session: Sessi
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [stage, setStage] = useState<CallStage>(EMPTY_CALL_STAGE);
-  useEffect(() => {
-    const desktop = window.hushWindow;
-    if (!desktop?.setCallActive) return;
-    // Folding the call into its widget changes expanded, never the call guard.
-    void desktop.setCallActive(stage.open).catch(() => undefined);
-    return () => {
-      if (stage.open) void desktop.setCallActive?.(false).catch(() => undefined);
-    };
-  }, [stage.open]);
   const [contextMenu, setContextMenu] = useState<ContextMenuTarget | null>(null);
   const [workspaceMenu, setWorkspaceMenu] = useState<{ x: number; y: number; space?: Space; conversation?: Conversation; canManage?: boolean } | null>(null);
   const [inviteGroup, setInviteGroup] = useState<{ conversation: Conversation; members: Profile[] } | null>(null);
@@ -286,6 +277,13 @@ export function WorkspaceApp({ session, theme, onThemeChange }: { session: Sessi
   useEffect(() => { saveWorkspacePreferences(session.user.id, workspacePreferences); }, [session.user.id, workspacePreferences]);
   const [dmDetails, setDmDetails] = useState<Record<string, { recipient: Profile | null; lastMessage?: string | null }>>({});
   const [incomingCall, setIncomingCall] = useState<IncomingCallPayload | null>(null);
+  const callActive = stage.open || Boolean(incomingCall);
+  useEffect(() => {
+    void window.hushWindow?.setCallActive?.(callActive).catch(() => undefined);
+  }, [callActive]);
+  useEffect(() => () => {
+    void window.hushWindow?.setCallActive?.(false, false).catch(() => undefined);
+  }, []);
   const userStatus = useUserStatus();
   const mutedChatIds = useMutedChats();
   const [showStatusMenu, setShowStatusMenu] = useState(false);

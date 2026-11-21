@@ -13,6 +13,7 @@ assert.equal(process.env.HUSH_RUN_LIVE_MIGRATION_TEST, '1', 'Explicit live dispo
 const workspace = fileURLToPath(new URL('../', import.meta.url));
 const sourceExe = path.resolve(workspace, process.env.HUSH_MIGRATION_SOURCE_BINARY || 'release/win-unpacked/Hush.exe');
 const rustExe = path.resolve(workspace, process.env.HUSH_RUST_BINARY || 'src-tauri/target/debug/hush-desktop.exe');
+const keepSourceRunning = process.env.HUSH_MIGRATION_SOURCE_RUNNING === '1';
 const reportDirectory = path.resolve(workspace, process.argv[2] || 'release-rust-check');
 mkdirSync(reportDirectory, { recursive: true });
 assert.ok(existsSync(sourceExe), 'Packaged Electron source missing');
@@ -214,14 +215,20 @@ try {
   const rows = await api('/rest/v1/encrypted_messages?conversation_id=eq.' + room + '&select=nonce,ciphertext', users[0].headers);
   assert.equal(rows.length, 1); assert.ok(!rows[0].ciphertext.includes(historical));
   pass('packaged Electron seeded real encrypted history and both custom IndexedDB sounds in an owned profile');
-  await stop(source, sourceCdp); sourceCdp = null;
-  await waitSourceClosed();
+  if (!keepSourceRunning) {
+    await stop(source, sourceCdp); sourceCdp = null;
+    await waitSourceClosed();
+  }
   writeFileSync(marker, JSON.stringify({ protocolVersion: 1, executablePath: sourceExe, profilePath: profile, version: ownMarker.version }), { mode: 0o600 });
   launchTarget(); nativeCdp = await connect(TARGET_PORT);
   await waitFor(nativeCdp, 'Boolean(window.hushWindow?.onDesktopMigrationMessage)', 'Target bridge unavailable');
   await nativeCdp.evaluate('globalThis.__migrationKinds=[];window.hushWindow.onDesktopMigrationMessage(message=>globalThis.__migrationKinds.push(message.kind));true');
   await waitFor(nativeCdp, `Boolean(localStorage.getItem('hush:desktop-migrated:v1'))`, 'Automatic native migration did not complete', 60000);
   await waitSourceClosed();
+  if (keepSourceRunning) {
+    assert.ok(existsSync(path.join(profile, 'rust-migration-complete-v1')));
+    pass('running Electron handed the profile to Rust before closing and recorded the completed upgrade');
+  }
   assert.ok(existsSync(profile));
   assert.equal(await nativeCdp.evaluate(`Boolean(document.querySelector('.auth-screen'))`), false);
   assert.equal(await nativeCdp.evaluate(`document.documentElement.dataset.theme`), 'frosted-glass');

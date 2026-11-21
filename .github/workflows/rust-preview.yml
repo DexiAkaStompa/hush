@@ -17,12 +17,20 @@ on:
         description: Publish the signed Windows Rust channel after the Electron bridge release exists
         type: boolean
         default: false
+  workflow_call:
+    inputs:
+      release_tag:
+        required: true
+        type: string
+      publish_preview:
+        required: true
+        type: boolean
 
 permissions:
   contents: read
 
 concurrency:
-  group: rust-preview-${{ github.ref }}
+  group: rust-preview-${{ inputs.release_tag || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -38,6 +46,8 @@ jobs:
       VITE_TURN_URL: ${{ vars.VITE_TURN_URL }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_tag || github.ref }}
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -83,6 +93,18 @@ jobs:
           if ($installers.Count -ne 1) { throw "Expected one signed installer" }
           $env:HUSH_RUST_VERIFY_PACKAGE = $installers[0].FullName
           cargo test --manifest-path src-tauri/Cargo.toml --locked signed_installer_rejects_corruption_and_a_substituted_version -- --ignored
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $verifyBridge = @'
+          const { createHash } = require('node:crypto');
+          const { readFileSync } = require('node:fs');
+          const { dirname, join } = require('node:path');
+          const { selectPackage, verifyInstaller } = require('./electron/rust-upgrade.cjs');
+          const filename = process.env.HUSH_RUST_VERIFY_PACKAGE;
+          const manifest = JSON.parse(readFileSync(join(dirname(filename), 'rust-latest.json'), 'utf8'));
+          const selected = selectPackage(manifest, require('./package.json').version);
+          verifyInstaller(createHash('blake2b512').update(readFileSync(filename)).digest(), selected, readFileSync('src-tauri/updater.pub', 'utf8'));
+          '@
+          node -e $verifyBridge
       - name: Upload preview installer
         uses: actions/upload-artifact@v4
         with:
@@ -102,13 +124,18 @@ jobs:
 
   publish:
     name: Publish isolated signed Rust channel
-    if: github.event_name == 'workflow_dispatch' && inputs.publish_preview
+    if: inputs.publish_preview
     needs: windows
     runs-on: ubuntu-latest
+    concurrency:
+      group: signed-windows-rust-publication
+      cancel-in-progress: false
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_tag || github.ref }}
       - uses: actions/download-artifact@v4
         with:
           name: hush-rust-windows-preview
@@ -118,6 +145,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           version=$(node -p "require('./package.json').version")
+          test "$(gh release view --json tagName --jq .tagName)" = "v$version"
           gh release view "v$version" --json isDraft,assets > bridge.json
           node --input-type=module -e 'import fs from "node:fs"; const release=JSON.parse(fs.readFileSync("bridge.json")); const version=JSON.parse(fs.readFileSync("package.json")).version; if(release.isDraft || !release.assets.some(asset => asset.name === `Hush-Setup-${version}.exe`)) throw new Error("Publish the Electron migration bridge first");'
       - name: Publish signed installer and channel manifest
@@ -125,7 +153,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           if ! gh release view rust-preview >/dev/null 2>&1; then
-            gh release create rust-preview --target "$GITHUB_SHA" --title "Hush Rust for Windows" --prerelease --latest=false --notes-file docs/RUST_RELEASE_NOTES.md
+            gh release create rust-preview --target "$(git rev-parse HEAD)" --title "Hush Rust for Windows" --prerelease --latest=false --notes-file docs/RUST_RELEASE_NOTES.md
           else
             gh release edit rust-preview --title "Hush Rust for Windows" --prerelease --latest=false --notes-file docs/RUST_RELEASE_NOTES.md
           fi

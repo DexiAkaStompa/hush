@@ -12,7 +12,7 @@
     "url": "https://github.com/DexiAkaStompa/hush.git"
   },
   "private": true,
-  "version": "0.5.67",
+  "version": "0.5.68",
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
@@ -88,6 +88,7 @@
     "files": [
       "dist/**/*",
       "electron/**/*",
+      "src-tauri/updater.pub",
       "docs/licenses/**/*",
       "build/icon.ico",
       "build/icon.png",

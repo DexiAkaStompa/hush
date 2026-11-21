@@ -214,3 +214,12 @@ jobs:
           gh release upload "$RELEASE_TAG" "${files[@]}" \
             --repo "$GITHUB_REPOSITORY" \
             --clobber
+
+  rust:
+    name: Publish signed Rust for Windows
+    needs: publish
+    uses: ./.github/workflows/rust-preview.yml
+    with:
+      release_tag: ${{ inputs.release_tag || github.ref_name }}
+      publish_preview: true
+    secrets: inherit

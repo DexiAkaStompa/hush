@@ -495,20 +495,20 @@ function UpdateSettings({ inCall }: { inCall: boolean }) {
   const labels = {
     disabled: "Aggiornamenti automatici non attivi in questa build", idle: "Pronto per la verifica", checking: "Ricerca aggiornamenti…",
     available: "Nuova versione disponibile", current: "Hush è aggiornato", downloading: "Download in corso…",
-    downloaded: "Aggiornamento pronto da installare", error: "Aggiornamento non riuscito",
+    downloaded: "Aggiornamento pronto da installare", installing: "Installazione in corso…", error: "Aggiornamento non riuscito",
   };
   if (Capacitor.isNativePlatform()) return <div className="modal-form settings-form"><h3>Aggiornamenti Android</h3><p className="settings-hint">Scarica l’ultimo APK e installalo sopra Hush per conservare account e dati. Android ti chiederà di confermare l’installazione.</p><a className="modal-primary" href="https://github.com/DexiAkaStompa/hush/releases/latest" target="_blank" rel="noopener noreferrer">Scarica l’ultima versione</a></div>;
   return <div className="modal-form settings-form"><h3>Sempre all’ultima versione</h3>
-    <p className="settings-hint">Hush cerca nuove versioni all’avvio e ogni quattro ore e le scarica in background da DexiAkaStompa/hush su GitHub.</p>
+    <p className="settings-hint">{status?.target === "rust" ? "L’app scarica Hush Rust in background. All’apertura verranno trasferiti accesso, chat e impostazioni." : "Hush cerca nuove versioni all’avvio e periodicamente, poi le scarica in background da GitHub."}</p>
     <div className="update-card" role="status"><Download size={28} /><strong>{status ? labels[status.status] : window.hushWindow ? "Caricamento…" : "Disponibile nell’app desktop"}</strong>
       {status ? <span>Versione installata: {status.currentVersion}{status.version ? ` · Nuova versione: ${status.version}` : ""}</span> : null}
       {status?.status === "downloading" ? <><progress max="100" value={status.percent ?? 0} /><span>{Math.round(status.percent ?? 0)}%</span></> : null}
       {status?.message ? <p>{status.message}</p> : null}
     </div>
-    <button type="button" className="modal-primary" disabled={!status || ["disabled", "checking", "downloading", "available", "downloaded"].includes(status.status)} onClick={() => {
+    <button type="button" className="modal-primary" disabled={!status || ["disabled", "checking", "downloading", "available", "downloaded", "installing"].includes(status.status)} onClick={() => {
       setError(""); void window.hushWindow?.checkForUpdates().then(setStatus).catch((reason) => setError(readableError(reason)));
     }}>Cerca aggiornamenti</button>
-    {status?.status === "downloaded" ? <button type="button" className="settings-secondary" disabled={inCall} onClick={() => { void window.hushWindow?.installUpdate().catch((reason) => setError(readableError(reason))); }}>Riavvia e installa</button> : null}
+    {status?.status === "downloaded" ? <button type="button" className="settings-secondary" disabled={inCall} onClick={() => { void window.hushWindow?.installUpdate().catch((reason) => setError(readableError(reason))); }}>{status.target === "rust" ? "Installa e apri Hush Rust" : "Riavvia e installa"}</button> : null}
     {inCall && status?.status === "downloaded" ? <p className="settings-hint">Termina la chiamata prima di riavviare.</p> : null}
     {error ? <p className="auth-error" role="alert">{error}</p> : null}
   </div>;

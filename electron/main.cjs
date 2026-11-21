@@ -17,6 +17,7 @@ const { pathToFileURL } = require("node:url");
 const { autoUpdater } = require("electron-updater");
 const { supportsAcrylic, materialWindowOptions, setWindowMaterial } = require("./window-material.cjs");
 const { registerDeviceMigration, migrationArguments, migrationArgumentsForSecondInstance } = require("./device-migration.cjs");
+const { createRustUpgrade } = require("./rust-upgrade.cjs");
 
 // All Hush themes use light text. Keep native backdrops and dialogs dark too.
 nativeTheme.themeSource = "dark";
@@ -52,11 +53,19 @@ let updateCheckTimer = null;
 let updateDialogOpen = false;
 let updateStatus = { status: "disabled", currentVersion: app.getVersion(), message: "Gli aggiornamenti sono disponibili nell’app installata." };
 let updateCheckPromise = null;
+let rustUpgrade = null;
+let callActive = false;
+let workspaceReady = false;
+let promptedRustVersion = null;
+
+function canInstallRust() {
+  return workspaceReady && !callActive && mainWindow && !mainWindow.isDestroyed() && !deviceMigration.hasPendingMigration();
+}
 
 async function checkForUpdates() {
-  if (["disabled", "downloaded", "downloading", "available"].includes(updateStatus.status)) return updateStatus;
+  if (["disabled", "downloaded", "downloading", "available", "installing"].includes(updateStatus.status)) return updateStatus;
   if (!updateCheckPromise) {
-    updateCheckPromise = autoUpdater.checkForUpdates().catch((error) => {
+    updateCheckPromise = (rustUpgrade ? rustUpgrade.check() : autoUpdater.checkForUpdates()).catch((error) => {
       sendUpdateStatus("error", { message: error instanceof Error ? error.message : "Verifica non riuscita." });
     }).finally(() => { updateCheckPromise = null; });
   }
@@ -83,14 +92,52 @@ function promptForDownloadedUpdate() {
     cancelId: 1,
     noLink: true,
   }).then(({ response }) => {
-    if (response === 0) autoUpdater.quitAndInstall();
+    if (response === 0 && !callActive) autoUpdater.quitAndInstall();
   }).catch(() => undefined).finally(() => {
     updateDialogOpen = false;
   });
 }
 
+function promptForRustUpgrade() {
+  if (!rustUpgrade || updateDialogOpen || updateStatus.status !== "downloaded" || !mainWindow
+    || mainWindow.isDestroyed() || !mainWindow.isFocused() || !canInstallRust() || promptedRustVersion === updateStatus.version) return;
+  promptedRustVersion = updateStatus.version;
+  updateDialogOpen = true;
+  void dialog.showMessageBox(mainWindow, {
+    type: "info",
+    title: "Hush Rust è pronto",
+    message: "Passa alla nuova app Hush per Windows.",
+    detail: "All’apertura, Hush trasferirà accesso, cronologia cifrata e impostazioni. Il profilo originale resta disponibile.",
+    buttons: ["Installa e apri Hush Rust", "Più tardi"],
+    defaultId: 0,
+    cancelId: 1,
+    noLink: true,
+  }).then(async ({ response }) => {
+    if (response === 0) await rustUpgrade.install(canInstallRust);
+  }).catch(() => undefined).finally(() => { updateDialogOpen = false; });
+}
+
+function rustHandoffMarker() {
+  return path.join(app.getPath("userData"), "rust-migration-complete-v1");
+}
+
 function configureAutoUpdater() {
   if (!app.isPackaged || process.env.HUSH_DISABLE_AUTO_UPDATE === "1") return;
+
+  if (process.platform === "win32" && process.arch === "x64" && !fs.existsSync(rustHandoffMarker())) {
+    rustUpgrade = createRustUpgrade({ version: app.getVersion(), updateStatus: (state, details) => {
+      sendUpdateStatus(state, details);
+      if (state === "downloaded") promptForRustUpgrade();
+    } });
+    sendUpdateStatus("idle", { target: "rust" });
+    autoUpdater.autoInstallOnAppQuit = false;
+    mainWindow?.on("focus", promptForRustUpgrade);
+    void checkForUpdates();
+    // During rollout, the signed channel can publish after the bridge update.
+    updateCheckTimer = setInterval(() => { void checkForUpdates(); }, 10 * 60 * 1000);
+    updateCheckTimer.unref?.();
+    return;
+  }
 
   autoUpdater.setFeedURL({ provider: "github", owner: "DexiAkaStompa", repo: "hush" });
   sendUpdateStatus("idle");
@@ -155,6 +202,7 @@ let migrationQuitting = false;
 const deviceMigration = registerDeviceMigration({
   ipcMain, windowForEvent, getWindow: () => mainWindow,
   onFinished: () => {
+    try { fs.writeFileSync(rustHandoffMarker(), "1\n", { mode: 0o600 }); } catch { /* Keep the source available even when its profile is read-only. */ }
     autoUpdater.autoInstallOnAppQuit = false;
     migrationQuitting = true; setImmediate(() => app.quit());
   },
@@ -189,7 +237,15 @@ ipcMain.handle("updates:check", (event) => {
 });
 ipcMain.handle("updates:install", (event) => {
   if (!windowForEvent(event) || updateStatus.status !== "downloaded") throw new Error("Nessun aggiornamento pronto.");
+  if (rustUpgrade) return rustUpgrade.install(canInstallRust);
+  if (callActive) throw new Error("Termina la chiamata prima di riavviare.");
   setImmediate(() => autoUpdater.quitAndInstall());
+});
+ipcMain.handle("updates:set-call-active", (event, active, ready) => {
+  if (!windowForEvent(event) || typeof active !== "boolean" || typeof ready !== "boolean") throw new Error("Richiesta non autorizzata.");
+  workspaceReady = ready;
+  callActive = active;
+  if (!active) promptForRustUpgrade();
 });
 
 ipcMain.on("window:minimize", (event) => windowForEvent(event)?.minimize());
@@ -707,7 +763,7 @@ app.on("second-instance", (_event, argv, _directory, additionalData) => {
   mainWindow.focus();
 });
 
-app.on("before-quit", () => deviceMigration.abort());
+app.on("before-quit", () => { rustUpgrade?.dispose(); deviceMigration.abort(); });
 
 app.on("window-all-closed", () => {
   if (updateCheckTimer) clearInterval(updateCheckTimer);

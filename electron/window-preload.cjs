@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld("hushWindow", {
   },
   copyText: (text) => ipcRenderer.invoke("clipboard:write", text),
   getUpdateStatus: () => ipcRenderer.invoke("updates:get-status"),
+  setCallActive: (active, workspaceReady = true) => ipcRenderer.invoke("updates:set-call-active", active, workspaceReady),
   checkForUpdates: () => ipcRenderer.invoke("updates:check"),
   installUpdate: () => ipcRenderer.invoke("updates:install"),
   onUpdateStatus: (listener) => {

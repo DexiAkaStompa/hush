@@ -8,7 +8,7 @@ interface HushWindowControls {
   sendDesktopMigrationMessage?: (message: import('./lib/migration-transport').MigrationWireMessage) => Promise<void>;
   onDesktopMigrationMessage?: (listener: (message: import('./lib/migration-transport').MigrationWireMessage) => void) => () => void;
   finishDesktopMigration?: () => Promise<void>;
-  setCallActive?: (active: boolean) => Promise<void>;
+  setCallActive?: (active: boolean, workspaceReady?: boolean) => Promise<void>;
   copyText: (text: string) => Promise<void>;
   getUpdateStatus: () => Promise<HushUpdateStatus>;
   checkForUpdates: () => Promise<HushUpdateStatus>;
@@ -52,8 +52,9 @@ interface ImportMetaEnv {
 }
 
 interface HushUpdateStatus {
-  status: "disabled" | "idle" | "checking" | "available" | "current" | "downloading" | "downloaded" | "error";
+  status: "disabled" | "idle" | "checking" | "available" | "current" | "downloading" | "downloaded" | "installing" | "error";
   currentVersion: string;
+  target?: "rust";
   version?: string;
   percent?: number;
   message?: string;
