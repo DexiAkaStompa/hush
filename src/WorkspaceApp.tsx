@@ -2,6 +2,7 @@ import { useMobileLayout } from "./lib/use-mobile-layout";
 import { mapConcurrent } from "./lib/async-pool";
 import { UserProfile } from "./components/UserProfile";
 import { MessageSearch } from "./components/MessageSearch";
+import { SidebarResize } from "./components/SidebarResize";
 import { isMessageContinuation } from "./lib/message-layout";
 import { messageDayLabel } from "./lib/message-dates";
 import { FriendsPanel, FriendActions } from "./components/Friends";
@@ -15,6 +16,7 @@ import { captureChatScrollAnchor, restoreChatScrollAnchor, type ChatScrollAnchor
 import type { Session, RealtimeChannel } from "@supabase/supabase-js";
 import {
   ArrowLeft,
+  ArrowRight,
   MoreHorizontal,
   Bell,
   BellOff,
@@ -29,6 +31,7 @@ import {
   MessageCircleMore,
   Phone,
   PhoneOff,
+  Pin,
   PanelTopOpen,
   Plus,
   Search,
@@ -133,6 +136,7 @@ const GroupInvite = lazy(() => import("./components/GroupInvite").then(module =>
 
 type ModalKind = "space" | "channel" | "voice" | "dm" | "category" | "settings" | "server" | null;
 type KeyStatus = "idle" | "loading" | "ready" | "waiting" | "error";
+type WorkspaceDestination = { space: string | null; room: string | null };
 type CallStage = {
   open: boolean;
   expanded: boolean;
@@ -237,6 +241,7 @@ export function WorkspaceApp({ session, theme, onThemeChange }: { session: Sessi
   const draftValueRef = useRef("");
   const [activeSpaceId, setActiveSpaceId] = useState<string | null>(null);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
+  const [history, setHistory] = useState<{ back: WorkspaceDestination[]; forward: WorkspaceDestination[] }>({ back: [], forward: [] });
   const [roomKey, setRoomKey] = useState<CryptoKey | null>(null);
   const [keyStatus, setKeyStatus] = useState<KeyStatus>("idle");
   const [keyRetry, setKeyRetry] = useState(0);
@@ -248,14 +253,19 @@ export function WorkspaceApp({ session, theme, onThemeChange }: { session: Sessi
   const [showCipher, setShowCipher] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showThemeMembers, setShowThemeMembers] = useState(false);
+  const [lineaMembers, setLineaMembers] = useState({ docked: true, overlay: false });
   const memberToggleRef = useRef<HTMLButtonElement>(null);
   const [wideLayout, setWideLayout] = useState(() => window.matchMedia("(min-width: 1100px)").matches);
+  const [desktopLayout, setDesktopLayout] = useState(() => window.matchMedia("(min-width: 821px)").matches);
   useEffect(() => {
-    const query = window.matchMedia("(min-width: 1100px)");
-    const update = () => setWideLayout(query.matches);
-    query.addEventListener("change", update);
-    return () => query.removeEventListener("change", update);
+    const wide = window.matchMedia("(min-width: 1100px)");
+    const desktop = window.matchMedia("(min-width: 821px)");
+    const update = () => { setWideLayout(wide.matches); setDesktopLayout(desktop.matches); };
+    wide.addEventListener("change", update);
+    desktop.addEventListener("change", update);
+    return () => { wide.removeEventListener("change", update); desktop.removeEventListener("change", update); };
   }, []);
+  const lineaDesktop = theme === "linea" && desktopLayout;
   const isMobile = useMobileLayout();
   const [mobileBrowsing, setMobileBrowsing] = useState(true);
   const [mobileActions, setMobileActions] = useState(false);
@@ -271,7 +281,7 @@ export function WorkspaceApp({ session, theme, onThemeChange }: { session: Sessi
   const [toast, setToast] = useState<string | null>(null);
   const [stage, setStage] = useState<CallStage>(EMPTY_CALL_STAGE);
   const [contextMenu, setContextMenu] = useState<ContextMenuTarget | null>(null);
-  const [workspaceMenu, setWorkspaceMenu] = useState<{ x: number; y: number; space?: Space; conversation?: Conversation; canManage?: boolean } | null>(null);
+  const [workspaceMenu, setWorkspaceMenu] = useState<{ x: number; y: number; space?: Space; conversation?: Conversation; canManage?: boolean; anchor?: HTMLElement } | null>(null);
   const [inviteGroup, setInviteGroup] = useState<{ conversation: Conversation; members: Profile[] } | null>(null);
   const [workspacePreferences, setWorkspacePreferences] = useState(() => readWorkspacePreferences(session.user.id));
   useEffect(() => { saveWorkspacePreferences(session.user.id, workspacePreferences); }, [session.user.id, workspacePreferences]);
@@ -289,6 +299,7 @@ export function WorkspaceApp({ session, theme, onThemeChange }: { session: Sessi
   const [showStatusMenu, setShowStatusMenu] = useState(false);
   const statusMenuRef = useRef<HTMLDivElement>(null);
   const [desktopCallTarget, setDesktopCallTarget] = useState<HTMLDivElement | null>(null);
+  const [lineaStageTarget, setLineaStageTarget] = useState<HTMLDivElement | null>(null);
   const ringtoneStopRef = useRef<(() => void) | null>(null);
   const initialLoadedRef = useRef(false);
   const dmDetailsRef = useRef(dmDetails);
@@ -496,11 +507,11 @@ export function WorkspaceApp({ session, theme, onThemeChange }: { session: Sessi
       return;
     }
     setShowSearch(true);setShowPins(false);setSidebarOpen(false);
-    setStage(current=>current.open?{...current,expanded:false}:current);
+    if (!lineaDesktop) setStage(current=>current.open?{...current,expanded:false}:current);
     document.querySelector<HTMLInputElement>("#message-search input")?.focus();
-  }, [activeConversation]);
-  const closeMessageSearch = useCallback(() => {
-    if (document.querySelector("#message-search")) document.querySelector<HTMLButtonElement>(".message-search-trigger")?.focus();
+  }, [activeConversation, lineaDesktop]);
+  const closeMessageSearch = useCallback((restoreFocus = true) => {
+    if (restoreFocus && document.querySelector("#message-search")) document.querySelector<HTMLButtonElement>(".message-search-trigger, .linea-message-search")?.focus();
     searchGenerationRef.current++;
     setShowSearch(false);setSearch("");setHistoryResults(null);setHistoryNotice("");setSearchingHistory(false);
   }, []);
@@ -1123,7 +1134,7 @@ export function WorkspaceApp({ session, theme, onThemeChange }: { session: Sessi
 
   useEffect(() => {
     if (!awayFromBottom && !search && !showPins) messageEnd.current?.scrollIntoView({ behavior: "instant" });
-  }, [messages.length, awayFromBottom, search, showPins]);
+  }, [messages.length, awayFromBottom, search, showPins, lineaDesktop && stage.expanded]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -1405,6 +1416,10 @@ export function WorkspaceApp({ session, theme, onThemeChange }: { session: Sessi
       else if (modal) setModal(null);
       else if (showEmojiPicker) setShowEmojiPicker(false);
       else if (showSearch) closeMessageSearch();
+      else if (theme === "linea" && isMobile && !mobileBrowsing && lineaMembers.overlay) {
+        setLineaMembers(current => ({ ...current, overlay: false }));
+        memberToggleRef.current?.focus();
+      }
       else if (isMobile && stage.open && stage.expanded) setStage(current => ({...current,expanded:false}));
       else if (isMobile && !mobileBrowsing) setMobileBrowsing(true);
       else if (sidebarOpen) setSidebarOpen(false);
@@ -1414,18 +1429,42 @@ export function WorkspaceApp({ session, theme, onThemeChange }: { session: Sessi
     };
     document.addEventListener('hush:back', back);
     return () => document.removeEventListener('hush:back', back);
-  }, [workspaceMenu, inviteGroup, confirmAction, identityTarget, viewedProfile, manageSpace, modal, showEmojiPicker, showSearch, sidebarOpen, activeConversationId, isMobile, mobileBrowsing, mobileActions, showStatusMenu, contextMenu, stage.open, stage.expanded]);
+  }, [workspaceMenu, inviteGroup, confirmAction, identityTarget, viewedProfile, manageSpace, modal, showEmojiPicker, showSearch, sidebarOpen, activeConversationId, isMobile, mobileBrowsing, mobileActions, showStatusMenu, contextMenu, stage.open, stage.expanded, theme, lineaMembers.overlay]);
   useEffect(() => { if (isMobile && stage.open && stage.expanded) setMobileBrowsing(false); }, [isMobile, stage.open, stage.expanded]);
   const selectSpace = (spaceId: string) => {
     setActiveSpaceId(spaceId);
     setActiveConversationId(null);
     setStage((current) => current.open ? { ...current, expanded: false } : current);
   };
+  const recordNavigation = (space: string | null, room: string | null) => {
+    if (!lineaDesktop || (space === activeSpaceId && room === activeConversationId)) return;
+    if (showSearch) closeMessageSearch(false);
+    const current = { space: activeSpaceId, room: activeConversationId };
+    setHistory(previous => ({ back: [...previous.back.slice(-39), current], forward: [] }));
+  };
+  const goInHistory = (direction: "back" | "forward") => {
+    const routes = history[direction];
+    const next = routes.at(-1);
+    if (!next) return;
+    if (showSearch) closeMessageSearch(false);
+    const reverse = direction === "back" ? "forward" : "back";
+    const current = { space: activeSpaceId, room: activeConversationId };
+    setHistory({ ...history, [direction]: routes.slice(0, -1), [reverse]: [...history[reverse], current] });
+    const space = spaces.some(item => item.id === next.space) ? next.space : null;
+    const allowedRoom = space ? space !== activeSpaceId || channels.some(item => item.id === next.room) : directMessages.some(item => item.id === next.room);
+    setActiveSpaceId(space);
+    setActiveConversationId(allowedRoom ? next.room : null);
+    setStage(previous => previous.expanded ? { ...previous, expanded: false } : previous);
+  };
 
   const togglePinnedMessages = () => { if (!activeConversation) return; setShowPins(!showPins); if(!showPins && roomKey && extras.pins.length) void loadAndDecryptMessages(activeConversation.id, roomKey, members, {ids: extras.pins.map(pin => pin.message_id)}).then(rows => {if(activeIdRef.current === activeConversation.id) setMessages(prev => mergeMessages(prev, rows));}).catch(error => setToast(readableError(error)));};
   const contextAction = (action: () => Promise<unknown>) => { void action().catch(error => setToast(readableError(error))); };
-  const openServerMenu = (event: React.MouseEvent, space: Space) => {
-    event.preventDefault(); setContextMenu(null); setWorkspaceMenu({ x: event.clientX, y: event.clientY, space });
+  const openServerMenu = (event: React.MouseEvent, space: Space, anchored = false) => {
+    event.preventDefault(); setContextMenu(null);
+    const anchor = anchored && event.currentTarget instanceof HTMLElement ? event.currentTarget : undefined;
+    if (anchor && workspaceMenu?.anchor === anchor) { setWorkspaceMenu(null); return; }
+    const rect = event.currentTarget.getBoundingClientRect();
+    setWorkspaceMenu({ x: anchor ? rect.left + 8 : event.clientX, y: anchor ? rect.bottom + 4 : event.clientY, space, anchor });
     void supabase?.rpc("is_space_admin", { requested_space: space.id }).then(({ data, error }) => {
       if (!error) setWorkspaceMenu(current => current?.space?.id === space.id ? { ...current, canManage: data === true } : current);
     });
@@ -1458,20 +1497,20 @@ export function WorkspaceApp({ session, theme, onThemeChange }: { session: Sessi
       return [
         { label: "Apri server", action: () => selectSpace(space.id) },
         { label: "Segna come già letto", action: () => contextAction(async () => { const channels = await loadChannels(space.id); await markRoomsRead(channels.filter(room => room.kind !== "voice_channel").map(room => room.id)); }) },
-        { label: "Invita al server", separator: true, disabled: !canManage, action: () => contextAction(async () => {
+        { label: "Invita al server", icon: UserPlus, separator: true, disabled: !canManage, action: () => contextAction(async () => {
           const { data, error } = await supabase!.rpc("create_space_invite", { p_space_id: space.id }); if (error) throw error;
           const link = `hush://invite/${data}`; setInviteLink(link); try { await copyText(link); setInviteNotice("Invito copiato: scade tra 7 giorni"); } catch { setInviteNotice("Copia il link per invitare i tuoi amici."); }
         }) },
-        { label: "Notifiche del server", items: [
+        { label: "Notifiche del server", icon: Bell, items: [
           { label: "Silenzia tutti i canali", action: () => contextAction(async () => { for (const room of await loadChannels(space.id)) setChatMuted(room.id, true); setToast("Notifiche del server silenziate"); }) },
           { label: "Riattiva tutti i canali", action: () => contextAction(async () => { for (const room of await loadChannels(space.id)) setChatMuted(room.id, false); setToast("Notifiche del server riattivate"); }) },
         ] },
         { label: "Nascondi canali silenziati", checked: workspacePreferences.hiddenMuted.includes(space.id), action: () => preference("hiddenMuted", space.id) },
-        { label: canManage ? "Personalizza server" : "Informazioni sul server", separator: true, action: () => setIdentityTarget({ kind: "space", id: space.id, value: space, readOnly: !canManage }) },
+        { label: canManage ? "Personalizza server" : "Informazioni sul server", icon: ShieldCheck, separator: true, action: () => setIdentityTarget({ kind: "space", id: space.id, value: space, readOnly: !canManage }) },
         ...(canManage ? [
-          { label: "Impostazioni del server", action: manage },
-          { label: "Crea canale di testo", action: () => openCreation("channel") },
-          { label: "Crea canale vocale", action: () => openCreation("voice") },
+          { label: "Impostazioni del server", icon: Settings, action: manage },
+          { label: "Crea canale di testo", icon: Hash, action: () => openCreation("channel") },
+          { label: "Crea canale vocale", icon: Volume2, action: () => openCreation("voice") },
           { label: "Crea categoria", action: () => openCreation("category") },
         ] : []),
         { label: "Sposta server", items: ["In cima", "In fondo"].map((label, index) => ({ label, action: () => setWorkspacePreferences(current => { const order = sortWorkspaceItems(spaces, current.serverOrder).map(item => item.id).filter(id => id !== space.id); return { ...current, serverOrder: index ? [...order, space.id] : [space.id, ...order] }; }) })) },
@@ -1481,7 +1520,7 @@ export function WorkspaceApp({ session, theme, onThemeChange }: { session: Sessi
           setSpaces(current => current.filter(item => item.id !== space.id)); if (activeSpaceId === space.id) { setActiveSpaceId(null); setActiveConversationId(null); }
           if (stage.conversationId && rooms.some(room => room.id === stage.conversationId)) setStage(EMPTY_CALL_STAGE);
         } }) }] : []),
-        { label: "Copia ID server", separator: true, action: () => copyId(space.id) },
+        { label: "Copia ID server", icon: Copy, separator: true, action: () => copyId(space.id) },
       ];
     }
     if (!conversation) return [];
@@ -1529,7 +1568,7 @@ export function WorkspaceApp({ session, theme, onThemeChange }: { session: Sessi
             onDrop={e=>{e.preventDefault();void dropChannel(channel.id);}}
             hidden={(!!channel.category_id&&collapsedCategories.has(channel.category_id)) || (!!activeSpaceId && workspacePreferences.hiddenMuted.includes(activeSpaceId) && isChatMuted(channel.id))}
             className={`channel-row ${activeConversationId === channel.id ? "active" : ""}`}
-            onClick={() => { setActiveConversationId(channel.id); setSidebarOpen(false); setStage((current) => current.open ? { ...current, expanded: false } : current); }}
+            onClick={() => { recordNavigation(activeSpaceId, channel.id); setActiveConversationId(channel.id); setSidebarOpen(false); setStage((current) => current.open ? { ...current, expanded: false } : current); }}
             onContextMenu={(e) => {
               e.preventDefault();
               setContextMenu(null);
@@ -1545,13 +1584,21 @@ export function WorkspaceApp({ session, theme, onThemeChange }: { session: Sessi
       {!loading && textChannels.length === 0 ? <p className="sidebar-empty">Nessun canale di testo</p> : null}
     </div>
   ) : null;
+  const lineaMembersMode = wideLayout ? "docked" : "overlay";
+  const canToggleMembers = theme === "notturno" || (theme === "linea" && !!activeConversation);
+  const membersOpen = canToggleMembers && !(isMobile && mobileBrowsing)
+    && (theme === "linea" ? lineaMembers[lineaMembersMode] : showThemeMembers);
+  const changeThemeMembers = (open: boolean) => {
+    if (theme === "linea") setLineaMembers(previous => ({ ...previous, [lineaMembersMode]: open }));
+    else setShowThemeMembers(open);
+  };
   const closeThemeMembers = () => {
-    setShowThemeMembers(false);
+    changeThemeMembers(false);
     memberToggleRef.current?.focus();
   };
-  const memberToggle = theme === "notturno" ? (
-    <button ref={memberToggleRef} className="theme-members-toggle" aria-label="Persone" aria-expanded={showThemeMembers}
-      aria-controls="workspace-members" onClick={() => setShowThemeMembers(open => !open)}><UsersRound size={19} /></button>
+  const memberToggle = canToggleMembers ? (
+    <button type="button" ref={memberToggleRef} className="theme-members-toggle" aria-label="Persone" aria-expanded={membersOpen}
+      aria-controls="workspace-members" onClick={() => changeThemeMembers(!membersOpen)}><UsersRound size={19} /></button>
   ) : null;
 
   const conversationActions = activeConversation ? (<div className="header-actions">
@@ -1573,31 +1620,158 @@ export function WorkspaceApp({ session, theme, onThemeChange }: { session: Sessi
               {activeConversation.kind === "group_dm" && (activeConversation.identity_customized || members.length > 2) && <button onClick={() => openGroupInvite(activeConversation)} aria-label="Invita al gruppo" title="Invita al gruppo"><UserPlus size={19}/></button>}
               {activeConversation.kind === "voice_channel" && <button onClick={()=>void copyText(`hush://channel/${activeConversation.id}`).then(()=>setToast("Link del canale copiato")).catch(()=>setToast("Impossibile copiare il link."))} aria-label="Copia link del canale" title="Condividi questo canale"><Copy size={17}/></button>}{activeSpace ? <button onClick={createInvite} aria-label="Copia invito"><UserPlus size={19} /></button> : null}
               {["channel", "voice_channel"].includes(activeConversation.kind) && activeSpace?.owner_id === session.user.id ? <button onClick={deleteChannel} aria-label="Elimina canale"><Trash2 size={17} /></button> : null}
-              {activeConversation.kind !== "voice_channel" ? <button className="message-search-trigger" onClick={openMessageSearch} aria-label="Cerca nei messaggi" aria-expanded={showSearch} aria-controls={showSearch?"message-search":undefined} title="Cerca nei messaggi · Ctrl+K"><Search size={17} /></button> : null}
+              {lineaDesktop && activeConversation.kind !== "voice_channel" && <button type="button" className="linea-pins" aria-label={`Messaggi fissati (${extras.pins.length})`} aria-pressed={showPins} onClick={togglePinnedMessages} title={`Messaggi fissati (${extras.pins.length})`}><Pin size={17} /></button>}
+              {activeConversation.kind !== "voice_channel" && !lineaDesktop ? <button className="message-search-trigger" onClick={openMessageSearch} aria-label="Cerca nei messaggi" aria-expanded={showSearch} aria-controls={showSearch?"message-search":undefined} title="Cerca nei messaggi · Ctrl+K"><Search size={17} /></button> : null}
             </div>) : null;
 
+  const accountControls = (<>
+    {!isMobile ? <div className="desktop-call-slot" ref={setDesktopCallTarget} /> : stage.open ? (
+      <section className="call-dock" aria-label="Chiamata connessa">
+        <div><span className="call-dock-live"><i /> connesso</span><strong>{stage.roomName}</strong><small>La chiamata resta attiva mentre navighi.</small></div>
+        <button onClick={() => setStage((current) => ({ ...current, expanded: true }))} aria-label="Riapri chiamata"><PanelTopOpen size={16} /></button>
+        <button className="call-dock-leave" onClick={leaveCall} aria-label="Lascia chiamata"><PhoneOff size={16} /></button>
+      </section>
+    ) : null}
+    <div className="user-panel" ref={statusMenuRef}>
+      <button
+        type="button"
+        className="user-status-avatar-btn"
+        onClick={() => setShowStatusMenu((v) => !v)}
+        aria-label={`Stato utente: ${userStatus}. Clicca per cambiare stato.`}
+        title="Cambia stato"
+      >
+        <Avatar profile={profile} />
+        <span className={`status-badge status-${userStatus}`} />
+      </button>
+      <div className="user-copy">
+        <strong>{profile.display_name}</strong>
+        <div className="user-status-text-row">
+          <button onClick={() => { void copyText(profile.username).then(() => setToast("Username copiato")).catch(() => setToast("Copia non riuscita. Il tuo username è @" + profile.username)); }}>@{profile.username}</button>
+          <button
+            type="button"
+            className={`user-status-label-badge status-label-${userStatus}`}
+            onClick={() => setShowStatusMenu((v) => !v)}
+            title="Cambia stato"
+          >
+            {userStatus === "online" ? "Online" : userStatus === "dnd" ? "Non disturbare" : "Invisibile"}
+          </button>
+        </div>
+      </div>
+      <button onClick={() => openModal("settings")} aria-label="Impostazioni"><Settings size={16} /></button>
+      <button aria-label="Esci" onClick={() => { void supabase?.auth.signOut(); }}><LogOut size={16} /></button>
+
+      {showStatusMenu ? (
+        <div className="user-status-menu" role="menu">
+          <div className="user-status-menu-header">Imposta il tuo stato</div>
+          <button
+            type="button"
+            className={`user-status-menu-item ${userStatus === "online" ? "selected" : ""}`}
+            onClick={() => {
+              setUserStatus("online");
+              setShowStatusMenu(false);
+            }}
+          >
+            <span className="status-dot status-online" />
+            <div className="status-menu-text">
+              <strong>Online</strong>
+              <small>Disponibile per notifiche e messaggi</small>
+            </div>
+          </button>
+          <button
+            type="button"
+            className={`user-status-menu-item ${userStatus === "dnd" ? "selected" : ""}`}
+            onClick={() => {
+              setUserStatus("dnd");
+              setShowStatusMenu(false);
+            }}
+          >
+            <span className="status-dot status-dnd" />
+            <div className="status-menu-text">
+              <strong>Non Disturbare</strong>
+              <small>Silenzia notifiche e suoni</small>
+            </div>
+          </button>
+          <button
+            type="button"
+            className={`user-status-menu-item ${userStatus === "invisible" ? "selected" : ""}`}
+            onClick={() => {
+              setUserStatus("invisible");
+              setShowStatusMenu(false);
+            }}
+          >
+            <span className="status-dot status-invisible" />
+            <div className="status-menu-text">
+              <strong>Invisibile (Appari offline)</strong>
+              <small>Appari offline agli altri ma puoi chattare</small>
+            </div>
+          </button>
+        </div>
+      ) : null}
+    </div>
+  </>);
+  const chatHeader = (
+    <header className={`chat-header ${safeCommunityImage(activeConversation?.banner_data) ? "has-conversation-banner" : ""}`}>
+      {safeCommunityImage(activeConversation?.banner_data) && <img className="conversation-banner-image" src={activeConversation!.banner_data!} alt="" aria-hidden="true" />}
+      <button className="mobile-menu" onClick={() => {
+        if (isMobile) {
+          changeThemeMembers(false);
+          setMobileBrowsing(true);
+        } else setSidebarOpen(true);
+      }} aria-label={isMobile ? "Torna alle conversazioni" : "Apri menu"}>{isMobile ? <ArrowLeft size={23}/> : <Menu size={20} />}</button>
+      {isMobile && activeConversation && !safeCommunityImage(activeConversation.icon_data) && !activeSpaceId && dmDetails[activeConversation.id]?.recipient && <span className="mobile-conversation-avatar" aria-hidden="true" style={{background:dmDetails[activeConversation.id].recipient!.avatar_color}}>{initialsFor(dmDetails[activeConversation.id].recipient!.display_name)}<ProfileImage path={dmDetails[activeConversation.id].recipient!.avatar_path} alt=""/></span>}
+      {safeCommunityImage(activeConversation?.icon_data)?<img className="conversation-header-icon" src={activeConversation!.icon_data!} alt=""/>:activeConversation?.kind === "voice_channel" ? <Volume2 size={21} className="hash-icon voice-icon" /> : activeConversation ? <Hash size={21} className="hash-icon" /> : <ShieldCheck size={21} className="hash-icon" />}
+      <div className="channel-heading"><button className="conversation-identity-trigger" title="Nome, descrizione e aspetto" disabled={!activeConversation} onClick={()=>activeConversation&&setIdentityTarget({kind:"conversation",id:activeConversation.id,value:activeConversation,readOnly:!!activeConversation.space_id&&!canManageSpace})}><strong>{(activeConversation && !activeConversation.identity_customized && !activeConversation.description && !activeConversation.icon_data && !activeSpaceId && dmDetails[activeConversation.id]?.recipient?.display_name) ? dmDetails[activeConversation.id].recipient!.display_name : (activeConversation?.name ?? (activeSpaceId ? "Il tuo spazio Hush" : "Amici"))}</strong>{activeConversation?.description&&<small title={activeConversation.description}>{activeConversation.description}</small>}</button><span>{activeConversation ? activeConversation.kind === "voice_channel" ? `${members.length} membri · canale vocale` : `${members.length} membri` : `Benvenuto, ${profile.display_name}`}</span></div>
+      {isMobile && activeConversation ? <div className="mobile-header-actions"><button onClick={() => startCall(activeConversation, false)} aria-label="Avvia chiamata"><Phone size={21}/></button>{activeConversation.kind !== "voice_channel" && <button onClick={openMessageSearch} aria-label="Cerca nei messaggi"><Search size={21}/></button>}<button onClick={() => setMobileActions(true)} aria-label="Altre azioni della chat"><MoreHorizontal size={21}/></button></div> : conversationActions}
+      {memberToggle}
+      {lineaDesktop && wideLayout && activeConversation && activeConversation.kind !== "voice_channel" && keyStatus === "ready" && <button type="button" className="linea-trust-button" aria-label="Dettagli della cifratura" aria-expanded={showCipher} title="Cifratura end-to-end attiva" onClick={() => setShowCipher(current => !current)}><LockKeyhole size={15} /></button>}
+      {lineaDesktop && activeConversation && activeConversation.kind !== "voice_channel" && <button type="button" className="linea-message-search" aria-label="Cerca nei messaggi del canale" aria-expanded={showSearch} aria-controls={showSearch ? "message-search" : undefined} onClick={openMessageSearch} title="Cerca nei messaggi · Ctrl+K"><span>Cerca in {activeConversation.name}</span><Search size={15} /></button>}
+    </header>
+  );
+
+  const memberSections = useMemo(() => {
+    const online = new Set(onlineUserIds);
+    const rows = (members.length ? members : [profile]).map(person => ({
+      person,
+      role: rolesForUser(roleContext, person.id)[0],
+      presence: person.id === session.user.id ? userStatus : remoteStatuses[person.id] === "dnd" ? "dnd" : online.has(person.id) ? "online" : "invisible",
+    }));
+    if (!lineaDesktop || !activeSpaceId) return [{ id: "all", label: "", rows }];
+    const sections = new Map<string, { id: string; label: string; position: number; rows: typeof rows }>();
+    for (const row of rows) {
+      const offline = row.presence === "invisible";
+      const role = offline ? undefined : row.role;
+      const id = role?.id ?? (offline ? "offline" : "online");
+      const section = sections.get(id) ?? { id, label: role?.name ?? (offline ? "Offline" : "Online"), position: role?.position ?? (offline ? -2 : -1), rows: [] };
+      section.rows.push(row);
+      sections.set(id, section);
+    }
+    return [...sections.values()].sort((a, b) => b.position - a.position);
+  }, [activeSpaceId, lineaDesktop, members, onlineUserIds, profile, remoteStatuses, roleContext, session.user.id, userStatus]);
+
   return (
-    <div className="app-shell" data-mobile-view={mobileBrowsing ? "browse" : "content"} data-members-open={theme === "notturno" && showThemeMembers && !(isMobile && mobileBrowsing) ? "true" : undefined}>
+    <div className="app-shell" data-mobile-view={mobileBrowsing ? "browse" : "content"} data-members-open={membersOpen ? "true" : undefined} data-linea-call={lineaDesktop && stage.expanded ? "true" : undefined}>
       <DotPattern />
+      {lineaDesktop && <div className="linea-titlebar"><nav aria-label="Cronologia di navigazione"><button type="button" disabled={!history.back.length} onClick={() => goInHistory("back")} aria-label="Indietro" title="Indietro"><ArrowLeft size={16} /></button><button type="button" disabled={!history.forward.length} onClick={() => goInHistory("forward")} aria-label="Avanti" title="Avanti"><ArrowRight size={16} /></button></nav><span>{activeSpace?.name ?? "Messaggi diretti"}</span></div>}
       <aside className="server-rail" aria-label="Server" onClickCapture={() => { setMobileBrowsing(true); setSidebarOpen(false); }}>
-        <div className={`rail-item ${activeSpaceId === null ? "is-selected" : ""}`}><button className={`brand-mark ${activeSpaceId === null ? "selected" : ""}`} aria-current={activeSpaceId===null?"page":undefined} onClick={() => { setActiveSpaceId(null); setActiveConversationId(null); setStage((current) => current.open ? { ...current, expanded: false } : current); }} aria-label={`Messaggi diretti e amici${incomingFriendRequests ? `, ${incomingFriendRequests} richieste ricevute` : ""}`} title="Messaggi diretti e amici"><BrandMark size={28} />{incomingFriendRequests>0&&<span className="friends-rail-badge">{incomingFriendRequests}</span>}</button></div>
+        <div className={`rail-item ${activeSpaceId === null ? "is-selected" : ""}`}><button className={`brand-mark ${activeSpaceId === null ? "selected" : ""}`} aria-current={activeSpaceId===null?"page":undefined} onClick={() => { recordNavigation(null, null); setActiveSpaceId(null); setActiveConversationId(null); setStage((current) => current.open ? { ...current, expanded: false } : current); }} aria-label={`Messaggi diretti e amici${incomingFriendRequests ? `, ${incomingFriendRequests} richieste ricevute` : ""}`} title="Messaggi diretti e amici"><BrandMark size={28} />{incomingFriendRequests>0&&<span className="friends-rail-badge">{incomingFriendRequests}</span>}</button></div>
         <div className="rail-rule" />
         {sortWorkspaceItems(spaces, workspacePreferences.serverOrder).map((space) => (
-          <div className={`rail-item ${activeSpaceId===space.id?"is-selected":""}`} key={space.id}><button className={`server-icon ${activeSpaceId === space.id ? "selected" : ""}`} aria-current={activeSpaceId===space.id?"page":undefined} onClick={() => selectSpace(space.id)} aria-label={space.name} title={space.name} onContextMenu={event => openServerMenu(event, space)}>{safeCommunityImage(space.icon_data)?<img className="community-icon-img" src={space.icon_data!} alt=""/>:initialsFor(space.name)}{allTextConversations.some(conv=>conv.space_id===space.id && (unreads[conv.id]?.unread_count??0)>0) && <i className="server-unread-dot"/>}</button></div>
+          <div className={`rail-item ${activeSpaceId===space.id?"is-selected":""}`} key={space.id}><button className={`server-icon ${activeSpaceId === space.id ? "selected" : ""}`} aria-current={activeSpaceId===space.id?"page":undefined} onClick={() => { if (space.id !== activeSpaceId) recordNavigation(space.id, null); selectSpace(space.id); }} aria-label={space.name} title={space.name} onContextMenu={event => openServerMenu(event, space)}>{safeCommunityImage(space.icon_data)?<img className="community-icon-img" src={space.icon_data!} alt=""/>:initialsFor(space.name)}{allTextConversations.some(conv=>conv.space_id===space.id && (unreads[conv.id]?.unread_count??0)>0) && <i className="server-unread-dot"/>}</button></div>
         ))}
         <button className="server-icon add-server" onClick={() => openModal("space")} aria-label="Crea o unisciti a un server"><Plus size={20} /></button>
       </aside>
 
-      <aside className={`channel-sidebar ${sidebarOpen ? "sidebar-open" : ""}`} onClickCapture={event => { if ((event.target as Element).closest(".dm-row,.channel-row,.friends-nav")) setMobileBrowsing(false); }}>
-        <button style={{"--identity-accent":identityColor(activeSpace?.accent_color)} as import("react").CSSProperties} className={`server-title ${activeSpace?"community-server-title":""}`} onClick={() => activeSpace && openModal("server")} disabled={!activeSpace}>
+      <aside id="workspace-channels" className={`channel-sidebar ${sidebarOpen ? "sidebar-open" : ""}`} onClickCapture={event => { if ((event.target as Element).closest(".dm-row,.channel-row,.friends-nav")) setMobileBrowsing(false); }}>
+        {(!lineaDesktop || activeSpace) && <button style={{"--identity-accent":identityColor(activeSpace?.accent_color)} as import("react").CSSProperties} className={`server-title ${activeSpace?"community-server-title":""}`} onClick={event => { if (!activeSpace) return; if (lineaDesktop) openServerMenu(event, activeSpace, true); else openModal("server"); }} disabled={!activeSpace} aria-haspopup={lineaDesktop && activeSpace ? "menu" : undefined} aria-expanded={lineaDesktop && activeSpace ? workspaceMenu?.space?.id === activeSpace.id : undefined}>
           {safeCommunityImage(activeSpace?.banner_data)&&<img className="server-cover-image" src={activeSpace!.banner_data!} alt=""/>}
           <span><span className="eyebrow">spazio privato</span><strong>{activeSpace?.name ?? (isMobile ? "Messaggi" : "Messaggi diretti")}</strong>{activeSpace?.description&&<small title={activeSpace.description}>{activeSpace.description}</small>}</span>
           {activeSpace ? <ChevronDown size={17} /> : null}
-        </button>
+        </button>}
+        {lineaDesktop && !activeSpace && <div className="linea-dm-finder"><label><Search size={15} /><input type="search" value={dmQuery} onChange={event => setDmQuery(event.target.value)} placeholder="Trova una conversazione" aria-label="Trova una conversazione" /></label></div>}
         <button className="sidebar-close" onClick={() => setSidebarOpen(false)} aria-label="Chiudi menu"><X size={18} /></button>
         {isMobile && !activeSpace && <div className="mobile-browse-tools"><label><Search size={18}/><input type="search" value={dmQuery} onChange={event => setDmQuery(event.target.value)} placeholder="Cerca una conversazione" aria-label="Cerca una conversazione" /></label><button onClick={() => openModal("dm")} aria-label="Nuova conversazione"><Plus size={21}/></button></div>}
         <div className="sidebar-scroll">
-          {!activeSpace && <button className="friends-nav" aria-current={!activeConversationId ? "page" : undefined} onClick={() => {setActiveSpaceId(null);setActiveConversationId(null);setSidebarOpen(false);setStage(current=>current.open?{...current,expanded:false}:current);}}><UserPlus size={17}/> Amici{friendships.entries.some(row=>row.status==="pending"&&row.recipient_id===session.user.id)&&<span aria-label="Richieste di amicizia ricevute">{friendships.entries.filter(row=>row.status==="pending"&&row.recipient_id===session.user.id).length}</span>}</button>}
+          {!activeSpace && <button className="friends-nav" aria-current={!activeConversationId ? "page" : undefined} onClick={() => {recordNavigation(null,null);setActiveSpaceId(null);setActiveConversationId(null);setSidebarOpen(false);setStage(current=>current.open?{...current,expanded:false}:current);}}><UserPlus size={17}/> Amici{friendships.entries.some(row=>row.status==="pending"&&row.recipient_id===session.user.id)&&<span aria-label="Richieste di amicizia ricevute">{friendships.entries.filter(row=>row.status==="pending"&&row.recipient_id===session.user.id).length}</span>}</button>}
           {activeSpace ? (
             <>
               {!quotaChannelTabs && textChannelSection}
@@ -1617,6 +1791,7 @@ export function WorkspaceApp({ session, theme, onThemeChange }: { session: Sessi
                     className={`channel-row voice-row ${activeConversationId === channel.id ? "active" : ""}`}
                     onContextMenu={event => {event.preventDefault();setContextMenu(null);setWorkspaceMenu({x:event.clientX,y:event.clientY,conversation:channel});}}
                     onClick={() => {
+                      recordNavigation(activeSpaceId, channel.id);
                       setActiveConversationId(channel.id);
                       setSidebarOpen(false);
                       startCall(channel, false);
@@ -1644,6 +1819,7 @@ export function WorkspaceApp({ session, theme, onThemeChange }: { session: Sessi
                     className={`dm-row ${activeConversationId === conversation.id ? "active" : ""} ${safeCommunityImage(conversation.banner_data) ? "has-conversation-banner" : ""}`}
                     key={conversation.id}
                     onClick={() => {
+                      recordNavigation(null, conversation.id);
                       setActiveSpaceId(null);
                       setActiveConversationId(conversation.id);
                       setSidebarOpen(false);
@@ -1673,107 +1849,18 @@ export function WorkspaceApp({ session, theme, onThemeChange }: { session: Sessi
             </div>
           )}
         </div>
-        {!isMobile ? <div className="desktop-call-slot" ref={setDesktopCallTarget} /> : stage.open ? (
-          <section className="call-dock" aria-label="Chiamata connessa">
-            <div><span className="call-dock-live"><i /> connesso</span><strong>{stage.roomName}</strong><small>La chiamata resta attiva mentre navighi.</small></div>
-            <button onClick={() => setStage((current) => ({ ...current, expanded: true }))} aria-label="Riapri chiamata"><PanelTopOpen size={16} /></button>
-            <button className="call-dock-leave" onClick={leaveCall} aria-label="Lascia chiamata"><PhoneOff size={16} /></button>
-          </section>
-        ) : null}
-        <div className="user-panel" ref={statusMenuRef}>
-          <button
-            type="button"
-            className="user-status-avatar-btn"
-            onClick={() => setShowStatusMenu((v) => !v)}
-            aria-label={`Stato utente: ${userStatus}. Clicca per cambiare stato.`}
-            title="Cambia stato"
-          >
-            <Avatar profile={profile} />
-            <span className={`status-badge status-${userStatus}`} />
-          </button>
-          <div className="user-copy">
-            <strong>{profile.display_name}</strong>
-            <div className="user-status-text-row">
-              <button onClick={() => { void copyText(profile.username).then(() => setToast("Username copiato")).catch(() => setToast("Copia non riuscita. Il tuo username è @" + profile.username)); }}>@{profile.username}</button>
-              <button
-                type="button"
-                className={`user-status-label-badge status-label-${userStatus}`}
-                onClick={() => setShowStatusMenu((v) => !v)}
-                title="Cambia stato"
-              >
-                {userStatus === "online" ? "Online" : userStatus === "dnd" ? "Non disturbare" : "Invisibile"}
-              </button>
-            </div>
-          </div>
-          <button onClick={() => openModal("settings")} aria-label="Impostazioni"><Settings size={16} /></button>
-          <button aria-label="Esci" onClick={() => { void supabase?.auth.signOut(); }}><LogOut size={16} /></button>
-
-          {showStatusMenu ? (
-            <div className="user-status-menu" role="menu">
-              <div className="user-status-menu-header">Imposta il tuo stato</div>
-              <button
-                type="button"
-                className={`user-status-menu-item ${userStatus === "online" ? "selected" : ""}`}
-                onClick={() => {
-                  setUserStatus("online");
-                  setShowStatusMenu(false);
-                }}
-              >
-                <span className="status-dot status-online" />
-                <div className="status-menu-text">
-                  <strong>Online</strong>
-                  <small>Disponibile per notifiche e messaggi</small>
-                </div>
-              </button>
-              <button
-                type="button"
-                className={`user-status-menu-item ${userStatus === "dnd" ? "selected" : ""}`}
-                onClick={() => {
-                  setUserStatus("dnd");
-                  setShowStatusMenu(false);
-                }}
-              >
-                <span className="status-dot status-dnd" />
-                <div className="status-menu-text">
-                  <strong>Non Disturbare</strong>
-                  <small>Silenzia notifiche e suoni</small>
-                </div>
-              </button>
-              <button
-                type="button"
-                className={`user-status-menu-item ${userStatus === "invisible" ? "selected" : ""}`}
-                onClick={() => {
-                  setUserStatus("invisible");
-                  setShowStatusMenu(false);
-                }}
-              >
-                <span className="status-dot status-invisible" />
-                <div className="status-menu-text">
-                  <strong>Invisibile (Appari offline)</strong>
-                  <small>Appari offline agli altri ma puoi chattare</small>
-                </div>
-              </button>
-            </div>
-          ) : null}
-        </div>
+        {!lineaDesktop && accountControls}
       </aside>
+      {lineaDesktop && <>
+        <SidebarResize />
+        <footer className="linea-account-dock">{accountControls}</footer>
+        {chatHeader}
+        <div className="linea-call-stage" ref={setLineaStageTarget} />
+      </>}
 
       {isMobile && mobileActions && <Modal className="mobile-actions-sheet" title="Azioni della chat" onClose={() => setMobileActions(false)}><div onClick={event => { if ((event.target as Element).closest('button')) setMobileActions(false); }}>{conversationActions}<button className="mobile-sheet-pins" onClick={() => {togglePinnedMessages();setMobileActions(false);}}>Messaggi fissati ({extras.pins.length})</button><button className="mobile-sheet-pins" onClick={() => {setShowCipher(value => !value);setMobileActions(false);}}>Dettagli della cifratura</button></div></Modal>}
       <main className="chat-panel">
-        <header className={`chat-header ${safeCommunityImage(activeConversation?.banner_data) ? "has-conversation-banner" : ""}`}>
-          {safeCommunityImage(activeConversation?.banner_data) && <img className="conversation-banner-image" src={activeConversation!.banner_data!} alt="" aria-hidden="true" />}
-          <button className="mobile-menu" onClick={() => {
-            if (isMobile) {
-              setShowThemeMembers(false);
-              setMobileBrowsing(true);
-            } else setSidebarOpen(true);
-          }} aria-label={isMobile ? "Torna alle conversazioni" : "Apri menu"}>{isMobile ? <ArrowLeft size={23}/> : <Menu size={20} />}</button>
-          {isMobile && activeConversation && !safeCommunityImage(activeConversation.icon_data) && !activeSpaceId && dmDetails[activeConversation.id]?.recipient && <span className="mobile-conversation-avatar" aria-hidden="true" style={{background:dmDetails[activeConversation.id].recipient!.avatar_color}}>{initialsFor(dmDetails[activeConversation.id].recipient!.display_name)}<ProfileImage path={dmDetails[activeConversation.id].recipient!.avatar_path} alt=""/></span>}
-          {safeCommunityImage(activeConversation?.icon_data)?<img className="conversation-header-icon" src={activeConversation!.icon_data!} alt=""/>:activeConversation?.kind === "voice_channel" ? <Volume2 size={21} className="hash-icon voice-icon" /> : activeConversation ? <Hash size={21} className="hash-icon" /> : <ShieldCheck size={21} className="hash-icon" />}
-          <div className="channel-heading"><button className="conversation-identity-trigger" title="Nome, descrizione e aspetto" disabled={!activeConversation} onClick={()=>activeConversation&&setIdentityTarget({kind:"conversation",id:activeConversation.id,value:activeConversation,readOnly:!!activeConversation.space_id&&!canManageSpace})}><strong>{(activeConversation && !activeConversation.identity_customized && !activeConversation.description && !activeConversation.icon_data && !activeSpaceId && dmDetails[activeConversation.id]?.recipient?.display_name) ? dmDetails[activeConversation.id].recipient!.display_name : (activeConversation?.name ?? (activeSpaceId ? "Il tuo spazio Hush" : "Amici"))}</strong>{activeConversation?.description&&<small title={activeConversation.description}>{activeConversation.description}</small>}</button><span>{activeConversation ? activeConversation.kind === "voice_channel" ? `${members.length} membri · canale vocale` : `${members.length} membri` : `Benvenuto, ${profile.display_name}`}</span></div>
-          {isMobile && activeConversation ? <div className="mobile-header-actions"><button onClick={() => startCall(activeConversation, false)} aria-label="Avvia chiamata"><Phone size={21}/></button>{activeConversation.kind !== "voice_channel" && <button onClick={openMessageSearch} aria-label="Cerca nei messaggi"><Search size={21}/></button>}<button onClick={() => setMobileActions(true)} aria-label="Altre azioni della chat"><MoreHorizontal size={21}/></button></div> : conversationActions}
-          {memberToggle}
-        </header>
+        {!lineaDesktop && chatHeader}
         {quotaChannelTabs && <nav className="quota-channel-tabs" aria-label="Canali di testo">{textChannelSection}</nav>}
 
         {isMobile && stage.open && !stage.expanded && <div className="mobile-call-dock"><button onClick={() => setStage(current => ({...current,expanded:true}))} aria-label="Riapri chiamata"><Volume2 size={18}/><span>{stage.roomName}</span></button><button onClick={leaveCall} aria-label="Lascia chiamata"><PhoneOff size={19}/></button></div>}
@@ -1801,10 +1888,11 @@ export function WorkspaceApp({ session, theme, onThemeChange }: { session: Sessi
           onMinimize={() => setStage((current) => ({ ...current, expanded: false }))}
           onClose={leaveCall}
           dockTarget={desktopCallTarget}
+          stageTarget={lineaDesktop ? lineaStageTarget : null}
           onExpand={() => setStage(current => ({...current, expanded: true}))}
         />
 
-        {stage.expanded ? null : activeConversation ? activeConversation.kind === "voice_channel" ? (
+        {stage.expanded && (!lineaDesktop || activeConversation?.kind === "voice_channel") ? null : activeConversation ? activeConversation.kind === "voice_channel" ? (
           <div className="chat-content empty-chat voice-lobby">
             <section className="workspace-empty voice-room-card">
               <div className="voice-room-mark"><Volume2 size={30} /></div>
@@ -1819,14 +1907,14 @@ export function WorkspaceApp({ session, theme, onThemeChange }: { session: Sessi
           </div>
         ) : (
           <>
-            <button className={`trust-line key-${keyStatus}`} onClick={() => keyStatus === "ready" && setShowCipher((current) => !current)} disabled={keyStatus !== "ready"}>
+            {(!lineaDesktop || !wideLayout || keyStatus !== "ready") && <button className={`trust-line key-${keyStatus}`} onClick={() => keyStatus === "ready" && setShowCipher((current) => !current)} disabled={keyStatus !== "ready"}>
               <span className="trust-signal"><LockKeyhole size={14} /><EncryptedLabel text={keyStatus === "ready" ? "E2EE ATTIVA" : keyStatus === "waiting" ? "CHIAVE RICHIESTA" : "PREPARAZIONE CHIAVE"} /></span>
               <span>{keyStatus === "ready" ? <>Impronta <code>{fingerprint}</code></> : keyStatus === "waiting" ? "Un membro deve aprire questa conversazione per autorizzare il dispositivo." : "Cifratura del dispositivo in corso…"}</span>
               {keyStatus === "ready" ? <span className="trust-action">{showCipher ? "Nascondi" : "Verifica"}</span> : null}
-            </button>
+            </button>}
             {showSearch && <MessageSearch key={activeConversation.id} name={activeConversation.name} query={search} onChange={setSearch} onClose={closeMessageSearch} onSearch={()=>void searchHistory()} onStop={()=>{searchGenerationRef.current++;setSearchingHistory(false);setHistoryNotice(`${historyResults?.length??0} risultati · ricerca interrotta`);}} searching={searchingHistory} ready={keyStatus==="ready"} resultCount={filteredMessages.length} notice={historyNotice}/>}
-            <div className="chat-tools"><button aria-pressed={showPins} onClick={togglePinnedMessages}>Messaggi fissati ({extras.pins.length})</button></div>
-            {showCipher ? <section className="cipher-inspector"><div><span className="eyebrow">ultimo pacchetto salvato</span><code>{latestCipher ? `${latestCipher.iv}.${latestCipher.ciphertext}` : "Nessun messaggio inviato."}</code></div><button onClick={() => setShowCipher(false)} aria-label="Chiudi"><X size={16} /></button></section> : null}
+            {!lineaDesktop && <div className="chat-tools"><button aria-pressed={showPins} onClick={togglePinnedMessages}>Messaggi fissati ({extras.pins.length})</button></div>}
+            {showCipher ? <section className="cipher-inspector"><div>{lineaDesktop && wideLayout && fingerprint && <p className="linea-fingerprint">Impronta della chiave <code>{fingerprint}</code></p>}<span className="eyebrow">ultimo pacchetto salvato</span><code>{latestCipher ? `${latestCipher.iv}.${latestCipher.ciphertext}` : "Nessun messaggio inviato."}</code></div><button onClick={() => setShowCipher(false)} aria-label="Chiudi"><X size={16} /></button></section> : null}
             <div className="chat-content chat-content-text">
               <div className="messages" ref={messagesRef} onScroll={event => {const element=event.currentTarget; setAwayFromBottom(element.scrollHeight-element.scrollTop-element.clientHeight > 100);}}>
                 <section className="channel-intro"><div className="intro-icon"><Hash size={28} /></div><span className="eyebrow">il vostro spazio</span><h1>{activeConversation.name}</h1><p>Un posto per ritrovarvi. I messaggi sono protetti dalla cifratura end-to-end.</p></section>
@@ -1837,7 +1925,7 @@ export function WorkspaceApp({ session, theme, onThemeChange }: { session: Sessi
                   const date = new Date(message.createdAt).toLocaleDateString("it");
                   return <div key={message.id}>
                     {(index === 0 || new Date(filteredMessages[index-1].createdAt).toLocaleDateString("it") !== date) && <div className="message-date">{messageDayLabel(message.createdAt)}</div>}
-                    <ChatMessage onHushLink={openHushLink} onJumpToReply={()=>void jumpToMessage(message.replyId!)} replySender={memberProfilesMap[messageLookup.get(message.replyId??"")?.senderId??""]} continuation={!search&&!showPins&&isMessageContinuation(filteredMessages[index-1],message)} canEdit={canWrite} mentions={resolveMentions(message.body,message.mentions,targetsForSender(message.senderId??""))} mentionTargets={targetsForSender(message.senderId??"")} highlighted={mentionsRecipient(resolveMentions(message.body,message.mentions,targetsForSender(message.senderId??"")),session.user.id,myRoleIds,userStatus!=="invisible")||(message.senderId!==session.user.id&&!!message.replyId&&messageLookup.get(message.replyId)?.senderId===session.user.id)} senderRole={rolesForUser(roleContext,message.senderId??"")[0]} canReact={activePermissions.includes("add_reactions")} canPin={activePermissions.includes("pin_messages")} canManageMessages={activePermissions.includes("manage_messages")} message={message} sender={sender} selfId={session.user.id} roomKey={roomKey} conversationId={activeConversation.id} reply={messageLookup.get(message.replyId??"")} reactions={extras.reactions.filter(item => item.message_id === message.id)} pinned={extras.pins.some(item => item.message_id === message.id)} onReply={() => {setReplyingTo(message); messageInputRef.current?.focus();}} onEdit={text => editMessage(message, text)} onDelete={async () => {await deleteEncryptedMessage(message.id); if(activeIdRef.current === activeConversation.id) setMessages(prev => prev.filter(item => item.id !== message.id));}} onReact={async emoji => {await toggleMessageReaction(message.id, emoji); await refreshExtras(activeConversation.id);}} onPin={async () => {await toggleMessagePin(message.id); await refreshExtras(activeConversation.id);}} onProfile={anchor=>openUserProfile(sender,anchor)} onToast={setToast} />
+                    <ChatMessage quickReactions={lineaDesktop} onHushLink={openHushLink} onJumpToReply={()=>void jumpToMessage(message.replyId!)} replySender={memberProfilesMap[messageLookup.get(message.replyId??"")?.senderId??""]} continuation={!search&&!showPins&&isMessageContinuation(filteredMessages[index-1],message)} canEdit={canWrite} mentions={resolveMentions(message.body,message.mentions,targetsForSender(message.senderId??""))} mentionTargets={targetsForSender(message.senderId??"")} highlighted={mentionsRecipient(resolveMentions(message.body,message.mentions,targetsForSender(message.senderId??"")),session.user.id,myRoleIds,userStatus!=="invisible")||(message.senderId!==session.user.id&&!!message.replyId&&messageLookup.get(message.replyId)?.senderId===session.user.id)} senderRole={rolesForUser(roleContext,message.senderId??"")[0]} canReact={activePermissions.includes("add_reactions")} canPin={activePermissions.includes("pin_messages")} canManageMessages={activePermissions.includes("manage_messages")} message={message} sender={sender} selfId={session.user.id} roomKey={roomKey} conversationId={activeConversation.id} reply={messageLookup.get(message.replyId??"")} reactions={extras.reactions.filter(item => item.message_id === message.id)} pinned={extras.pins.some(item => item.message_id === message.id)} onReply={() => {setReplyingTo(message); messageInputRef.current?.focus();}} onEdit={text => editMessage(message, text)} onDelete={async () => {await deleteEncryptedMessage(message.id); if(activeIdRef.current === activeConversation.id) setMessages(prev => prev.filter(item => item.id !== message.id));}} onReact={async emoji => {await toggleMessageReaction(message.id, emoji); await refreshExtras(activeConversation.id);}} onPin={async () => {await toggleMessagePin(message.id); await refreshExtras(activeConversation.id);}} onProfile={anchor=>openUserProfile(sender,anchor)} onToast={setToast} />
                   </div>;
                 })}
                 <div ref={messageEnd} />
@@ -1869,6 +1957,7 @@ export function WorkspaceApp({ session, theme, onThemeChange }: { session: Sessi
               {mentionOptions.length>0 && <div id="mention-options" className="mention-suggestions" role="listbox" aria-label="Menzioni">{mentionOptions.map((target,index)=><button key={`${target.kind}:${target.id}`} id={`mention-option-${index}`} role="option" aria-selected={index===Math.min(mentionIndex,mentionOptions.length-1)} type="button" onMouseDown={e=>e.preventDefault()} onClick={()=>insertMention(target)}><strong style={{color:target.color}}>@{target.label}</strong><span>{target.name}</span></button>)}</div>}
               <form
                 className="composer"
+                data-read-only={lineaDesktop && !canWrite ? "true" : undefined}
                 onSubmit={sendMessage}
                 onPaste={handlePaste}
                 onKeyDown={(event) => { if (event.key.length === 1 && !event.metaKey && !event.ctrlKey && !event.altKey) void playChatSound("typing"); }}
@@ -1941,12 +2030,14 @@ export function WorkspaceApp({ session, theme, onThemeChange }: { session: Sessi
         )}
       </main>
 
-      <aside className="member-sidebar" id="workspace-members" onKeyDown={event => {
-        if (theme === "notturno" && event.key === "Escape" && !event.defaultPrevented) closeThemeMembers();
+      <aside className="member-sidebar" id="workspace-members" aria-labelledby="workspace-members-heading" onKeyDown={event => {
+        if (canToggleMembers && event.key === "Escape" && !event.defaultPrevented) closeThemeMembers();
       }}>
-        <div className="member-heading"><span>Persone</span><span>{members.length || 1}</span>{theme === "notturno" && <button type="button" className="theme-members-close" aria-label="Nascondi persone" onClick={closeThemeMembers}><X size={16} /></button>}</div>
+        <div className="member-heading"><span id="workspace-members-heading">{lineaDesktop ? "Membri" : "Persone"}</span><span>{members.length || 1}</span>{canToggleMembers && <button type="button" className="theme-members-close" aria-label="Nascondi persone" onClick={closeThemeMembers}><X size={16} /></button>}</div>
         <div className="member-list">
-          {(members.length ? members : [profile]).map((member) => (
+          {memberSections.map(section => <div key={section.id} className={section.label ? "linea-member-section" : undefined}>
+            {section.label && <h3>{section.label} <span>{section.rows.length}</span></h3>}
+            {section.rows.map(({ person: member, role, presence }) => (
             <button
               type="button"
               className="member current-member member-profile-button"
@@ -1962,8 +2053,9 @@ export function WorkspaceApp({ session, theme, onThemeChange }: { session: Sessi
                 });
               }}
               aria-label={`Profilo di ${member.display_name}`}
-            ><span className="member-avatar"><Avatar profile={member} /><i className={`status ${member.id === session.user.id ? (userStatus === "invisible" ? "status-away" : userStatus === "dnd" ? "status-dnd" : "status-online") : (remoteStatuses[member.id] === "dnd" ? "status-dnd" : onlineUserIds.includes(member.id) ? "status-online" : "status-away")}`} /></span><span><strong style={{color:rolesForUser(roleContext,member.id)[0]?.color}}>{member.display_name}</strong><small>{rolesForUser(roleContext,member.id)[0]?.name??`@${member.username}`}</small></span></button>
-          ))}
+            ><span className="member-avatar"><Avatar profile={member} /><i className={`status status-${presence === "invisible" ? "away" : presence}`} /></span><span><strong style={{color:role?.color}}>{member.display_name}</strong><small>{role?.name??`@${member.username}`}</small></span></button>
+            ))}
+          </div>)}
         </div>
         {activeConversation?.kind === "group_dm" && (activeConversation.identity_customized || members.length > 2) && <button className="invite-group-button" onClick={() => openGroupInvite(activeConversation)}><UserPlus size={17}/> Invita al gruppo</button>}
         <div className="privacy-note"><ShieldCheck size={16} /><p><strong>{keyStatus === "ready" ? "Chiave verificata" : "Supabase connesso"}</strong><span>{identity ? `Dispositivo ${identity.id.slice(0, 8)}` : "Registrazione dispositivo…"}</span></p><i className={`backend-light backend-${keyStatus === "error" ? "degraded" : "ready"}`} /></div>
@@ -1982,12 +2074,12 @@ export function WorkspaceApp({ session, theme, onThemeChange }: { session: Sessi
       {modal === "channel" ? <Modal title="Nuovo canale" description={`Verrà aggiunto a ${activeSpace?.name ?? "questo server"} e riceverà una chiave E2EE separata.`} onClose={() => setModal(null)}><form className="modal-form" onSubmit={submitChannel}><label>Nome del canale<input autoFocus required maxLength={80} value={formPrimary} onChange={(event) => setFormPrimary(event.target.value)} placeholder="gaming" /></label>{formError ? <div className="auth-error">{formError}</div> : null}<button className="modal-primary" disabled={busy || !formPrimary.trim()}>{busy ? "Creazione…" : "Crea canale"}</button></form></Modal> : null}
       {modal === "dm" ? <Modal title="Nuovo gruppo DM" description="Inserisci gli username esatti, separati da virgole. Hush distribuirà la chiave ai loro dispositivi registrati." onClose={() => setModal(null)}><form className="modal-form" onSubmit={submitDm}><label>Nome del gruppo<input autoFocus required maxLength={80} value={formPrimary} onChange={(event) => setFormPrimary(event.target.value)} placeholder="Nome del gruppo" /></label><label>Username<input required value={formSecondary} onChange={(event) => setFormSecondary(event.target.value)} placeholder="@amico1, @amico2" /></label>{formError ? <div className="auth-error">{formError}</div> : null}<button className="modal-primary" disabled={busy || !formPrimary.trim() || !formSecondary.trim()}>{busy ? "Creazione…" : "Crea gruppo"}</button></form></Modal> : null}
       {modal === "settings" ? <Suspense fallback={null}><SettingsPanel profile={profile} theme={theme} onThemeChange={onThemeChange} inCall={stage.open} onClose={() => setModal(null)} onSaved={(next) => { setProfile(next); setMembers((current) => current.map((member) => member.id === next.id ? next : member)); }} /></Suspense> : null}
-      {manageSpace && activeSpace && <SpaceManagement onCustomize={()=>setIdentityTarget({kind:"space",id:activeSpace.id,value:activeSpace,readOnly:!canManageSpace})} spaceId={activeSpace.id} currentUserId={session.user.id} onChanged={() => {void refreshChannels(activeSpace.id); setKeyRetry(value => value+1);}} onClose={() => setManageSpace(false)} />}
+      {manageSpace && activeSpace && <SpaceManagement pageLayout={lineaDesktop} spaceName={activeSpace.name} onCustomize={()=>setIdentityTarget({kind:"space",id:activeSpace.id,value:activeSpace,readOnly:!canManageSpace})} spaceId={activeSpace.id} currentUserId={session.user.id} onChanged={() => {void refreshChannels(activeSpace.id); setKeyRetry(value => value+1);}} onClose={() => setManageSpace(false)} />}
       {modal === "server" && activeSpace ? <Modal title={activeSpace.name} description="Gestisci accesso e permanenza nel server." onClose={() => setModal(null)}><div className="server-actions"><button onClick={()=>setIdentityTarget({kind:"space",id:activeSpace.id,value:activeSpace,readOnly:!canManageSpace})}><ImagePlus size={17}/><span><strong>Personalizza server</strong><small>Identità, icona, copertina e colore</small></span></button><button onClick={() => {setModal(null);setManageSpace(true);}}><Settings size={17}/><span><strong>Gestisci server</strong><small>Canali, ruoli, membri e inviti</small></span></button><button onClick={createInvite}><Copy size={17} /><span><strong>Copia invito</strong><small>Valido 7 giorni, massimo 25 utilizzi</small></span></button>{activeSpace.owner_id === session.user.id ? <button className="danger-action" onClick={() => leaveOrDeleteSpace(true)}><Trash2 size={17} /><span><strong>Elimina server</strong><small>Rimuove canali e messaggi in modo permanente</small></span></button> : <button className="danger-action" onClick={() => leaveOrDeleteSpace(false)}><LogOut size={17} /><span><strong>Lascia server</strong><small>Perderai accesso alle conversazioni</small></span></button>}{formError ? <div className="auth-error">{formError}</div> : null}</div></Modal> : null}
 
       {modal === "voice" ? <Modal title="Nuovo canale vocale" description={`Crea una stanza vocale persistente in ${activeSpace?.name ?? "questo server"}.`} onClose={() => setModal(null)}><form className="modal-form" onSubmit={submitVoiceChannel}><label>Nome del canale<input autoFocus required maxLength={80} value={formPrimary} onChange={(event) => setFormPrimary(event.target.value)} placeholder="Lounge" /></label>{formError ? <div className="auth-error">{formError}</div> : null}<button className="modal-primary" disabled={busy || !formPrimary.trim()}>{busy ? "Creazione…" : "Crea canale vocale"}</button></form></Modal> : null}
 
-      {workspaceMenu && <WorkspaceContextMenu x={workspaceMenu.x} y={workspaceMenu.y} title={workspaceMenu.space?.name ?? workspaceMenu.conversation?.name ?? "Gestisci"} items={workspaceMenuItems()} onClose={() => setWorkspaceMenu(null)}/>}
+      {workspaceMenu && <WorkspaceContextMenu x={workspaceMenu.x} y={workspaceMenu.y} title={workspaceMenu.space?.name ?? workspaceMenu.conversation?.name ?? "Gestisci"} items={workspaceMenuItems()} anchor={workspaceMenu.anchor} onClose={() => setWorkspaceMenu(null)}/>}
       {modal === "category" && activeSpace && <Modal title="Nuova categoria" description={`Organizza i canali di ${activeSpace.name}.`} onClose={() => setModal(null)}><form className="modal-form" onSubmit={event => { event.preventDefault(); void runAction(async () => { await createSpaceCategory(activeSpace.id, formPrimary); const { data, error } = await supabase!.from("space_categories").select("id,name,position").eq("space_id",activeSpace.id).order("position"); if (error) throw error; setCategories(data ?? []); setModal(null); setToast("Categoria creata"); }); }}><label>Nome della categoria<input autoFocus required maxLength={80} value={formPrimary} onChange={event => setFormPrimary(event.target.value)} placeholder="La nostra community"/></label>{formError && <p className="auth-error" role="alert">{formError}</p>}<button className="modal-primary" disabled={busy || !formPrimary.trim()}>{busy ? "Creazione…" : "Crea categoria"}</button></form></Modal>}
       {inviteGroup && <Suspense fallback={null}><GroupInvite conversation={inviteGroup.conversation} members={inviteGroup.members} friends={friendships.entries.filter(friend => friend.status === "accepted").map(friend => friend.user)} onClose={() => setInviteGroup(null)} onInvite={async usernames => {
         if (!identity || !supabase) throw new Error("Attendi che il dispositivo sia pronto.");

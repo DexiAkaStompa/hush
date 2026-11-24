@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { GripVertical, Hash, Volume2 } from "lucide-react";
+import { ArrowLeft, ChevronRight, GripVertical, Hash, Pencil, Search, Shield, UsersRound, Volume2 } from "lucide-react";
 import { readableError } from "../lib/workspace";
 import { Modal } from "./Modal";
 import {
@@ -38,12 +38,16 @@ export function SpaceManagement({
   onChanged,
   onClose,
   onCustomize,
+  spaceName,
+  pageLayout = false,
 }: {
   spaceId: string;
   currentUserId: string;
   onChanged: () => void;
   onClose: () => void;
   onCustomize?: () => void;
+  spaceName?: string;
+  pageLayout?: boolean;
 }) {
   const [tab, setTab] = useState<Tab>("channels"),
     [state, setState] = useState<State | null>(null),
@@ -90,13 +94,16 @@ export function SpaceManagement({
       onClose={() => {
         if (!busy) onClose();
       }}
-      className="space-management"
+      className={`space-management${pageLayout ? " space-management-page" : ""}`}
     >
+      <div className="space-management-frame">
+      <div className="management-navigation">
+      {pageLayout && spaceName && <strong className="management-space-name">{spaceName}</strong>}
       {onCustomize && (
         <button className="identity-settings-entry" onClick={onCustomize}>
           <span>
-            <strong>Identità e aspetto</strong>
-            <small>Nome, descrizione, icona, copertina e colore</small>
+            <strong>{pageLayout ? "Profilo del server" : "Identità e aspetto"}</strong>
+            {!pageLayout && <small>Nome, descrizione, icona, copertina e colore</small>}
           </span>
         </button>
       )}
@@ -106,12 +113,16 @@ export function SpaceManagement({
             key={t}
             disabled={busy}
             className={tab === t ? "active" : ""}
+            aria-current={tab === t ? "page" : undefined}
             onClick={() => setTab(t)}
           >
             {names[t]}
           </button>
         ))}
       </nav>
+      </div>
+      <div className="management-content" key={tab}>
+      {pageLayout && <h2>{names[tab]}</h2>}
       {error && (
         <p role="alert" className="space-management-error">
           {error}
@@ -126,7 +137,7 @@ export function SpaceManagement({
       ) : tab === "channels" ? (
         <Channels {...props} />
       ) : tab === "roles" ? (
-        <Roles {...props} />
+        <Roles {...props} listView={pageLayout} />
       ) : tab === "members" ? (
         <Members {...props} currentUserId={currentUserId} />
       ) : (
@@ -173,6 +184,8 @@ export function SpaceManagement({
           )}
         </div>
       )}
+      </div>
+      </div>
     </Modal>
   );
 }
@@ -535,9 +548,37 @@ function ChannelSettings({
     </section>
   );
 }
-function Roles({ state, spaceId, busy, act }: PanelProps) {
-  const [id, setId] = useState<string | null>(state.roles[0]?.id ?? null);
+function Roles({ state, spaceId, busy, act, listView = false }: PanelProps & { listView?: boolean }) {
+  const [id, setId] = useState<string | null | undefined>(listView ? undefined : state.roles[0]?.id ?? null);
+  const [query, setQuery] = useState("");
   const role = state.roles.find((r) => r.id === id);
+  const editor = <RoleEditor
+    key={role?.id ?? "new"}
+    role={role}
+    busy={busy}
+    onSave={r => act(async () => { setId(await saveSpaceRole(spaceId, r)); })}
+    onDelete={() => act(async () => {
+      if (role) await deleteSpaceRole(role.id);
+      setId(listView ? undefined : state.roles.find(r => r.is_default)?.id ?? null);
+    })}
+  />;
+  if (listView) {
+    if (id !== undefined) return <div className="management-role-detail"><button type="button" disabled={busy} onClick={() => setId(undefined)}><ArrowLeft size={16} /> Tutti i ruoli</button>{editor}</div>;
+    const defaultRole = state.roles.find(r => r.is_default);
+    const roles = state.roles.filter(r => !r.is_default);
+    const filtered = roles.filter(r => r.name.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));
+    const counts = new Map<string, number>();
+    for (const assignment of state.assignments) counts.set(assignment.role_id, (counts.get(assignment.role_id) ?? 0) + 1);
+    return <div className="management-role-overview">
+      {defaultRole && <button type="button" className="management-default-role" disabled={busy} onClick={() => setId(defaultRole.id)}><UsersRound size={20} /><span><strong>Permessi predefiniti</strong><small>Si applicano a tutti i membri del server</small></span><ChevronRight size={17} /></button>}
+      <div className="management-role-search"><label><Search size={16} /><input type="search" aria-label="Cerca tra i ruoli" placeholder="Cerca tra i ruoli" value={query} onChange={event => setQuery(event.target.value)} /></label><button type="button" className="modal-primary" disabled={busy} onClick={() => setId(null)}>Crea ruolo</button></div>
+      <div className="management-role-table">
+        <div className="management-role-columns"><strong>Ruoli · {roles.length}</strong><span>Membri</span><span /></div>
+        {filtered.map(r => <div key={r.id} className="management-role-columns"><span className="management-role-name"><Shield size={17} style={{ color: r.color }} />{r.name}</span><span>{counts.get(r.id) ?? 0}</span><button type="button" disabled={busy} onClick={() => setId(r.id)} aria-label={`Modifica ${r.name}`} title={`Modifica ${r.name}`}><Pencil size={15} /></button></div>)}
+        {!filtered.length && <p className="management-hint">{query.trim() ? "Nessun ruolo corrisponde alla ricerca." : "Non sono ancora stati creati ruoli."}</p>}
+      </div>
+    </div>;
+  }
   return (
     <div className="management-roles">
       <nav className="management-role-list" aria-label="Ruoli">
@@ -563,22 +604,7 @@ function Roles({ state, spaceId, busy, act }: PanelProps) {
           </button>
         ))}
       </nav>
-      <RoleEditor
-        key={role?.id ?? "new"}
-        role={role}
-        busy={busy}
-        onSave={(r) =>
-          act(async () => {
-            setId(await saveSpaceRole(spaceId, r));
-          })
-        }
-        onDelete={() =>
-          act(async () => {
-            if (role) await deleteSpaceRole(role.id);
-            setId(state.roles.find((r) => r.is_default)?.id ?? null);
-          })
-        }
-      />
+      {editor}
     </div>
   );
 }

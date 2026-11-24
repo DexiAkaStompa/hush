@@ -12,6 +12,7 @@ import "./chat-experience.css";
 import "./mobile.css";
 import "./liquid-glass.css";
 import "./design-themes.css";
+import "./linea-layout.css";
 import { Capacitor } from '@capacitor/core';
 
 // Install the Rust bridge before any component captures window.hushWindow.

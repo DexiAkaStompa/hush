@@ -1,4 +1,5 @@
 const DESIGNS = [
+  { id: "linea", name: "Linea", description: "Chat compatta, canali a sinistra e membri richiudibili", swatches: ["#141b1f", "#1d272c", "#9fdfd0"] },
   { id: "ardesia", name: "Ardesia", description: "Grafite e menta, con una chat più ampia", swatches: ["#171c21", "#1e242b", "#b4e9d6"] },
   { id: "inchiostro", name: "Inchiostro", description: "Toni caldi, server in alto e colonna di lettura", swatches: ["#262227", "#221e23", "#ffc6ab"] },
   { id: "basalto", name: "Basalto", description: "Grafite e lime, con canali e messaggi compatti", swatches: ["#191b1c", "#222526", "#d7ed91"] },

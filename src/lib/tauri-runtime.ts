@@ -8,7 +8,7 @@ type DesktopBridge = HushWindowControls & {
 const DRAG_REGION = ".chat-header, .auth-brand, .app-shell";
 const NO_DRAG_REGION = [
   "button", "input", "textarea", "select", "a", "label", "iframe",
-  "[role=button]", "[role=slider]", "[contenteditable]:not([contenteditable=false])",
+  "[role=button]", "[role=slider]", "[role=separator]", "[contenteditable]:not([contenteditable=false])",
   ".window-controls", ".sidebar-scroll", ".messages", ".chat-content",
   ".member-sidebar", ".media-stage", ".room-music", ".composer", ".modal-card",
 ].join(", ");

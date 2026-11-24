@@ -16,11 +16,15 @@ vi.mock("@tauri-apps/api/event", () => ({ listen: native.listen }));
 import { initTauriRuntime, isWindowDragTarget, validTauriLink } from "./tauri-runtime";
 
 class TestElement extends EventTarget {
-  constructor(readonly tagName: string, readonly className = "", readonly parent: TestElement | null = null) { super(); }
+  constructor(readonly tagName: string, readonly className = "", readonly parent: TestElement | null = null, readonly role?: string) { super(); }
   closest(selector: string): TestElement | null {
     const selectors = selector.split(", ");
     for (let candidate: TestElement | null = this; candidate; candidate = candidate.parent) {
-      if (selectors.some(value => value.startsWith(".") ? candidate!.className.split(" ").includes(value.slice(1)) : candidate!.tagName === value)) return candidate;
+      if (selectors.some(value => {
+        if (value.startsWith(".")) return candidate!.className.split(" ").includes(value.slice(1));
+        if (candidate!.role && value === `[role=${candidate!.role}]`) return true;
+        return candidate!.tagName === value;
+      })) return candidate;
     }
     return null;
   }
@@ -122,10 +126,13 @@ test("dragging preserves text and controls in interactive regions and supports h
   const icon = new TestElement("svg", "", button);
   const shell = new TestElement("div", "app-shell");
   const messages = new TestElement("div", "messages", shell);
+  const separator = new TestElement("div", "linea-sidebar-resize", shell, "separator");
   expect(isWindowDragTarget(title)).toBe(true);
   expect(isWindowDragTarget(icon)).toBe(false);
   expect(isWindowDragTarget(messages)).toBe(false);
+  expect(isWindowDragTarget(separator)).toBe(false);
   expect(dispatchMouse("mousedown", icon).defaultPrevented).toBe(false);
+  expect(dispatchMouse("mousedown", separator).defaultPrevented).toBe(false);
   expect(dispatchMouse("mousedown", title, { button: 2 }).defaultPrevented).toBe(false);
   expect(native.window.startDragging).not.toHaveBeenCalled();
   expect(dispatchMouse("mousedown", title).defaultPrevented).toBe(true);

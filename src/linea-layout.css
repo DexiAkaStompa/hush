@@ -1,0 +1,198 @@
+.space-management-frame,
+.management-navigation,
+.management-content { display: contents; }
+.stage-header-actions { display: flex; align-items: center; gap: 5px; }
+.stage-music { display: contents; }
+.stage-music[hidden] { display: none; }
+
+@media (min-width: 821px) {
+  [data-theme="linea"] .linea-titlebar > nav {
+    position: absolute;
+    inset: 1px auto auto 8px;
+    display: flex;
+    gap: 2px;
+  }
+  [data-theme="linea"] .linea-titlebar > nav button {
+    display: grid;
+    place-items: center;
+    width: 24px;
+    height: 26px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+  }
+  [data-theme="linea"] .linea-titlebar > nav button:disabled { opacity: .4; cursor: default; }
+  [data-theme="linea"] .linea-titlebar > nav button:hover:not(:disabled) { color: var(--frost); background: var(--soft-surface); }
+  [data-theme="linea"] .linea-dm-finder {
+    display: grid;
+    place-items: center stretch;
+    min-height: var(--linea-header-height);
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--line);
+  }
+  [data-theme="linea"] .linea-dm-finder label {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    min-width: 0;
+    padding-inline: 9px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-control);
+    background: var(--field-background);
+    color: var(--muted);
+  }
+  [data-theme="linea"] .linea-dm-finder input {
+    flex: 1;
+    min-width: 0;
+    height: 27px;
+    padding: 0;
+    background: transparent;
+    border: 0;
+    color: var(--frost);
+    font-size: 12px;
+  }
+  [data-theme="linea"] .linea-dm-finder input:focus { outline: none; }
+  [data-theme="linea"] .linea-dm-finder label:focus-within { border-color: var(--mint); }
+  [data-theme="linea"] .app-shell .linea-message-search {
+    flex: 0 0 clamp(106px, 13vw, 218px);
+    min-width: 0;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    padding: 0 8px;
+    border: 1px solid var(--line);
+    background: var(--field-background);
+    color: var(--muted);
+    font-size: 12px;
+    cursor: pointer;
+  }
+  [data-theme="linea"] .linea-message-search span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  [data-theme="linea"] .linea-message-search svg { flex: none; }
+  [data-theme="linea"] .linea-trust-button {
+    display: grid;
+    place-items: center;
+    width: 29px;
+    height: 28px;
+    flex: none;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--mint);
+    cursor: pointer;
+  }
+  [data-theme="linea"] .linea-trust-button:is(:hover, [aria-expanded="true"]) { background: var(--soft-surface); }
+  [data-theme="linea"] .app-shell .cipher-inspector { margin: 7px 8px 0; }
+  [data-theme="linea"] .linea-fingerprint { margin: 0; font-size: 12px; }
+  [data-theme="linea"] .composer[data-read-only="true"] :is(.composer-attach-btn, .composer-emoji-wrap, .send-button) { display: none; }
+  [data-theme="linea"] .linea-member-section + .linea-member-section { margin-top: 16px; }
+  [data-theme="linea"] .linea-member-section h3 { margin: 0 5px 4px; color: var(--muted); font-size: 11px; font-weight: 650; }
+  [data-theme="linea"] .linea-member-section h3 span { padding-left: 3px; font-variant-numeric: tabular-nums; }
+  [data-theme="linea"] .linea-member-section .member-profile-button { min-height: 36px; padding-block: 4px; }
+  [data-theme="linea"] .linea-account-dock .desktop-call-widget { border-radius: var(--radius-surface) var(--radius-surface) 0 0; }
+  [data-theme="linea"] .linea-account-dock .user-panel { border-radius: 0 0 var(--radius-surface) var(--radius-surface); background: var(--panel); }
+  [data-theme="linea"] .linea-account-dock .desktop-call-slot:empty + .user-panel { border-radius: var(--radius-surface); }
+  [data-theme="linea"] .app-shell[data-linea-call="true"] { --linea-stage-height: clamp(244px, 30.7dvh, 400px); }
+  [data-theme="linea"] .linea-call-stage { display: flex; grid-area: stage; overflow: hidden; }
+  :root[data-theme="linea"] .app-shell .linea-call-stage .media-stage {
+    margin: 0;
+    padding: 7px 10px 8px;
+    border: 0;
+    border-radius: 0;
+    background: var(--ink);
+  }
+  [data-theme="linea"] .linea-call-stage .stage-header { margin: 0; }
+  [data-theme="linea"] .linea-call-stage .stage-header h2 { margin: 2px 0; font-size: 13px; }
+  [data-theme="linea"] .linea-call-stage .stage-header-actions button { width: 28px; height: 28px; }
+  [data-theme="linea"] .linea-call-stage .room-music { margin: 2px 0; padding: 4px 8px; }
+  [data-theme="linea"] .linea-call-stage .stage-grid {
+    grid-template-columns: none;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(120px, 1fr);
+    align-items: center;
+    gap: 7px;
+    padding: 4px 0;
+    overflow-x: auto;
+  }
+  [data-theme="linea"] .linea-call-stage .video-tile {
+    justify-self: center;
+    width: min(100%, 390px);
+    height: 100%;
+    max-height: 252px;
+    min-height: 0;
+  }
+  [data-theme="linea"] .linea-call-stage .stage-grid:has(.video-tile-focused) { display: flex; justify-content: center; }
+  [data-theme="linea"] .linea-call-stage .stage-grid:has(.video-tile-focused) .video-tile:not(.video-tile-focused) { position: absolute; visibility: hidden; inline-size: 0; block-size: 0; }
+  [data-theme="linea"] .linea-call-stage .video-tile-focused { width: min(100%, 680px); }
+  [data-theme="linea"] .linea-call-stage .video-tile video { object-fit: contain; }
+  [data-theme="linea"] .linea-call-stage .call-controls { padding: 3px; margin: 0 auto; gap: 5px; }
+  [data-theme="linea"] .linea-call-stage .call-controls button { min-height: 30px; height: 32px; }
+  [data-theme="linea"] .linea-call-stage .media-notice { padding: 0; margin: 2px 0; min-height: 0; }
+  [data-theme="linea"] .linea-call-stage .media-notice:empty { display: none; }
+  [data-theme="linea"] .linea-message-menu { width: 230px; max-height: calc(100dvh - 16px); overflow-y: auto; }
+  [data-theme="linea"] .linea-quick-reactions { display: flex; gap: 5px; margin-bottom: 4px; }
+  [data-theme="linea"] .linea-message-menu .linea-quick-reactions button { flex: 1; display: grid; place-items: center; font-size: 17px; background: var(--soft-surface); }
+  [data-theme="linea"] .linea-message-menu .linea-quick-reactions button:hover { background: var(--panel-raised); }
+  [data-theme="linea"] .workspace-context-menu { width: 224px; }
+  [data-theme="linea"] .workspace-context-menu .user-context-item { min-height: 31px; }
+  [data-theme="linea"] .hush-profile-popover { width: min(282px, calc(100vw - 24px)); }
+  [data-theme="linea"] .hush-profile-cover { height: 96px; }
+}
+
+@media (821px <= width < 1100px) {
+  [data-theme="linea"] .app-shell .linea-message-search { flex-basis: 30px; padding-inline: 6px; }
+  [data-theme="linea"] .linea-message-search span { display: none; }
+}
+
+:root[data-theme="linea"] .modal-backdrop:has(> .space-management-page) { padding: 0; }
+:root[data-theme="linea"] .modal-card.space-management-page {
+  --management-split: max(218px, calc(50% - 240px));
+  position: relative;
+  width: 100%;
+  height: 100dvh;
+  max-height: none;
+  max-width: none;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: 0;
+  background: linear-gradient(to right, var(--rail-background) var(--management-split), var(--chat-background) var(--management-split));
+}
+.space-management-page > header { position: absolute; z-index: 1; top: clamp(46px, 8dvh, 84px); left: clamp(742px, calc(var(--management-split) + 660px), calc(100% - 54px)); }
+.space-management-page > header > div:first-child, .space-management-page > .modal-description { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.space-management-page .space-management-frame { display: grid; height: 100%; grid-template-columns: var(--management-split) minmax(0, 640px); }
+.space-management-page .management-navigation {
+  display: flex;
+  flex-direction: column;
+  justify-self: end;
+  width: min(228px, 100%);
+  padding: 56px 14px 24px;
+  overflow-y: auto;
+}
+.space-management-page .management-space-name { margin: 0 8px 8px; color: var(--muted); font-size: 12px; }
+.space-management-page .space-management-tabs { display: flex; flex-direction: column; margin-block: 8px; gap: 3px; }
+.space-management-page :is(.space-management-tabs button, .identity-settings-entry) { width: 100%; text-align: left; background: transparent; border: 0; }
+.space-management-page :is(.space-management-tabs button.active, .space-management-tabs button:hover, .identity-settings-entry:hover) { background: var(--soft-surface); }
+.space-management-page .management-content { display: block; overflow-y: auto; padding: clamp(58px, 10.5dvh, 108px) 28px 30px; }
+.space-management-page .management-content > h2 { margin: 0 0 16px; font-size: 20px; }
+.management-role-overview { display: grid; gap: 16px; }
+.space-management-page .management-default-role { display: flex; align-items: center; gap: 12px; padding: 12px; text-align: left; }
+.management-default-role span { flex: 1; display: grid; gap: 4px; }
+.management-default-role small { color: var(--muted); }
+.management-role-search { display: flex; gap: 10px; }
+.management-role-search label { flex: 1; display: flex; align-items: center; gap: 6px; min-width: 0; padding-inline: 8px; background: var(--field-background); border: 1px solid var(--line); border-radius: var(--radius-control); }
+.space-management-page .management-role-search input[type="search"] { flex: 1; border: 0; background: transparent; }
+.space-management-page .management-role-search .modal-primary { flex: none; width: auto; }
+.management-role-columns { display: grid; grid-template-columns: minmax(0, 1fr) 86px 40px; align-items: center; gap: 8px; min-height: 43px; border-bottom: 1px solid var(--line); }
+.management-role-columns:first-child { color: var(--muted); font-size: 12px; }
+.management-role-name, .space-management-page .management-role-detail > button { display: flex; align-items: center; gap: 8px; }
+.management-role-name { overflow: hidden; overflow-wrap: anywhere; }
+.management-role-name svg { flex: none; }
+.space-management-page .management-role-detail > button { margin-bottom: 12px; }
+@media (max-width: 950px) {
+  .space-management-page .management-content { padding-right: 64px; }
+  .space-management-page > header { left: auto; right: 14px; }
+}

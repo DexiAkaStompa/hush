@@ -7,6 +7,14 @@ ricevere i loro pacchetti esistenti.
 Rust è il download principale di [hush.contact](https://hush.contact/) su
 Windows x64. Per una nuova installazione puoi scaricare direttamente Hush Rust.
 
+## Novità della 0.5.70
+
+**Linea** è disponibile in **Impostazioni → Aspetto**. Su desktop include una
+colonna canali ridimensionabile, comandi di navigazione nella barra superiore,
+ricerca nella testata e un pannello membri richiudibile. Nelle chat in chiamata,
+la voce e il video restano sopra la cronologia. La pagina Ruoli a schermo intero
+include ricerca, conteggio dei membri e accesso ai permessi predefiniti.
+
 ## Passaggio dal client attuale
 
 1. Lascia che il client precedente si aggiorni alla **0.5.69 o successiva** e apri Hush con il tuo account.

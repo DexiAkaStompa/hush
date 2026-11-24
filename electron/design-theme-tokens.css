@@ -119,3 +119,10 @@
   --radius-control: 9px; --radius-surface: calc(9px + 3px);
   --scrim: rgba(24, 25, 29, .53);
 }
+:root[data-theme="linea"], [data-theme-preview="linea"] {
+  --ink: #101619; --obsidian: #141b1f; --panel: #202b30; --panel-raised: #2b3a40;
+  --line: #3a494e; --muted: #a6b6bb; --frost: #edf4f4; --coral: #ffa69c; --mint: #9fdfd0; --blue: #a7ebda;
+  --app-background: #141b1f; --rail-background: #101619; --sidebar-background: #182125;
+  --chat-background: #1d272c; --soft-surface: #263337; --field-background: #131d20;
+  --radius-control: 6px; --radius-surface: 10px;
+}

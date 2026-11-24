@@ -5,7 +5,7 @@ import { createPeerNegotiator } from "../lib/peer-negotiation";
 import { monitorPeerRecovery } from "../lib/peer-recovery";
 import { DEFAULT_ICE_SERVERS, loadCallIceConfig } from "../lib/call-ice";
 import type { RealtimeChannel } from "@supabase/supabase-js";
-import { Maximize2, Mic, MicOff, Minimize2, MonitorUp, PhoneOff, Video, VideoOff, Volume2, VolumeX } from "lucide-react";
+import { Maximize2, Mic, MicOff, Minimize2, MonitorUp, Music2, PhoneOff, Video, VideoOff, Volume2, VolumeX } from "lucide-react";
 import { callTopic, type WebRtcSignal } from "../lib/realtime";
 import { supabase } from "../lib/supabase";
 import { RoomMusic } from "./RoomMusic";
@@ -38,6 +38,7 @@ type MediaStageProps = {
   onMinimize: () => void;
   onClose: () => void;
   dockTarget?: HTMLElement | null;
+  stageTarget?: HTMLElement | null;
   onExpand?: () => void;
 };
 
@@ -275,6 +276,7 @@ export function MediaStage({
   onMinimize,
   onClose,
   dockTarget,
+  stageTarget,
   onExpand,
 }: MediaStageProps) {
   const settings = useMediaSettings();
@@ -300,6 +302,7 @@ export function MediaStage({
   const [participants, setParticipants] = useState<string[]>([]);
   const [streamingPeers, setStreamingPeers] = useState<Set<string>>(new Set());
   const [focusedTile, setFocusedTile] = useState<string | null>(null);
+  const [showStageMusic, setShowStageMusic] = useState(false);
   const localStreamRef = useRef<MediaStream | null>(null);
   const microphoneRef = useRef<MicrophoneCapture | null>(null);
   const screenStreamRef = useRef<MediaStream | null>(null);
@@ -878,14 +881,16 @@ export function MediaStage({
     }
   };
 
-  return (<>
-    {dockTarget && onExpand && createPortal(<CallDock roomName={roomName} connected={connected && transportReady} notice={notice} latency={latency} relayAvailable={relayAvailable} connectionPath={connectionPath} mic={mic} deafened={deafened} camera={camera} sharing={sharing} canShare={typeof navigator.mediaDevices?.getDisplayMedia === "function"} onExpand={onExpand} onLeave={onClose} onMic={toggleMic} onDeafen={toggleDeafen} onCamera={toggleCamera} onShare={toggleShare} />, dockTarget)}
+  const stage = (
     <section className={`media-stage ${expanded ? "stage-expanded" : "stage-minimized"}`} aria-label="Chiamata in corso" aria-hidden={!expanded}>
       <header className="stage-header">
-        <div><span className="eyebrow"><span className="live-dot" /> {roomName}</span><h2>{participants.length + 1} partecipanti</h2></div>
-        <button className="icon-button" onClick={onMinimize} aria-label="Riduci chiamata"><Minimize2 size={18} /></button>
+        <div><span className="eyebrow"><span className="live-dot" /> {roomName}</span><h2>{participants.length ? `${participants.length + 1} partecipanti` : "1 partecipante"}</h2></div>
+        <div className="stage-header-actions">
+          {stageTarget && <button type="button" className="icon-button" onClick={() => setShowStageMusic(open => !open)} aria-label="Musica condivisa" aria-expanded={showStageMusic} title="Musica condivisa"><Music2 size={16} /></button>}
+          <button className="icon-button" onClick={onMinimize} aria-label="Riduci chiamata"><Minimize2 size={18} /></button>
+        </div>
       </header>
-      <RoomMusic conversationId={conversationId} />
+      <div className="stage-music" hidden={Boolean(stageTarget) && !showStageMusic}><RoomMusic conversationId={conversationId} /></div>
       <div className="stage-grid call-grid">
         <StreamTile
           stream={localStream}
@@ -932,5 +937,9 @@ export function MediaStage({
         <button className="control hangup" onClick={onClose} aria-label="Lascia chiamata"><PhoneOff size={19} /></button>
       </div>
     </section>
+  );
+  return (<>
+    {dockTarget && onExpand && createPortal(<CallDock roomName={roomName} connected={connected && transportReady} notice={notice} latency={latency} relayAvailable={relayAvailable} connectionPath={connectionPath} mic={mic} deafened={deafened} camera={camera} sharing={sharing} canShare={typeof navigator.mediaDevices?.getDisplayMedia === "function"} onExpand={onExpand} onLeave={onClose} onMic={toggleMic} onDeafen={toggleDeafen} onCamera={toggleCamera} onShare={toggleShare} />, dockTarget)}
+    {stageTarget ? createPortal(stage, stageTarget) : stage}
   </>);
 }

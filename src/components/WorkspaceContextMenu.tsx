@@ -1,10 +1,10 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ArrowLeft, Check, ChevronRight } from "lucide-react";
+import { ArrowLeft, Check, ChevronRight, type LucideIcon } from "lucide-react";
 import "../workspace-actions.css";
 
-export type WorkspaceMenuItem = { label: string; action?: () => void; disabled?: boolean; danger?: boolean; checked?: boolean; items?: WorkspaceMenuItem[]; separator?: boolean };
-export function WorkspaceContextMenu({ x, y, title, items, onClose }: { x: number; y: number; title: string; items: WorkspaceMenuItem[]; onClose: () => void }) {
+export type WorkspaceMenuItem = { label: string; icon?: LucideIcon; action?: () => void; disabled?: boolean; danger?: boolean; checked?: boolean; items?: WorkspaceMenuItem[]; separator?: boolean };
+export function WorkspaceContextMenu({ x, y, title, items, anchor, onClose }: { x: number; y: number; title: string; items: WorkspaceMenuItem[]; anchor?: HTMLElement; onClose: () => void }) {
   const ref = useRef<HTMLDivElement>(null);
   const [page, setPage] = useState<{ title: string; items: WorkspaceMenuItem[] } | null>(null);
   useLayoutEffect(() => {
@@ -19,13 +19,16 @@ export function WorkspaceContextMenu({ x, y, title, items, onClose }: { x: numbe
     element.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus();
   }, [x, y, page]);
   useLayoutEffect(() => {
-    const outside = (event: PointerEvent) => { if (!ref.current?.contains(event.target as Node)) onClose(); };
+    const outside = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (!ref.current?.contains(target) && !anchor?.contains(target)) onClose();
+    };
     const dismiss = () => onClose();
     document.addEventListener("pointerdown", outside);
     window.addEventListener("resize", dismiss);
     window.addEventListener("blur", dismiss);
     return () => { document.removeEventListener("pointerdown", outside); window.removeEventListener("resize", dismiss); window.removeEventListener("blur", dismiss); };
-  }, [onClose]);
+  }, [anchor, onClose]);
   return createPortal(<div ref={ref} className="user-context-menu workspace-context-menu" role="menu" aria-label={page?.title ?? title} style={{ left: x, top: y }} onContextMenu={event => event.preventDefault()} onKeyDown={event => {
     if (event.key === "Escape" || event.key === "Tab") { event.preventDefault(); onClose(); }
     if (event.key === "ArrowLeft" && page) { event.preventDefault(); setPage(null); }
@@ -43,7 +46,7 @@ export function WorkspaceContextMenu({ x, y, title, items, onClose }: { x: numbe
       <button type="button" role={item.checked === undefined ? "menuitem" : "menuitemcheckbox"} aria-checked={item.checked} aria-haspopup={item.items ? "menu" : undefined} className={`user-context-item ${item.danger ? "workspace-menu-danger" : ""}`} disabled={item.disabled} onClick={() => {
         if (item.items) setPage({ title: item.label, items: item.items });
         else { onClose(); item.action?.(); }
-      }}><span>{item.label}</span>{item.items ? <ChevronRight size={14} /> : item.checked ? <Check size={14} /> : null}</button>
+      }}><span className="workspace-menu-label">{item.icon && <item.icon size={15} aria-hidden="true" />}{item.label}</span>{item.items ? <ChevronRight size={14} /> : item.checked ? <Check size={14} /> : null}</button>
     </div>)}
   </div>, document.body);
 }

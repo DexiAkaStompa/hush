@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type MouseEvent } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent } from "react";
 import { createPortal } from "react-dom";
 import {
   Copy,
@@ -51,6 +51,7 @@ export function ChatMessage({
   onHushLink,
   replySender,
   onJumpToReply,
+  quickReactions = false,
 }: {
   mentions?: MessageMention[];
   mentionTargets?: MentionTarget[];
@@ -64,6 +65,7 @@ export function ChatMessage({
   onHushLink?: (url: string) => Promise<void>;
   replySender?: Profile;
   onJumpToReply?: () => void;
+  quickReactions?: boolean;
   message: DecryptedMessage & {
     replyId?: string | null;
     editedAt?: string | null;
@@ -114,8 +116,8 @@ export function ChatMessage({
     kind: "menu" | "picker",
   ) => {
     const anchor = event.currentTarget.getBoundingClientRect();
-    const width = kind === "picker" ? 320 : 200;
-    const height = kind === "picker" ? 360 : 270;
+    const width = kind === "picker" ? 320 : quickReactions ? 230 : 200;
+    const height = kind === "picker" ? 360 : quickReactions ? 340 : 270;
     setPopupPosition({
       left: Math.max(
         8,
@@ -175,6 +177,13 @@ export function ChatMessage({
     if (menu)
       menuRef.current?.querySelector<HTMLButtonElement>("button")?.focus();
   }, [menu]);
+  useLayoutEffect(() => {
+    const popup = menuRef.current;
+    if (!menu || !popup) return;
+    const rect = popup.getBoundingClientRect();
+    popup.style.left = `${Math.max(8, Math.min(popupPosition.left, window.innerWidth - rect.width - 8))}px`;
+    popup.style.top = `${Math.max(8, Math.min(popupPosition.top, window.innerHeight - rect.height - 8))}px`;
+  }, [menu, popupPosition]);
   const grouped = [...new Set(reactions.map((reaction) => reaction.emoji))];
   const compact = continuation && !pinned;
   const timestamp = messageTimestamp(message.createdAt);
@@ -453,10 +462,17 @@ export function ChatMessage({
           <div
             ref={menuRef}
             style={popupPosition}
-            className="message-options"
+            className={`message-options${quickReactions ? " linea-message-menu" : ""}`}
             role="group"
             aria-label="Azioni messaggio"
+            onKeyDown={event => { if (event.key === "Escape") { event.stopPropagation(); setMenu(false); } }}
           >
+            {quickReactions && canReact && <>
+              <div className="linea-quick-reactions" aria-label="Reazioni rapide">
+                {["👍", "❤️", "😂", "✅"].map(emoji => <button type="button" key={emoji} aria-label={`Reagisci ${emoji}`} disabled={busy} onClick={() => { setMenu(false); void run(() => onReact(emoji)); }}>{emoji}</button>)}
+              </div>
+              <button type="button" onClick={event => openPopup(event, "picker")}><Smile size={14} /> Aggiungi una reazione</button>
+            </>}
             <button
               onClick={() => {
                 setMenu(false);

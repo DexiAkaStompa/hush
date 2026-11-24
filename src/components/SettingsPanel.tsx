@@ -589,6 +589,7 @@ export function SettingsPanel({ profile, theme, onThemeChange, onSaved, onClose,
               <span className="theme-preview-rail"><i /><i /><i /></span>
               <span className="theme-preview-sidebar"><i /><i /><i /></span>
               <span className="theme-preview-chat"><span /><i /><i /><span /></span>
+              {option.id === "linea" && <span className="theme-preview-people"><i /><i /><i /></span>}
             </span>
             <span className="theme-option-copy"><strong>{option.name}</strong><small>{option.description}</small></span>
             <span className="theme-selected-mark" aria-hidden="true">{theme === option.id ? <Check size={14} strokeWidth={2.5} /> : null}</span>

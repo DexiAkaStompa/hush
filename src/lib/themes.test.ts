@@ -26,7 +26,7 @@ test("all approved designs persist and clear their layout attributes on returnin
   window.localStorage.setItem = (key, value) => { stored.set(key, value); };
   window.localStorage.getItem = key => stored.get(key) ?? null;
   const { THEMES, applyTheme, readTheme } = await import("./themes");
-  const dark = ["ardesia", "inchiostro", "basalto", "marea", "notturno", "studio", "orbita"] as const;
+  const dark = ["linea", "ardesia", "inchiostro", "basalto", "marea", "notturno", "studio", "orbita"] as const;
   const light = ["prisma", "serra", "quota", "portico"] as const;
   for (const id of [...dark, ...light]) {
     expect(THEMES.filter(theme => theme.id === id)).toHaveLength(1);
