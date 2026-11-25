@@ -7,6 +7,12 @@ ricevere i loro pacchetti esistenti.
 Rust è il download principale di [hush.contact](https://hush.contact/) su
 Windows x64. Per una nuova installazione puoi scaricare direttamente Hush Rust.
 
+## Novità della 0.5.71
+
+La scrittura resta più fluida nelle chat lunghe, perché ogni tasto aggiorna il
+campo di scrittura senza ricalcolare la cronologia. Su Windows Hush riduce il
+budget di memoria solo quando la finestra è minimizzata e fuori chiamata.
+
 ## Novità della 0.5.70
 
 **Linea** è disponibile in **Impostazioni → Aspetto**. Su desktop include una
@@ -30,7 +36,7 @@ prima di aprire le chat. Non serve copiare cartelle o esportare chiavi private.
 
 - Meno codice da caricare prima dell'accesso; le parti delle chat vengono
   caricate quando servono e alcune operazioni iniziali procedono in parallelo.
-- Budget della memoria ridotto quando la finestra è inattiva, senza
+- Budget della memoria ridotto quando la finestra è minimizzata, senza
   sospendere messaggi e connessioni. Le chiamate mantengono il budget normale.
 - Download degli allegati a blocchi, senza accumulare tutto il file in RAM.
 - Aggiornamenti Rust automatici con verifica della firma e della versione.

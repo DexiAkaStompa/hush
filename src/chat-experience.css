@@ -29,6 +29,9 @@
 .message-editor button,.history-load,.chat-tools button,.jump-latest {background:var(--panel);border:1px solid var(--line);border-radius: var(--radius-control);color:var(--frost);padding:7px 12px;cursor:pointer;}
 .message-editor div {display:flex;gap:8px;margin-top:6px;}
 .composer textarea {flex:1;line-height:1.5;padding:8px 0;max-height:180px;}
+@supports (field-sizing:content) {
+  .composer textarea {field-sizing:content;min-height:38px;}
+}
 .composer-reply {display:flex;justify-content:space-between;align-items:center;margin:0 22px;padding:8px 12px;border:1px solid var(--line);border-radius: var(--radius-surface);color:var(--muted);font-size:12px;background:var(--panel);}
 .composer-reply span {overflow:hidden;white-space:nowrap;text-overflow:ellipsis;}
 .typing-indicator {min-height:20px;padding:0 30px;color:var(--muted);font-size:11px;}

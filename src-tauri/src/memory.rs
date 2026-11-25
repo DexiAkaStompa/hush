@@ -1,4 +1,4 @@
-//! Ask WebView2 to reduce cache use while Hush is inactive. This never suspends
+//! Ask WebView2 to reduce cache use while Hush is minimized. This never suspends
 //! script execution: signaling, incoming messages and timers keep running.
 
 use std::sync::{Arc, Mutex};
@@ -32,7 +32,7 @@ impl Default for MemoryPolicy {
 
 impl MemoryPolicy {
     fn target(self) -> MemoryTarget {
-        if !self.call_active && (!self.focused || self.minimized) {
+        if self.minimized && !self.call_active {
             MemoryTarget::Low
         } else {
             MemoryTarget::Normal
@@ -136,7 +136,7 @@ impl MemoryController {
                 state.pending = false;
                 // Read the current policy on the WebView's owning UI thread.
                 // A queued background request must not apply stale Low after
-                // a call starts or the user has restored/focused the window.
+                // a call starts or the user restores the window.
                 let target = state.policy.target();
                 if state.applied == Some(target) {
                     return;
@@ -194,11 +194,11 @@ mod tests {
     }
 
     #[test]
-    fn inactive_or_minimized_window_can_release_caches_without_suspending() {
-        for (focused, minimized) in [(false, false), (true, true), (false, true)] {
+    fn minimized_window_can_release_caches_without_suspending() {
+        for focused in [true, false] {
             let policy = MemoryPolicy {
                 focused,
-                minimized,
+                minimized: true,
                 call_active: false,
             };
             assert_eq!(policy.target(), MemoryTarget::Low);
@@ -220,7 +220,7 @@ mod tests {
     }
 
     #[test]
-    fn restoring_and_focusing_returns_to_normal() {
+    fn restoring_returns_to_normal_even_before_focus() {
         let mut policy = MemoryPolicy {
             focused: false,
             minimized: true,
@@ -228,8 +228,6 @@ mod tests {
         };
         assert_eq!(policy.target(), MemoryTarget::Low);
         policy.minimized = false;
-        assert_eq!(policy.target(), MemoryTarget::Low);
-        policy.focused = true;
         assert_eq!(policy.target(), MemoryTarget::Normal);
     }
 

@@ -87,10 +87,10 @@ require signing in again if its saved refresh token has become obsolete.
   Its exact Tauri origins are allowed by the shared-media service. The legacy
   Drive path has also passed an authenticated encrypted roundtrip with a real
   historical-format file and a denied request from an unrelated conversation.
-- The Windows WebView2 memory target drops to Low when the window is unfocused
-  or minimized and no call is active, and returns to Normal for an active call
-  or a focused restored window. It does not suspend the renderer or its network
-  connection. Older unsupported WebView2 versions retain normal behavior.
+- The Windows WebView2 memory target drops to Low when the window is minimized
+  and no call is active. Normal applies as soon as a call starts or the window
+  is restored, including when another app has focus. Low keeps the renderer and
+  its network connection running. Older WebView2 versions retain normal behavior.
 - IPC permissions are explicitly assigned only to the local main window.
   External navigation and popup creation are denied; there is no general
   filesystem, command execution or authenticated HTTP proxy exposed to React.

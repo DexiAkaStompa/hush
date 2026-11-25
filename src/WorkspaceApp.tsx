@@ -219,7 +219,7 @@ export function WorkspaceApp({ session, theme, onThemeChange }: { session: Sessi
   const [mentionCursor,setMentionCursor]=useState<number|null>(null);
   const [mentionIndex,setMentionIndex]=useState(0);
   const [mentionDismissed,setMentionDismissed]=useState(false);
-  const mentionContextRef=useRef({roles:EMPTY_ROLE_CONTEXT,members:[] as Profile[],online:[] as string[],conversationId:"",spaceId:""});
+  const mentionContextRef=useRef({roles:EMPTY_ROLE_CONTEXT,members:[] as Profile[],conversationId:"",spaceId:""});
   const [mySpaceRole, setMySpaceRole] = useState("member");
   const [collapsedCategories,setCollapsedCategories]=useState<Set<string>>(new Set());
   const [confirmAction,setConfirmAction]=useState<{title:string;description:string;label:string;action:()=>Promise<void>}|null>(null);
@@ -461,12 +461,13 @@ export function WorkspaceApp({ session, theme, onThemeChange }: { session: Sessi
     setDraft(activeConversationId ? draftByRoom.current.get(activeConversationId) ?? "" : "");
     clearPendingFile(); setSearch("");
   }, [activeConversationId]);
-  const filteredMessages = useMemo(() => (historyResults ?? messages).filter(message => matchesMessage(message, search) && (!showPins || extras.pins.some(pin => pin.message_id === message.id))), [messages, historyResults, search, showPins, extras.pins]);
+  const pinnedMessageIds = useMemo(() => new Set(extras.pins.map(pin => pin.message_id)), [extras.pins]);
+  const filteredMessages = useMemo(() => (historyResults ?? messages).filter(message => matchesMessage(message, search) && (!showPins || pinnedMessageIds.has(message.id))), [messages, historyResults, search, showPins, pinnedMessageIds]);
   const messageLookup = useMemo(()=>new Map(messages.map(message=>[message.id,message])),[messages]);
-  const refreshExtras = async (id: string) => {
+  const refreshExtras = useCallback(async (id: string) => {
     const next = await loadMessageExtras(id);
     if (activeIdRef.current === id) setExtras(next);
-  };
+  }, []);
   const loadOlder = async () => {
     if (!activeConversationId || !roomKey || !messages.length || loadingOlder) return;
     const id = activeConversationId;
@@ -545,12 +546,16 @@ export function WorkspaceApp({ session, theme, onThemeChange }: { session: Sessi
   const canManageSpace = activeSpace?.owner_id===session.user.id || ["owner","admin"].includes(mySpaceRole);
   const activePermissions=channelPermissions[activeConversationId??""]??[];
   const canWrite=activePermissions.includes("send_messages");
-  mentionContextRef.current={roles:roleContext,members,online:onlineUserIds,conversationId:activeConversationId??"",spaceId:activeConversation?.space_id??""};
-  function targetsForSender(senderId:string):MentionTarget[] {
-    const context=mentionContextRef.current, mass=!context.spaceId||canMassMention(context.roles,senderId,context.conversationId);
-    return [...context.members.map(m=>({kind:"user" as const,id:m.id,label:m.username,name:m.display_name})),...context.roles.roles.filter(r=>!r.is_default).map(r=>({kind:"role" as const,id:r.id,label:r.name,name:"Ruolo",color:r.color,allowed:r.mentionable||mass})),{kind:"everyone",id:context.spaceId||context.conversationId,label:"everyone",name:"Tutti i membri",allowed:mass},{kind:"here",id:context.spaceId||context.conversationId,label:"here",name:"Membri online",allowed:mass}];
+  mentionContextRef.current={roles:roleContext,members,conversationId:activeConversationId??"",spaceId:activeConversation?.space_id??""};
+  function targetsForSender(senderId: string, context = mentionContextRef.current): MentionTarget[] {
+    const mass = !context.spaceId || canMassMention(context.roles, senderId, context.conversationId);
+    return [
+      ...context.members.map(member => ({ kind: "user" as const, id: member.id, label: member.username, name: member.display_name })),
+      ...context.roles.roles.filter(role => !role.is_default).map(role => ({ kind: "role" as const, id: role.id, label: role.name, name: "Ruolo", color: role.color, allowed: role.mentionable || mass })),
+      { kind: "everyone", id: context.spaceId || context.conversationId, label: "everyone", name: "Tutti i membri", allowed: mass },
+      { kind: "here", id: context.spaceId || context.conversationId, label: "here", name: "Membri online", allowed: mass },
+    ];
   }
-  const myRoleIds=rolesForUser(roleContext,session.user.id).map(r=>r.id);
   const mentionSearch=mentionDismissed?null:mentionQuery(draft,mentionCursor??draft.length);
   const mentionOptions=mentionSearch?targetsForSender(session.user.id).filter(t=>t.allowed!==false&&(t.label.toLocaleLowerCase("it").startsWith(mentionSearch.query)||t.name.toLocaleLowerCase("it").includes(mentionSearch.query))).slice(0,8):[];
   const insertMention=(target:MentionTarget)=>{
@@ -1157,7 +1162,12 @@ export function WorkspaceApp({ session, theme, onThemeChange }: { session: Sessi
     read(); window.addEventListener("focus", read);
     return () => window.removeEventListener("focus", read);
   }, [activeConversationId, keyStatus, messages, awayFromBottom, search, showPins, historyResults]);
-  useEffect(() => {const input = messageInputRef.current; if(input) {input.style.height = "auto"; input.style.height = `${Math.min(180, Math.max(38, input.scrollHeight))}px`; }}, [draft]);
+  useEffect(() => {
+    const input = messageInputRef.current;
+    if (!input || CSS.supports("field-sizing", "content")) return;
+    input.style.height = "auto";
+    input.style.height = `${Math.min(180, Math.max(38, input.scrollHeight))}px`;
+  }, [draft]);
 
   useEffect(() => {
     if (!activeConversationId || members.length === 0) return;
@@ -1748,6 +1758,89 @@ export function WorkspaceApp({ session, theme, onThemeChange }: { session: Sessi
     return [...sections.values()].sort((a, b) => b.position - a.position);
   }, [activeSpaceId, lineaDesktop, members, onlineUserIds, profile, remoteStatuses, roleContext, session.user.id, userStatus]);
 
+  // Keep the transcript stable while composer state changes and dispatch to the latest actions.
+  const messageActions = useRef({ openHushLink, jumpToMessage, editMessage, openUserProfile });
+  useLayoutEffect(() => {
+    messageActions.current = { openHushLink, jumpToMessage, editMessage, openUserProfile };
+  });
+  const timelineRoom = activeConversation?.kind !== "voice_channel" && (!stage.expanded || lineaDesktop)
+    ? activeConversation
+    : null;
+  const canReact = activePermissions.includes("add_reactions");
+  const canPin = activePermissions.includes("pin_messages");
+  const canManageMessages = activePermissions.includes("manage_messages");
+  const groupAdjacentMessages = !search && !showPins;
+  const messageRows = useMemo(() => {
+    if (!timelineRoom || !filteredMessages.length) return [];
+    const conversationId = timelineRoom.id;
+    const selfId = session.user.id;
+    const myRoleIds = rolesForUser(roleContext, selfId).map(role => role.id);
+    const membersById = new Map(members.map(member => [member.id, member]));
+    const senders = new Map<string, { targets: MentionTarget[]; role: ReturnType<typeof rolesForUser>[number] | undefined }>();
+    const reactionsById = new Map<string, MessageExtras["reactions"]>();
+    for (const reaction of extras.reactions) {
+      const messageReactions = reactionsById.get(reaction.message_id);
+      if (messageReactions) messageReactions.push(reaction);
+      else reactionsById.set(reaction.message_id, [reaction]);
+    }
+    const mentionContext = { roles: roleContext, members, conversationId, spaceId: timelineRoom.space_id ?? "" };
+    let previousDate: string | undefined;
+    return filteredMessages.map((message, index) => {
+      const senderId = message.senderId ?? "";
+      const sender = membersById.get(senderId) ?? {
+        id: message.senderId || message.author, username: message.author,
+        display_name: message.author, avatar_color: "#73b7ff",
+      };
+      let senderContext = senders.get(senderId);
+      if (!senderContext) {
+        senderContext = { targets: targetsForSender(senderId, mentionContext), role: rolesForUser(roleContext, senderId)[0] };
+        senders.set(senderId, senderContext);
+      }
+      const mentions = resolveMentions(message.body, message.mentions, senderContext.targets);
+      const reply = messageLookup.get(message.replyId ?? "");
+      const date = new Date(message.createdAt).toDateString();
+      const startsDay = date !== previousDate;
+      previousDate = date;
+
+      return <div key={message.id}>
+        {startsDay && <div className="message-date">{messageDayLabel(message.createdAt)}</div>}
+        <ChatMessage
+          quickReactions={lineaDesktop}
+          message={message}
+          sender={sender}
+          senderRole={senderContext.role}
+          selfId={selfId}
+          conversationId={conversationId}
+          roomKey={roomKey}
+          reply={reply}
+          replySender={memberProfilesMap[reply?.senderId ?? ""]}
+          continuation={groupAdjacentMessages && isMessageContinuation(filteredMessages[index - 1], message)}
+          mentions={mentions}
+          mentionTargets={senderContext.targets}
+          highlighted={mentionsRecipient(mentions, selfId, myRoleIds, userStatus !== "invisible") || (message.senderId !== selfId && reply?.senderId === selfId)}
+          reactions={reactionsById.get(message.id) ?? []}
+          pinned={pinnedMessageIds.has(message.id)}
+          canEdit={canWrite}
+          canReact={canReact}
+          canPin={canPin}
+          canManageMessages={canManageMessages}
+          onHushLink={value => messageActions.current.openHushLink(value)}
+          onJumpToReply={() => { if (message.replyId) void messageActions.current.jumpToMessage(message.replyId); }}
+          onReply={() => { setReplyingTo(message); messageInputRef.current?.focus(); }}
+          onEdit={value => messageActions.current.editMessage(message, value)}
+          onDelete={async () => {
+            await deleteEncryptedMessage(message.id);
+            if (activeIdRef.current === conversationId) setMessages(current => current.filter(item => item.id !== message.id));
+          }}
+          onReact={async emoji => { await toggleMessageReaction(message.id, emoji); await refreshExtras(conversationId); }}
+          onPin={async () => { await toggleMessagePin(message.id); await refreshExtras(conversationId); }}
+          onProfile={anchor => messageActions.current.openUserProfile(sender, anchor)}
+          onToast={setToast}
+        />
+      </div>;
+    });
+  }, [timelineRoom, filteredMessages, session.user.id, roleContext, members, extras.reactions, messageLookup, lineaDesktop, roomKey, memberProfilesMap, groupAdjacentMessages, userStatus, pinnedMessageIds, canWrite, canReact, canPin, canManageMessages, refreshExtras]);
+
   return (
     <div className="app-shell" data-mobile-view={mobileBrowsing ? "browse" : "content"} data-members-open={membersOpen ? "true" : undefined} data-linea-call={lineaDesktop && stage.expanded ? "true" : undefined}>
       <DotPattern />
@@ -1920,14 +2013,7 @@ export function WorkspaceApp({ session, theme, onThemeChange }: { session: Sessi
                 <section className="channel-intro"><div className="intro-icon"><Hash size={28} /></div><span className="eyebrow">il vostro spazio</span><h1>{activeConversation.name}</h1><p>Un posto per ritrovarvi. I messaggi sono protetti dalla cifratura end-to-end.</p></section>
                 {filteredMessages.length === 0 ? <div className="conversation-empty">{search ? "Nessun messaggio corrisponde alla ricerca." : keyStatus === "waiting" ? "Chiave richiesta. Chiedi a un membro di aprire questa conversazione." : "Nessun messaggio. Scrivi il primo."}</div> : null}
                 {hasOlder && <button className="history-load" disabled={loadingOlder} onClick={() => void loadOlder()}>{loadingOlder ? "Caricamento…" : "Carica messaggi precedenti"}</button>}
-                {filteredMessages.map((message, index) => {
-                  const sender: Profile = members.find(member => member.id === message.senderId) ?? {id: message.senderId || message.author, username: message.author, display_name: message.author, avatar_color: "#73b7ff"};
-                  const date = new Date(message.createdAt).toLocaleDateString("it");
-                  return <div key={message.id}>
-                    {(index === 0 || new Date(filteredMessages[index-1].createdAt).toLocaleDateString("it") !== date) && <div className="message-date">{messageDayLabel(message.createdAt)}</div>}
-                    <ChatMessage quickReactions={lineaDesktop} onHushLink={openHushLink} onJumpToReply={()=>void jumpToMessage(message.replyId!)} replySender={memberProfilesMap[messageLookup.get(message.replyId??"")?.senderId??""]} continuation={!search&&!showPins&&isMessageContinuation(filteredMessages[index-1],message)} canEdit={canWrite} mentions={resolveMentions(message.body,message.mentions,targetsForSender(message.senderId??""))} mentionTargets={targetsForSender(message.senderId??"")} highlighted={mentionsRecipient(resolveMentions(message.body,message.mentions,targetsForSender(message.senderId??"")),session.user.id,myRoleIds,userStatus!=="invisible")||(message.senderId!==session.user.id&&!!message.replyId&&messageLookup.get(message.replyId)?.senderId===session.user.id)} senderRole={rolesForUser(roleContext,message.senderId??"")[0]} canReact={activePermissions.includes("add_reactions")} canPin={activePermissions.includes("pin_messages")} canManageMessages={activePermissions.includes("manage_messages")} message={message} sender={sender} selfId={session.user.id} roomKey={roomKey} conversationId={activeConversation.id} reply={messageLookup.get(message.replyId??"")} reactions={extras.reactions.filter(item => item.message_id === message.id)} pinned={extras.pins.some(item => item.message_id === message.id)} onReply={() => {setReplyingTo(message); messageInputRef.current?.focus();}} onEdit={text => editMessage(message, text)} onDelete={async () => {await deleteEncryptedMessage(message.id); if(activeIdRef.current === activeConversation.id) setMessages(prev => prev.filter(item => item.id !== message.id));}} onReact={async emoji => {await toggleMessageReaction(message.id, emoji); await refreshExtras(activeConversation.id);}} onPin={async () => {await toggleMessagePin(message.id); await refreshExtras(activeConversation.id);}} onProfile={anchor=>openUserProfile(sender,anchor)} onToast={setToast} />
-                  </div>;
-                })}
+                {messageRows}
                 <div ref={messageEnd} />
               </div>
               {awayFromBottom && <button className="jump-latest" onClick={() => {setAwayFromBottom(false); messageEnd.current?.scrollIntoView({behavior:"instant"});}}>Vai agli ultimi messaggi</button>}
